@@ -12,8 +12,8 @@ client: it owns the sim or the robot, runs the safety filter and calls your serv
 | Startup | Listening **within 120 s** of `docker run` |
 | Weights | **Inside the image.** No downloads at startup |
 | GPU | Must fit in **32 GB VRAM** (one RTX 5090) |
-| Network | Internet access from the container during eval / finals: **TBD** (relevant for API-based planners) |
-| Image size limit | **TBD** (intake default 40 GB uncompressed) |
+| Network | External APIs at your own risk: we provide no network, a failed call counts as a failure ([FAQ](FAQ.md)) |
+| Image size | ≤ 40 GB uncompressed |
 
 ## 2. Protocol (`aaltonomous/deploy/protocol.py`, version 1)
 
@@ -110,7 +110,7 @@ python -m aaltonomous.sim.evaluate --container myteam/policy:v1 --team myteam --
 #   (docker run -d --gpus all -p 8000:8000 myteam/policy:v1) and use --policy ws://localhost:8000
 #   (the sim container runs with --network host). --container works on the bare-metal setup.
 
-# 4. replay a recorded episode (e.g. your shakedown log) to the server
+# 4. replay a recorded episode (e.g. a runner log) to the server
 python -m aaltonomous.deploy.replay runs/<team>/<run>/episode_000.npz --policy ws://localhost:8000
 ```
 
@@ -125,18 +125,16 @@ python -m aaltonomous.deploy.replay runs/<team>/<run>/episode_000.npz --policy w
 
 ## 6. Hand-in
 
-1. Push your image to a registry you control (Docker Hub / GHCR private repo with read access for our account
-   **TBD**, or public) and note its digest (`docker push` prints `sha256:...`).
-2. Hand in a `submit.yaml` (where: **TBD**, announced at kickoff):
+1. Push your image to a registry we can pull from (public Docker Hub / GHCR is simplest) and note its digest
+   (`docker push` prints `sha256:...`).
+2. Submit it through the **web form** (link on the Junction Discord) with these fields:
    ```yaml
    team: rocket                          # your team id from kickoff (lowercase, letters/digits/-)
    image: ghcr.io/rocket/policy@sha256:...   # pin the digest, not just a tag
    tasks: [sort_fixed, sort_language]    # optional, default both
    contact: "@you on the event chat"     # organisers only, never shown
    ```
-   No registry? `docker save myteam/policy:v1 | gzip > rocket-v1.tar.gz`, upload it next to the yaml and write
-   `image_tar: rocket-v1.tar.gz` instead of `image:` (upload location **TBD**; slower for big images).
-3. We first run a quick pre-check (image pulls, linux/amd64, size limit **TBD**, server up within 120 s,
+3. We first run a quick pre-check (image pulls, linux/amd64, ≤ 40 GB, server up within 120 s,
    `replay --synthetic` at >= 27 Hz: run the same check yourself with step 1 of §5). A failure comes back with the
    reason within minutes and costs no sim time. Then the held-out sim evaluation runs; the leaderboard updates when
    it finishes (about an hour per submission, queue permitting).
@@ -145,10 +143,10 @@ python -m aaltonomous.deploy.replay runs/<team>/<run>/episode_000.npz --policy w
    shared.
 
 - Leaderboard submissions: one evaluation per team at a time; a newer submission replaces your older one that is
-  still waiting; at most one evaluation start per team per **TBD (default 60)** minutes.
-- Final submission deadline Sunday, time **TBD**. The image you hand in last before the deadline is the one that
-  runs in the finals; shakedown changes must be re-submitted the same way. After a shakedown or finals run you
-  get your own run logs back (`runs/<team>/<run>/`, incl. your container's log).
+  still waiting; at most one evaluation start per team per 60 minutes.
+- Final submission deadline: Sunday, time announced by the organisers. The image you hand in last before the
+  deadline is the one that runs in the finals. After a finals run you get your own run logs back
+  (`runs/<team>/<run>/`, incl. your container's log).
 
 ## 7. Reference submission: the classical baseline
 

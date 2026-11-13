@@ -19,7 +19,7 @@ python3 -m aaltonomous.leaderboard.ingest --runs runs/eval [--json]  # table / J
 Several result dirs: `--runs runs/eval /mnt/verda/runs/eval`. Other rules: `--config my.yaml`.
 Tests: `python3 -m unittest aaltonomous/leaderboard/test_leaderboard.py`.
 
-## Ranking (edit `leaderboard.yaml`; TBD items are open decisions)
+## Ranking (edit `leaderboard.yaml`)
 
 - Only runs on `variant: eval_heldout` with at least `min_trials` finished trials count.
 - Per team and task, the **best** (or `select: latest`) **gate-passing** run is used. Team score =

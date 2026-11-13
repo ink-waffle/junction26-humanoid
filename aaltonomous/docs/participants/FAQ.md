@@ -1,13 +1,12 @@
 # FAQ
 
-*Draft 2026-11-11.*
+*Version 2026-11-13.*
 
 ### Compute
 
 **What machine should I use?** One **RTX-class** cloud GPU per team for Isaac Sim (RTX Pro 6000 / A6000 / L40S
 class). Isaac renders the cameras with RT cores: **A100 / H100 have none** and are the wrong choice for the sim (fine
-for training). A small pool of 80 GB GPUs for VLA fine-tuning: **TBD** (how to book). Cloud provider: Verda, via
-Junction; account model and credits **TBD**.
+for training). Get whatever GPUs you can from Verda (Junction's cloud partner); we don't allocate compute.
 
 **On-demand or spot?** **On-demand only.** Spot instances can disappear within seconds and take your run with them.
 
@@ -27,7 +26,7 @@ runs headless and still renders the cameras.
 
 **Where is the data?** Real teleop demos in LeRobot format: [Data card](../../data/DATA_CARD.md), how they were
 recorded: [RECORDING.md](../../data/RECORDING.md). Drop 0 at kickoff, Drop 1 (venue lighting, empty-scene RGB-D,
-real depth noise) Saturday morning, Drop 2 (shakedown logs) Saturday evening. Download location: **TBD**.
+real depth noise) on Saturday. Download links are posted on the Junction Discord.
 
 **How much real data is there?** About 20 episodes per rung plus a few deliberately messy ones. That is the point
 of the challenge: sim is free, reality is scarce.
@@ -59,7 +58,9 @@ the sim gate's 27 Hz command rate, so to pass the gate: think in a background th
 (e.g. hold), or return long action chunks. An error reply is different: 1 s of errors ends the episode (watchdog).
 See [INTERFACE.md §3](INTERFACE.md#timing-30-hz-chunks-holds).
 
-**Can my container call an external API (e.g. a hosted VLM)?** **TBD**. Have an offline fallback.
+**Can my container call an external API (e.g. a hosted VLM)?** Yes, at your own risk. We provide no network: the
+finals machine has whatever connection the venue gives it, or none. Bring your own keys. A failed or slow call
+counts like any other failure; no reruns. Have an offline fallback.
 
 ### The baseline
 
@@ -72,7 +73,7 @@ other arm can finish.
 **How well does it score?** Isaac sim, rung 1, nominal scene (no randomisation), 2026-11-11, seeds 0–7: **76–82 %
 of objects sorted** (29/38 as the submission image through the evaluator, 31/38 in-process), 0 safety clips,
 command rate 30 Hz. Cylinders and cubes almost always work; most misses are triangles (the pinch slips) and the
-120 s limit. Sim-tuned settings are in the `sim` profile of `config.yaml`. Real-robot result: **TBD** before kickoff.
+120 s limit. Sim-tuned settings are in the `sim` profile of `config.yaml`. On the real robot it has done a pick into a bin.
 It is meant as a floor and a code reference: rung 2, randomised scenes and speed are where to beat it.
 
 **Is the baseline available as a submission image?** Yes: `aaltonomous/docker/baseline.Dockerfile` builds it
@@ -81,13 +82,10 @@ submission; see [SUBMISSION.md §7](SUBMISSION.md#7-reference-submission-the-cla
 
 ### Rules and finals
 
-**How are finalists chosen?** Sim score on the held-out variant + passing the sim gate + a short code check.
-See [RULES_AND_SCORING.md](RULES_AND_SCORING.md#4-finalist-selection-sim).
+**How are finalists chosen?** Organisers pick them from the sim leaderboard (held-out variant); only
+submissions that pass the sim gate qualify. See [RULES_AND_SCORING.md](RULES_AND_SCORING.md#4-finalist-selection-sim).
 
 **What is the held-out variant?** The same task with different textures, lighting and object poses that you never
 train on. Its configuration is not published.
 
-**Do I get to test on the real robot before the finals?** Finalists get a 10–15 min shakedown slot on Saturday
-evening (**TBD**) and their logs back. Everyone gets the shakedown logs in Drop 2.
-
-**What if the robot breaks during the finals?** Fallback: the finals are scored in sim (**TBD** exact procedure).
+**What if the robot breaks during the finals?** The organisers decide (rerun or sim score).

@@ -39,8 +39,7 @@ env.close()
 
 - A camera that has no frame yet yields an all-zero image. Handle it.
 - No force / tactile / timestamps per sensor in `obs`. Observation latency on the real robot is not measured yet.
-- Sim: the head is one 640×480 pinhole at the calibrated head pose; the wrist cameras use **placeholder poses**
-  until the real mounts are calibrated (**TBD**).
+- Sim: the head is one 640×480 pinhole at the calibrated head pose; the wrist cameras use **placeholder poses**.
 
 ## 3. Actions
 
@@ -128,7 +127,7 @@ the safety filter lets through (URDF limit minus 0.05 rad arms / 0.02 rad hands)
 
 **Arm notes:** arm q = 0 puts the hands just above the counter, over the object band. A **negative** elbow raises
 the forearm. Sim home pose (`aaltonomous/sim/aalto_task/layout.py` `ARM_HOME`): shoulder roll +0.35 (left) /
-−0.35 (right), elbow −0.5, everything else 0; hands open. The real home pose is **TBD** (expected to be the same).
+−0.35 (right), elbow −0.5, everything else 0; hands open. The real robot uses the same home pose.
 
 ## 5. Safety filter
 
@@ -146,7 +145,7 @@ the forearm. Sim home pose (`aaltonomous/sim/aalto_task/layout.py` `ARM_HOME`): 
 
 - **Not covered:** self-collision (arm vs torso, arm vs arm) and fingertips vs table (only wrist and palm frames are
   checked). Avoid them yourself; on the real robot staff will stop the run.
-- The finals values may be tuned on the real robot (**TBD**); they will not get looser than the above.
+- The finals values may be tuned on the real robot; they will not get looser than the above.
 - Check your trajectories offline: `SafetyFilter.from_files()` + `filter(action, t)` returns `clipped` and `reasons`
   (see the module docstring).
 
@@ -170,7 +169,7 @@ the forearm. Sim home pose (`aaltonomous/sim/aalto_task/layout.py` `ARM_HOME`): 
 | head (D435i colour; depth aligned to it, `depth_scale` 0.001) | fx = fy = 615, cx 320, cy 240, no distortion | Fixed `T_pelvis_optical` from the URDF `d435_link` (waist 0), camera pitched ~48° down | **Provisional:** intrinsics are typical D435 values; extrinsics are URDF, not yet checked with the AprilTag (M7). Sim uses exactly these values |
 | left / right wrist | fx = fy = 400, cx 320, cy 240 | Moves with the arm: `FK(arm_q)` of `*_wrist_yaw_link` × `T_link_optical` | **Unknown yet:** intrinsics placeholder, `T_link_optical` = null until calibrated |
 
-The calibrated bundle ships with a data drop (**TBD** which one). Until then, treat the values as approximate.
+Treat these values as approximate; a data drop may ship refined ones.
 
 ## 7. Scene geometry
 
@@ -182,7 +181,7 @@ layout cards and the success checker). Values marked *(default)* there are estim
 | Counter | Table top 80 cm above the floor; surface at **z = +0.01 m** in the pelvis frame (pelvis assumed 0.79 m above the floor, *(default)*) |
 | Printed mat | 0.90 × 0.45 m, 5 cm grid, near edge 0.14 m in front of the pelvis, centred left-right. Texture `aaltonomous/scene/assets/mat_texture.png` (same image in sim and on the print) |
 | Mat frame | Origin at the mat corner on the robot's **right**, nearest edge; x towards the robot's left, y away from the robot. `p_pelvis = (0.14 + y_mat, −0.45 + x_mat, 0.01 + z_mat)` |
-| Objects | Cube, cylinder, equilateral triangular prism; size **0.045 m** (cube side = cylinder diameter = triangle altitude), height = size, 2.5 mm fillets; matte PLA, ~50 g in sim. Exact printed size **TBD** (being measured). Meshes: `aaltonomous/scene/assets/object_*.stl` |
+| Objects | Cube, cylinder, equilateral triangular prism; size **0.045 m** (cube side = cylinder diameter = triangle altitude), height = size, 2.5 mm fillets; matte PLA, ~50 g in sim. Printed objects may differ by about a millimetre. Meshes: `aaltonomous/scene/assets/object_*.stl` |
 | Colours | red, yellow, blue (sim RGB in `scene.yaml`) |
 | Object band | centres sampled at pelvis x 0.26–0.33 m, y −0.17–0.17 m (mat x 0.28–0.62, y 0.12–0.19); yaw ±45°; ≥ 8 cm apart; 3–5 objects |
 | Bins | 0.14 × 0.14 m outer, 6 cm walls, 3 mm walls/floor. Centres (pelvis frame): **left (0.28, +0.36)** red, **center (0.445, 0.00)** yellow, **right (0.28, −0.36)** blue |

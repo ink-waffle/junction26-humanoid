@@ -46,7 +46,7 @@ A VLM/LLM reads the instruction and the image and calls skills **you** write (pi
   tick. Budget: with 120 s and 3–5 objects you can afford a few calls, not dozens.
 - The planner is only as good as the skills under it: the precision (grasp, place) still has to come from route 1, 3
   or 4.
-- API access from the container during eval / finals and API credits: **TBD** (see [FAQ](FAQ.md)). Plan a fallback
+- External APIs are allowed at your own risk; we provide no network or credits (see [FAQ](FAQ.md)). Plan a fallback
   (local model, or a deterministic parser for the training templates in `tasks.py`).
 
 ## Route 3: imitation learning / VLA
@@ -60,13 +60,13 @@ Real demos (+ synthetic demos) → policy that maps `obs` → joint targets.
 - Small policies: [LeRobot](https://github.com/huggingface/lerobot) ACT and Diffusion Policy; SmolVLA (in LeRobot).
 - VLAs: [openpi](https://github.com/Physical-Intelligence/openpi) (π0 / π0.5; its websocket + msgpack server
   pattern is what our protocol is modelled on), [NVIDIA Isaac GR00T](https://github.com/NVIDIA/Isaac-GR00T).
-  Fine-tuning needs 80 GB GPUs (bookable pool, **TBD**); inference fits the 32 GB finals GPU.
+  Fine-tuning needs 80 GB GPUs (get them from Verda yourself); inference fits the 32 GB finals GPU.
 - More data: generate synthetic demos in our Isaac task with
   Isaac Lab Mimic (see the imitation-learning section of the [Isaac Lab docs](https://isaac-sim.github.io/IsaacLab/))
-  from the real demos replayed in sim (no ready-made example from us yet, **TBD**), or roll out your own scripted
+  from the real demos replayed in sim (no ready-made example from us), or roll out your own scripted
   policy with domain randomisation on.
 - Return action chunks (k, 14) to meet the 27 Hz command rate with a slow model.
-- Main risk: the sim-to-real visual gap. Use DR, Drop 1 (venue images) and Drop 2 (shakedown logs).
+- Main risk: the sim-to-real visual gap. Use DR and Drop 1 (venue images).
 
 ### Public data for pretraining
 
@@ -92,18 +92,17 @@ use it as a residual on top of BC or a classical planner.
 ## Route 5: real2sim / data
 
 Make the sim match reality and every other route gets better: re-texture from Drop 1 captures, Gaussian splats of
-the counter, Dex3 friction / PD fitting from shakedown logs (Drop 2), better DR ranges. Has its own award
-(**TBD**).
+the counter, Dex3 friction / PD fitting from the real demos, better DR ranges.
 
 ## Difficulty knobs
 
-Current values are what the code does today. Finals values are **TBD** and will be announced at kickoff.
+Current values are what the code does today. Finals values are not announced.
 
-| Knob | Easier | Harder | Now (code) | Finals |
-|---|---|---|---|---|
-| Objects per episode | 3 | 5 | 3–5 | **TBD** |
-| Instruction | colour only | colour + shape, negation, held-out paraphrases | colour only, 8 training templates; held-out templates exist | held-out paraphrases in finals episode 3; shape-based **TBD** |
-| Layout | spread out, yaw ±15° | min spacing, yaw ±45°, distractor object | yaw ±45°, ≥ 8 cm spacing, no distractors | **TBD** |
-| Time limit | 180 s | 90 s | 120 s | **TBD** (120 s default) |
-| Hole clearance (rung 3) | +15 mm | +3 mm | +10 mm | **TBD** |
-| Shapes with holes (rung 3) | circle only | all three | all three | **TBD** |
+| Knob | Easier | Harder | Now (code) |
+|---|---|---|---|
+| Objects per episode | 3 | 5 | 3–5 |
+| Instruction | colour only | colour + shape, negation, held-out paraphrases | colour only, 8 training templates; held-out templates exist |
+| Layout | spread out, yaw ±15° | min spacing, yaw ±45°, distractor object | yaw ±45°, ≥ 8 cm spacing, no distractors |
+| Time limit | 180 s | 90 s | 120 s |
+| Hole clearance (rung 3) | +15 mm | +3 mm | +10 mm |
+| Shapes with holes (rung 3) | circle only | all three | all three |

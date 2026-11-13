@@ -1,6 +1,6 @@
 # Rules and scoring
 
-*Draft 2026-11-11. **TBD** = not decided yet; the kickoff version is binding.*
+*Version 2026-11-13. Organisers may clarify details during the event; announcements on the Junction Discord.*
 
 ## 1. Rungs
 
@@ -11,9 +11,8 @@
 | 3 (stretch) | `insert_shapes` | `"Put each object through the hole of the same shape in the lid."` | Circle / square / triangle hole in a lid on one bin. Sim; real robot only as a bonus if time allows |
 
 - Bin colours (fixed): **left = red, center = yellow, right = blue**.
-- Rung 2 training templates are in `aaltonomous/interface/tasks.py` (`TEMPLATES`, 8 of them). They currently map
-  **by colour only**. Whether instructions will also map by shape ("round things go left") is **TBD**.
-- A **held-out** set of instruction templates is reserved for the finals (and possibly the leaderboard, **TBD**).
+- Rung 2 training templates are in `aaltonomous/interface/tasks.py` (`TEMPLATES`, 8 of them). The instruction
+  defines the mapping; evaluation and finals instructions may be phrased differently from the training templates.
   Expect paraphrases you haven't seen.
 
 ## 2. Episode
@@ -47,8 +46,8 @@ scored so far are kept.
 
 - **Sim score** = mean episode score over seeded episodes on the **held-out sim variant**: same task, different
   textures, lighting, object poses and camera jitter than anything you can train on. Seeds are secret.
-- Which task(s) count, number of episodes, and weighting of rung 1 vs 2 on the leaderboard: **TBD**.
-- **Sim gate** — your submission must pass on every gate episode to get real-robot time. Current defaults of
+- Organisers pick the finalists from the sim leaderboard.
+- **Sim gate** — only submissions that run cleanly get real-robot time. Defaults of
   `aaltonomous/sim/evaluate.py`:
   - no safety abort, no watchdog / safe stop, no policy timeout (> 30 s per call), no crash, no lost connection;
   - **0 clipped steps** (`--gate-max-clips 0`): every target must already respect the safety limits, including the
@@ -58,19 +57,15 @@ scored so far are kept.
     In sim, the 30 Hz loop and the 120 s limit run on the **sim clock** (the sim is slower than real time), so a second check applies:
   - **your own latency must also allow ≥ 27 Hz** (`policy_hz_rt`: command ticks ÷ wall time your server spent
     answering). This is what the real robot will see: a policy that only keeps up because the sim is slow fails.
-  - Number of gate episodes: **TBD**.
-- About **5 finalists** (**TBD**), chosen by sim score + gate + a short code check by the organisers.
 
 ## 5. Real-robot finals
 
-- Each finalist gets a **shakedown slot** (Sat evening, 10–15 min, **TBD**) and gets its logs back.
 - Finals: **3 episodes**, scored on the real robot only:
   1. `sort_fixed`
   2. `sort_language` with a known (training) template
   3. `sort_language` with an unseen instruction and layout — **weight ×1.5**
 - **Final ranking** = real-robot score. Sim score breaks ties.
-- Which difficulty knobs are fixed for the finals (objects per episode, yaw range, distractors, time limit) — see
-  [STARTER_PATHS.md](STARTER_PATHS.md#difficulty-knobs); final values **TBD**.
+- Finals settings (objects, layout, time limit) are not announced in advance.
 
 ## 6. Safety (enforced, not negotiable)
 
@@ -79,8 +74,9 @@ scored so far are kept.
 - Every target goes through the safety filter: joint limits minus a margin, a **velocity cap of 1 rad/s (arms) and
   3 rad/s (hands)**, a workspace box and a counter keep-out box for the wrists and palms, a watchdog, and an abort
   after more than 30 clipped steps. Details: [INTERFACE.md](INTERFACE.md#5-safety-filter).
-- Staff may stop any run at any time with the e-stop. A stopped run keeps the points scored so far (**TBD**: whether
-  a staff-stopped run may be repeated).
+- Staff may stop any run at any time with the e-stop. A stopped run keeps the points scored so far.
+- If the robot fails or a run is stopped through no fault of the team, the organisers decide what happens (rerun
+  or sim score).
 - Robot cooldown breaks between runs are at staff discretion.
 
 ## 7. What's allowed
@@ -92,12 +88,8 @@ scored so far are kept.
 | Training on our demos, the sim, and all drops | Trying to extract or reverse-engineer held-out configs, seeds or templates |
 | Generating your own sim data (Mimic, DR, RL rollouts) | Using privileged sim state (scene service object poses) inside a submission: submissions only see `obs` |
 | Using both arms | Hard-coding layouts; the layouts are random |
-| Calling external APIs from your container | **TBD** — whether the finals machine gives containers internet access (see [FAQ](FAQ.md)) |
+| Calling external APIs from your container, **at your own risk**: we provide no network (see [FAQ](FAQ.md)) | |
 
-## 8. Awards (**TBD**, draft)
+## 8. Award
 
-- **Overall winner** — real-robot finals score
-- **Best learned policy** — best real result from a learned approach
-- **Best sim2real / data pipeline** — real2sim, synthetic data, domain randomisation
-- **Best rung 3** (sim)
-- Prizes: **TBD**
+- **Winner** — best real-robot finals score. Prizes are announced by Junction.
