@@ -25,11 +25,16 @@ runs headless and still renders the cameras.
 ### Data
 
 **Where is the data?** Real teleop demos in LeRobot format: [Data card](../../data/DATA_CARD.md), how they were
-recorded: [RECORDING.md](../../data/RECORDING.md). Drop 0 at kickoff, Drop 1 (venue lighting, empty-scene RGB-D,
-real depth noise) on Saturday. Download links are posted on the Junction Discord.
+recorded: [RECORDING.md](../../data/RECORDING.md). Drop 0 on Friday evening, more on Saturday (e.g. Drop 1: venue lighting, empty-scene RGB-D,
+real depth noise). Download links are posted on the Junction Discord.
 
-**How much real data is there?** About 20 episodes per rung plus a few deliberately messy ones. That is the point
-of the challenge: sim is free, reality is scarce.
+**How much real data is there?** Not much, and it is **raw**: successful, failed and messy episodes together.
+Use the success label and warnings in `meta/aalto_episodes.jsonl` and decide yourself what is good data. That is
+the point of the challenge: sim is free, reality is scarce.
+
+**The sim doesn't look or behave like the real robot. Is that a bug?** It is rough on purpose. We improve the
+basic calibration during the event (versioned, changelog on Discord); matching looks, depth and physics to the
+real drops is part of the challenge. See [the brief](README.md#sim-and-data-rough-on-purpose).
 
 **Can I use other datasets / pretrained models?** Yes, anything public. See
 [STARTER_PATHS.md](STARTER_PATHS.md#public-data-for-pretraining).

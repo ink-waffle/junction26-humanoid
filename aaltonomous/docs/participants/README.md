@@ -32,10 +32,23 @@ Details: [RULES_AND_SCORING.md](RULES_AND_SCORING.md).
 
 | When | What |
 |---|---|
-| Fri, kickoff | Live robot demo, brief, **Drop 0** (sim, real demos, calibration, baseline) |
+| Fri, kickoff | Live robot demo, brief, sim + baseline |
+| Fri evening | **Drop 0**: first real-robot data (raw teleop demos) |
 | Fri–Sat | Work in sim on cloud GPUs |
-| Sat | **Drop 1**: venue lighting, empty-scene RGB-D, real depth noise on our objects ([how it is captured](../../data/drop1/CHECKLIST.md)). Organisers pick the finalists |
+| Sat | More drops, e.g. **Drop 1**: venue lighting, empty-scene RGB-D, real depth noise on our objects ([how it is captured](../../data/drop1/CHECKLIST.md)). Organisers pick the finalists |
 | Sun | Final submission (Docker image), **real-robot finals**, award |
+
+## Sim and data: rough on purpose
+
+The sim is **deliberately rough**. We will improve the basic calibration during the event (wrist camera mounts,
+camera intrinsics, box and object sizes), but making it match reality — looks, lighting, depth noise, contact
+physics — is part of the challenge. The real data drops are your reference.
+
+Real data drops are **raw**: they include failed, messy and partly broken episodes. Each episode's success label,
+operator notes and warnings are in `meta/aalto_episodes.jsonl`; deciding what to train on is up to you.
+
+Updates to the sim image, calibration and data are **versioned** (`v1`, `v2`, …) and announced on Discord with a
+one-line changelog. Values may change between versions; the obs/action keys and the data format will not.
 
 ## Read next
 

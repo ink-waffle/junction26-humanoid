@@ -91,8 +91,10 @@ use it as a residual on top of BC or a classical planner.
 
 ## Route 5: real2sim / data
 
-Make the sim match reality and every other route gets better: re-texture from Drop 1 captures, Gaussian splats of
-the counter, Dex3 friction / PD fitting from the real demos, better DR ranges.
+The sim is deliberately rough ([why](README.md#sim-and-data-rough-on-purpose)). Make it match reality and every
+other route gets better: re-texture from the drop captures, lighting, depth noise models, Gaussian splats of the
+counter, Dex3 friction / PD fitting from the real demos, better DR ranges. We only fix basic calibration (camera
+mounts, intrinsics, dimensions); everything else is yours.
 
 ## Difficulty knobs
 

@@ -40,6 +40,7 @@ env.close()
 - A camera that has no frame yet yields an all-zero image. Handle it.
 - No force / tactile / timestamps per sensor in `obs`. Observation latency on the real robot is not measured yet.
 - Sim: the head is one 640×480 pinhole at the calibrated head pose; the wrist cameras use **placeholder poses**.
+  Calibration values are updated during the event (versioned, changelog on Discord); the keys don't change.
 
 ## 3. Actions
 

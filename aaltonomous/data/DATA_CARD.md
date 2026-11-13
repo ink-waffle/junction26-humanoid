@@ -57,8 +57,8 @@ filter check, DDS rates, warnings, and head depth health (`head_depth`, `depth.s
   `obs[t]` (an anti-aliased resample to 30 Hz).
 - Cameras: head RGB-D from `head_rgbd_server.py` on PC2 and wrists from teleimager. Each frame is the newest image
   at the tick. A camera slower than 30 fps repeats frames.
-- Only episodes labelled successful by the operator are included (unless stated otherwise). Unlabelled, aborted
-  and discarded ones are not.
+- **Raw drop:** successful, failed and messy episodes are all included. Use `success`, `notes` and `warnings` in
+  `meta/aalto_episodes.jsonl` to choose what to train on; judging data quality is part of the challenge.
 - Calibration (intrinsics and extrinsics for the 3 cameras), `joint_spec.yaml`, and the scene geometry and mat
   texture ship in the same drop.
 
