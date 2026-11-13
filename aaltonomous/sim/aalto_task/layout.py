@@ -99,7 +99,7 @@ def evaluate(sc: Scene, task, objects, mapping=None):
     """Spec §3 outcomes + score for the ACTIVE objects. objects: [{name, color, shape, active, pos, speed}]
     (pos = pelvis frame). For sort tasks a None mapping means the rung-1 colour -> bin mapping."""
     if task == "sort_fixed" and not mapping:
-        mapping = {c: b for b, c in tasks.BIN_COLOR.items()}
+        mapping = dict(tasks.FIXED_MAPPING)
     mapping = parse_mapping(mapping)
     res = []
     for o in objects:

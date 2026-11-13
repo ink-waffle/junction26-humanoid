@@ -132,15 +132,19 @@ class TestPlanner(unittest.TestCase):
 
 
     def test_cross_body_object_is_relocated(self):
-        """Red (left bin) object on the RIGHT: neither arm can do pick -> bin, so the right arm puts it down on
-        the counter where the left arm has a full plan from home. (Robot profile: the looser `sim` IK reaches it
-        directly.)"""
+        """Relocation fallback: the right arm puts a red (left bin) object down on the counter where the left arm has a
+        full plan from home. With the published box row the left arm reaches the whole object band directly, so the
+        fallback is called explicitly here."""
         from .perception import Detection
         cfg = load_config(profile="none")
         post, home = hand_postures(cfg), home_arm(cfg)
         pl = Planner(cfg, SC, post, home)
-        top = SC.mat_to_pelvis([0.36, 0.18, SC.object_height()])
-        p = pl.plan(Detection("red", top, 0, 0, "depth"), home, post["open"])
+        top = SC.mat_to_pelvis([0.30, 0.18, SC.object_height()])
+        det = Detection("red", top, 0, 0, "depth")
+        direct = pl.plan(det, home, post["open"])
+        self.assertTrue(direct.ok, direct.reason)
+        self.assertEqual((direct.side, direct.target_bin), ("left", "left"))
+        p = pl.plan_relocation(det, "left", home, post["open"])
         self.assertTrue(p.ok, p.reason)
         self.assertEqual((p.side, p.target_bin), ("right", "counter"))
         self.assertEqual(p.safety_clips, 0)

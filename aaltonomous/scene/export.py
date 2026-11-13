@@ -177,7 +177,7 @@ def mat_image(sc, px_per_m=1000):
 
     b = sc.cfg["bins"]                                  # bin footprints as 4 px outlines in the bin colour
     for name, (cx, cy) in b["centers"].items():
-        rgb = sc.colors[b["color"][name]]
+        rgb = sc.bin_rgb
         hx, hy = np.asarray(b["outer_size"]) / 2
         r0, c0 = to_px(cx - hx, cy + hy)
         r1, c1 = to_px(cx + hx, cy - hy)
@@ -237,7 +237,7 @@ def scene_sheet(sc):
         f"Bins ({b['outer_size'][0] * 100:.0f} x {b['outer_size'][1] * 100:.0f} cm, walls "
         f"{b['wall_height'] * 100:.0f} cm), centred on the printed outlines:",
     ]
-    lines += [f"  {n:<7} x={cx * 100:5.1f} cm  y={cy * 100:5.1f} cm  colour={b['color'][n]}"
+    lines += [f"  {n:<7} x={cx * 100:5.1f} cm  y={cy * 100:5.1f} cm  (identical, RGB {tuple(b['rgb'])})"
               for n, (cx, cy) in b["centers"].items()]
     o, lid = sc.cfg["objects"], sc.cfg.get("lid")
     lines += ["",

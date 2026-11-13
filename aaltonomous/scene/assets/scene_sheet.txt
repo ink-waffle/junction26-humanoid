@@ -1,15 +1,15 @@
 AALTONOMOUS SCENE SHEET (generated from aaltonomous/scene/scene.yaml)
 
-Mat: 90 x 45 cm, printed at 100 %, taped flat, grid 5 cm.
+Mat: 90 x 50 cm, printed at 100 %, taped flat, grid 5 cm.
 Counter top: 110 x 60 cm, mat centred on it.
 Mat origin = mat corner on the ROBOT'S RIGHT at the edge NEAREST the robot.
   measure: mat origin in the pelvis frame (x fwd, y left, z up): (14, -45, 1) cm  (default -- measure and write back into scene.yaml)
   => mat near edge 14 cm in front of the pelvis, counter surface -1 cm below the pelvis.
 
-Bins (14 x 14 cm, walls 6 cm), centred on the printed outlines:
-  left    x= 81.0 cm  y= 14.0 cm  colour=red
-  center  x= 45.0 cm  y= 30.5 cm  colour=yellow
-  right   x=  9.0 cm  y= 14.0 cm  colour=blue
+Bins (21 x 21 cm, walls 6 cm), centred on the printed outlines:
+  left    x= 71.0 cm  y= 36.5 cm  (identical, RGB (230, 110, 30))
+  center  x= 45.0 cm  y= 36.5 cm  (identical, RGB (230, 110, 30))
+  right   x= 19.0 cm  y= 36.5 cm  (identical, RGB (230, 110, 30))
 
 Objects: 3 shapes x 3 colours (cube, cylinder, triangle; red, yellow, blue), 2 per type. size parameter 45 mm (default -- measure the printed parts and write back into objects.size), height 45 mm, fillet 2.5 mm; grasp width = size for all shapes (triangle side 52 mm).
 Rung-3 lid on the left bin: 3 mm plate on the rim, holes = object + 10 mm clearance (circle, square, triangle).

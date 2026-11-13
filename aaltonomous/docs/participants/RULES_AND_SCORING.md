@@ -6,11 +6,11 @@
 
 | Rung | Task ID | Instruction | Mapping |
 |---|---|---|---|
-| 1 | `sort_fixed` | Always `"Sort each cube into the bin of the same color."` | Object colour = bin colour; shape ignored |
-| 2 | `sort_language` | A sentence from a template set with paraphrases | Defined by the instruction. Bins may be named by position (`left`, `center`, `right`) **or** by colour, so the instruction can contradict the bin colours |
+| 1 | `sort_fixed` | Always `"Put the red objects in the left bin, the yellow objects in the center bin and the blue objects in the right bin."` | Fixed: red → left, yellow → center, blue → right; shape ignored |
+| 2 | `sort_language` | A sentence from a template set with paraphrases | Defined by the instruction. Bins are always named by position (`left`, `center`, `right`) |
 | 3 (stretch) | `insert_shapes` | `"Put each object through the hole of the same shape in the lid."` | Circle / square / triangle hole in a lid on one bin. Sim; real robot only as a bonus if time allows |
 
-- Bin colours (fixed): **left = red, center = yellow, right = blue**.
+- The three bins are identical orange boxes with no markings, named only by position: **left, center, right**.
 - Rung 2 training templates are in `aaltonomous/interface/tasks.py` (`TEMPLATES`, 8 of them). The instruction
   defines the mapping; evaluation and finals instructions may be phrased differently from the training templates.
   Expect paraphrases you haven't seen.
@@ -46,7 +46,7 @@ scored so far are kept.
 
 - **Sim score** = mean episode score over seeded episodes on the **held-out sim variant**: same task, different
   textures, lighting, object poses and camera jitter than anything you can train on. Seeds are secret.
-- Organisers pick the finalists from the sim leaderboard.
+- Organisers evaluate the submitted images in sim and pick the finalists.
 - **Sim gate** — only submissions that run cleanly get real-robot time. Defaults of
   `aaltonomous/sim/evaluate.py`:
   - no safety abort, no watchdog / safe stop, no policy timeout (> 30 s per call), no crash, no lost connection;

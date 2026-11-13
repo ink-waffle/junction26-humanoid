@@ -15,7 +15,8 @@ perception:
   hsv:
     # S min 70: lit TOP faces are washed out (sim: S ~95 red/blue, ~123 yellow vs ~150 on the side faces). With
     # S >= 120 only the front face matched, so the "top" was its upper edge: 15-20 mm short in x (2026-11-11).
-    red:    [[[0, 70, 70], [10, 255, 255]], [[170, 70, 70], [180, 255, 255]]]
+    # red stops at H 8: the orange boxes are H ~12 (~8 at worst under held-out bin DR); bin hulls are also masked.
+    red:    [[[0, 70, 70], [8, 255, 255]], [[170, 70, 70], [180, 255, 255]]]
     yellow: [[[18, 70, 90], [35, 255, 255]]]
     blue:   [[[100, 70, 50], [130, 255, 255]]]
   erode_px: 2                 # shrink the mask before using depth (edge pixels mix object + counter depth)
@@ -52,6 +53,7 @@ grasp:
   fingertip_clearance: 0.012  # fingertips (preshape posture, URDF) stay this far above the counter at grasp
   approach_height: 0.08       # pregrasp = grasp point this far above the grasp height
   carry_height: 0.16          # grasp point z above the counter while carrying (clears bin walls + object)
+  drop_inset: 0.05            # release this far inside the inner walls at the box point nearest the pelvis (null = centre)
   drop_above_rim: 0.04        # grasp point above bin rim + object half size when releasing
   retreat_up: 0.08            # then a joint-space move home: start it high enough to clear the bin rims
   release_posture: release     # hand posture for letting go (hand.<name>); back to `open` on the way home

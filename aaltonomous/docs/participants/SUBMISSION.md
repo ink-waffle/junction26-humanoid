@@ -116,7 +116,7 @@ python -m aaltonomous.deploy.replay runs/<team>/<run>/episode_000.npz --policy w
 
 - Setting up the sim for step 3 (`run_sim.sh`, the `isaac` environment, domain randomisation `AALTO_DR=train`):
   [Quickstart](../../cloud/QUICKSTART.md).
-- Your local `evaluate.py` runs on the **training** variant. The leaderboard runs the same script on the held-out
+- Your local `evaluate.py` runs on the **training** variant. Our evaluation runs the same script on the held-out
   variant with secret seeds.
 - `evaluate.py` gate defaults: `--gate-max-clips 0`, `--gate-min-hz 27`, `--time-limit 120`. Run with the defaults.
 - Runner logs: `runs/<team>/<run>/episode_NNN.npz` (per tick: joints, commands, holds, clips, safety mode),
@@ -136,14 +136,8 @@ python -m aaltonomous.deploy.replay runs/<team>/<run>/episode_000.npz --policy w
    ```
 3. We first run a quick pre-check (image pulls, linux/amd64, ≤ 40 GB, server up within 120 s,
    `replay --synthetic` at >= 27 Hz: run the same check yourself with step 1 of §5). A failure comes back with the
-   reason within minutes and costs no sim time. Then the held-out sim evaluation runs; the leaderboard updates when
-   it finishes (about an hour per submission, queue permitting).
-4. Status: a public queue page shows each submission's state (queued, validating, evaluating, done, failed + reason)
-   and, when done, the mean score and the sim-gate result with its reasons. Per-episode held-out logs are not
-   shared.
+   reason. Then we evaluate it in sim on the held-out variant. Per-episode held-out logs are not shared.
 
-- Leaderboard submissions: one evaluation per team at a time; a newer submission replaces your older one that is
-  still waiting; at most one evaluation start per team per 60 minutes.
 - Final submission deadline: Sunday, time announced by the organisers. The image you hand in last before the
   deadline is the one that runs in the finals. After a finals run you get your own run logs back
   (`runs/<team>/<run>/`, incl. your container's log).

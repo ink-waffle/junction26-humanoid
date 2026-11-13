@@ -38,7 +38,7 @@ Depth + detection → object pose → grasp → IK → scripted Dex3 grasp.
 
 A VLM/LLM reads the instruction and the image and calls skills **you** write (pick, place, look, ...).
 
-- Fits rung 2 (mapping by language, bins named by position or colour, contradicting the bin colours).
+- Fits rung 2 (mapping by language, bins named by position).
 - **Latency budget:** frontier VLMs take ~10–20 s per call. The runner holds the robot still while an `act()`
   call is in flight (up to 30 s per call), but held ticks don't count toward the sim gate's 27 Hz command rate,
   so: call the model in a background thread, keep returning hold targets from `act()`, and execute skills at
@@ -91,8 +91,10 @@ use it as a residual on top of BC or a classical planner.
 
 ## Route 5: real2sim / data
 
-Make the sim match reality and every other route gets better: re-texture from Drop 1 captures, Gaussian splats of
-the counter, Dex3 friction / PD fitting from the real demos, better DR ranges.
+The sim is deliberately rough ([why](README.md#sim-and-data-rough-on-purpose)). Make it match reality and every
+other route gets better: re-texture from the drop captures, lighting, depth noise models, Gaussian splats of the
+counter, Dex3 friction / PD fitting from the real demos, better DR ranges. We only fix basic calibration (camera
+mounts, intrinsics, dimensions); everything else is yours.
 
 ## Difficulty knobs
 

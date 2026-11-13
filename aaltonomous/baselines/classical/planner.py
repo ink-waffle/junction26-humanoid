@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from aaltonomous.interface.safety import JointSpec, SafetyConfig, SafetyFilter
+from aaltonomous.interface.tasks import FIXED_MAPPING
 
 from .kinematics import ArmKinematics
 
@@ -102,12 +103,24 @@ class Planner:
         self.safety = safety or SafetyConfig(dt=dt)
         self.dt = dt
         self.height = float(cfg["perception"].get("object_height") or scene.object_height())
-        bins = scene.cfg["bins"]
-        self.mapping = mapping or {c: b for b, c in bins["color"].items()}  # sort_fixed: colour -> same-colour bin
+        self.mapping = mapping or dict(FIXED_MAPPING)  # sort_fixed: fixed colour -> bin position
 
     # ------------------------------------------------------------------ geometry helpers
     def bin_xy(self, name):
         return self.scene.mat_to_pelvis(np.r_[self.scene.cfg["bins"]["centers"][name], 0.0])[:2]
+
+    def drop_xy(self, name):
+        """Release point (pelvis xy) in bin `name`: the point of the inner footprint nearest the pelvis, `grasp.drop_inset`
+        inside the inner walls (the published box row puts the box centres past the arm's reach). None -> centre."""
+        inset = self.cfg["grasp"].get("drop_inset")
+        c = self.bin_xy(name)
+        if inset is None:
+            return c
+        lo, hi = self.scene.bin_inner_box(name)
+        a, b = self.scene.mat_to_pelvis(np.r_[lo[:2], 0.0])[:2], self.scene.mat_to_pelvis(np.r_[hi[:2], 0.0])[:2]
+        lo2 = np.minimum(np.minimum(a, b) + inset, c)
+        hi2 = np.maximum(np.maximum(a, b) - inset, c)
+        return np.clip(np.zeros(2), lo2, hi2)
 
     def _over_counter(self, p):
         pm = self.scene.pelvis_to_mat(p)
@@ -327,7 +340,7 @@ class Planner:
         wall = float(sc.cfg["bins"]["wall_height"])
         z_carry = zc + max(g["carry_height"], wall + H + 0.03)
         z_drop = zc + wall + H / 2 + g["drop_above_rim"]
-        bxy = self.bin_xy(bin_name)
+        bxy = self.drop_xy(bin_name)
         if place_xy is not None:  # relocation: put it down on the counter (release just above the grasp height)
             bxy, z_drop = np.asarray(place_xy, float), z + 0.005
         P = {"pregrasp": np.r_[xy, max(z + g["approach_height"], z_carry)], "grasp": np.r_[xy, z], "lift": np.r_[xy, z_carry],

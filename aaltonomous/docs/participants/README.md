@@ -16,14 +16,14 @@ or improving the sim itself.
 ## The task in one paragraph
 
 3–5 printed objects (cube, cylinder or triangular prism; red, yellow or blue; about 45 mm) lie at random positions on the
-counter. Three bins sit at fixed positions: left, centre (behind the objects) and right. Every 1/30 s your policy
+counter. Three identical orange bins sit in a row behind the objects at fixed positions: left, center and right. Every 1/30 s your policy
 gets head RGB-D, two wrist RGB images, the joint states and a text instruction. It returns absolute joint targets for
 both 7-DoF arms and both 7-DoF hands. Every target passes through our safety filter. An episode lasts at most 120 s.
 
 | Rung | Task ID | What |
 |---|---|---|
-| 1 | `sort_fixed` | Object colour = bin colour |
-| 2 | `sort_language` | A text instruction defines the mapping, which may contradict the bin colours |
+| 1 | `sort_fixed` | Fixed mapping: red → left, yellow → center, blue → right |
+| 2 | `sort_language` | A text instruction defines the mapping; bins are named by position |
 | 3 (stretch) | `insert_shapes` | Each object goes through the matching hole of a lid on one bin (sim; real only as a bonus) |
 
 Details: [RULES_AND_SCORING.md](RULES_AND_SCORING.md).
@@ -32,10 +32,23 @@ Details: [RULES_AND_SCORING.md](RULES_AND_SCORING.md).
 
 | When | What |
 |---|---|
-| Fri, kickoff | Live robot demo, brief, **Drop 0** (sim, real demos, calibration, baseline) |
-| Fri–Sat | Work in sim on cloud GPUs. Live **sim leaderboard** on the held-out variant |
-| Sat | **Drop 1**: venue lighting, empty-scene RGB-D, real depth noise on our objects ([how it is captured](../../data/drop1/CHECKLIST.md)). Organisers pick the finalists |
+| Fri, kickoff | Live robot demo, brief, sim + baseline |
+| Fri evening | **Drop 0**: first real-robot data (raw teleop demos) |
+| Fri–Sat | Work in sim on cloud GPUs |
+| Sat | More drops, e.g. **Drop 1**: venue lighting, empty-scene RGB-D, real depth noise on our objects ([how it is captured](../../data/drop1/CHECKLIST.md)). Organisers pick the finalists |
 | Sun | Final submission (Docker image), **real-robot finals**, award |
+
+## Sim and data: rough on purpose
+
+The sim is **deliberately rough**. We will improve the basic calibration during the event (wrist camera mounts,
+camera intrinsics, box and object sizes), but making it match reality — looks, lighting, depth noise, contact
+physics — is part of the challenge. The real data drops are your reference.
+
+Real data drops are **raw**: they include failed, messy and partly broken episodes. Each episode's success label,
+operator notes and warnings are in `meta/aalto_episodes.jsonl`; deciding what to train on is up to you.
+
+Updates to the sim image, calibration and data are **versioned** (`v1`, `v2`, …) and announced on Discord with a
+one-line changelog. Values may change between versions; the obs/action keys and the data format will not.
 
 ## Read next
 

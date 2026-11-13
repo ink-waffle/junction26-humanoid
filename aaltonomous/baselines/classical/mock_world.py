@@ -67,7 +67,7 @@ class Renderer:
         ox, oy = np.asarray(b["outer_size"], float) / 2
         wt, wh, ft = b["wall_thickness"], b["wall_height"], b["floor_thickness"]
         for name, (cx, cy) in b["centers"].items():
-            col = self.colors[b["color"][name]]
+            col = list(b["rgb"])
             c = sc.mat_to_pelvis([cx, cy, 0.0])
             parts = [((0, 0, ft / 2), (oy, ox, ft / 2)),                 # mat x = pelvis y, mat y = pelvis x
                      ((oy - wt / 2, 0, wh / 2), (wt / 2, ox, wh / 2)), ((-oy + wt / 2, 0, wh / 2), (wt / 2, ox, wh / 2)),
