@@ -46,7 +46,7 @@ scored so far are kept.
 
 - **Sim score** = mean episode score over seeded episodes on the **held-out sim variant**: same task, different
   textures, lighting, object poses and camera jitter than anything you can train on. Seeds are secret.
-- Organisers pick the finalists from the sim leaderboard.
+- Organisers evaluate the submitted images in sim and pick the finalists.
 - **Sim gate** — only submissions that run cleanly get real-robot time. Defaults of
   `aaltonomous/sim/evaluate.py`:
   - no safety abort, no watchdog / safe stop, no policy timeout (> 30 s per call), no crash, no lost connection;

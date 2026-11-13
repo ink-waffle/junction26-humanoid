@@ -33,7 +33,7 @@ Details: [RULES_AND_SCORING.md](RULES_AND_SCORING.md).
 | When | What |
 |---|---|
 | Fri, kickoff | Live robot demo, brief, **Drop 0** (sim, real demos, calibration, baseline) |
-| Fri–Sat | Work in sim on cloud GPUs. Live **sim leaderboard** on the held-out variant |
+| Fri–Sat | Work in sim on cloud GPUs |
 | Sat | **Drop 1**: venue lighting, empty-scene RGB-D, real depth noise on our objects ([how it is captured](../../data/drop1/CHECKLIST.md)). Organisers pick the finalists |
 | Sun | Final submission (Docker image), **real-robot finals**, award |
 

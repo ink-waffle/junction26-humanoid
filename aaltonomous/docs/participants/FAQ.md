@@ -82,7 +82,7 @@ submission; see [SUBMISSION.md §7](SUBMISSION.md#7-reference-submission-the-cla
 
 ### Rules and finals
 
-**How are finalists chosen?** Organisers pick them from the sim leaderboard (held-out variant); only
+**How are finalists chosen?** Organisers evaluate submissions in sim (held-out variant); only
 submissions that pass the sim gate qualify. See [RULES_AND_SCORING.md](RULES_AND_SCORING.md#4-finalist-selection-sim).
 
 **What is the held-out variant?** The same task with different textures, lighting and object poses that you never
