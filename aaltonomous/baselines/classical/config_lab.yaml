@@ -1,0 +1,87 @@
+# LAB COPY 2026-11-11 (DigiTwin lab pieces: orange/yellow/purple; measured on the real head cam).
+# Classical rung-1 baseline (sort_fixed): HSV blobs + depth -> pelvis frame -> top-down pick -> bin.
+# Everything tunable at the venue lives here. Units: m, rad, s. Arm vectors (14) = left 7 then right 7
+# (joint_spec.yaml order). Hand vectors (7) are in the LEFT Dex3 DDS order (thumb0,1,2, middle0,1, index0,1);
+# the right hand is mirrored automatically (sign flip, index/middle swapped) unless `right:` is given.
+
+perception:
+  camera: head
+  # OpenCV HSV (H 0-180, S/V 0-255). Each colour = list of [lo, hi] ranges (red wraps around H=0).
+  hsv:
+    red:    [[[5, 185, 120], [16, 255, 255]]]      # lab: orange pieces H 11-14 S 205-250; cardboard H 15-17 S 120-140
+    yellow: [[[179, 255, 255], [179, 255, 255]]]   # lab first test: OFF (no centre bin). Measured H 25 S 185 -> [[21,120,90],[35,255,255]]
+    blue:   [[[179, 255, 255], [179, 255, 255]]]   # lab first test: OFF. Purple measured H 127 S 97 -> [[115,60,60],[145,255,255]]
+  erode_px: 2                 # shrink the mask before using depth (edge pixels mix object + counter depth)
+  open_px: 3                  # morphological opening against speckle
+  min_area_px: 120            # smaller blobs are ignored
+  min_valid_depth_px: 25      # fewer valid depth pixels -> fall back to ray / plane at known object height
+  depth_range_mm: [150, 2000]
+  top_band: 0.006             # points within this of the highest (robust) point count as the top face
+  top_percentile: 92          # robust "highest point" percentile
+  height_range: [0.4, 2.0]    # accepted top height above the counter, in object sizes (rejects hands, bin walls)
+  counter_margin: 0.02        # objects must lie on the mat (+ margin)
+  bin_exclusion_margin: 0.01  # blobs whose centre is inside a bin footprint (+ margin) are bins / sorted objects
+  min_valid_frac: 0.2         # below this fraction of valid depth pixels the frame counts as 'no depth'
+  bin_pixel_margin: 0.004     # pixels whose 3D point is inside a bin footprint (+ margin) are dropped before grouping
+  object_size: null           # null = scene.yaml objects.size (grasp width)
+  xy_offset: [0.0, 0.0]     # camera correction; the 2026-11-11 misses were per-arm -> grasp.arm_xy_offset
+  object_height: null         # null = scene.yaml size * height_ratio
+
+grasp:
+  # Grasp = "claw from above": palm faces the counter (approach axis = palm -y on the LEFT hand, mirrored right),
+  # fingers point roughly forward and curl down in front of the object, the thumb swings in from behind.
+  point_in_palm: auto         # object centre in the LEFT palm frame; auto = centroid of the `closed` fingertips. TUNE
+  approach_axis_in_palm: [0.0, -1.0, 0.0]   # palm-frame axis that must point down (left; right mirrors y)
+  finger_hint: [1.0, 0.0, 0.0]              # weak preference for the finger direction (pelvis frame)
+  finger_hint_weight: 0.3
+  height_frac: 0.5            # grasp point z = counter + height_frac * object size (before fingertip check)
+  fingertip_clearance: 0.012  # fingertips (preshape posture, URDF) stay this far above the counter at grasp
+  approach_height: 0.08       # pregrasp = grasp point this far above the grasp height
+  carry_height: 0.16          # grasp point z above the counter while carrying (clears bin walls + object)
+  drop_above_rim: 0.04        # grasp point above bin rim + object half size when releasing
+  retreat_up: 0.05
+  arm: best                   # best = plan both arms, keep the faster valid plan | by_y = left if y > y_split
+  y_split: 0.0
+  # LAB 2026-11-12: per-arm grasp correction (pelvis frame, m). Both hands closed ~3-4 cm OUTWARD of the cube
+  # (left arm 3 cm to the robot's left, right arm ~4 cm to its right) -> point_in_palm is off, mirrored.
+  arm_xy_offset: {left: [0.0, -0.03], right: [0.0, 0.055]}   # right: +1.5 cm after a 1-2 cm right miss (2026-11-12)
+
+ik:
+  limit_margin: 0.08          # rad inside URDF limits (safety filter clips beyond 0.05)
+  pos_tol: 0.006
+  max_tilt_deg: 25            # approach axis vs straight down
+  orient_weight: [0.3, 0.1, 0.03]   # tried in turn: top-down first, then trade tilt (<= max_tilt) for reach
+  damping: 0.05
+  seed_weight: 0.03          # pull towards the seed (continuity along Cartesian paths)
+  max_iters: 150
+  max_step: 0.2
+  random_restarts: 5
+
+motion:
+  arm_max_vel: 0.5            # rad/s per joint (safety filter allows 1.0)
+  arm_max_acc: 1.5            # rad/s^2
+  hand_max_vel: 1.2           # rad/s (filter allows 3.0)
+  cart_step: 0.02             # Cartesian segments are split into IK waypoints this far apart
+  max_joint_step: 0.4         # rad between neighbouring Cartesian IK waypoints (more = branch flip, bisect / fail)
+  close_hold_s: 0.4           # wait after the hand reaches the closed posture
+  open_hold_s: 0.4
+  settle_s: 0.5               # hold at home before looking (arm lag, motion blur)
+  chunk: 10                   # ticks returned per act() (0.33 s)
+  counter_clearance: 0.03     # hand points above the counter footprint stay this high during transit
+
+# Arms out of the head camera's view of the cube region and above counter height. TUNE on the robot
+# (start = where teleop leaves the arms; the first move goes there at arm_max_vel).
+# Default: upper arms out to the sides, hands ~11 cm above pelvis height at y = +-0.32 m, outside the head view.
+home_arm_q: [-0.2, 1.1, 0.0, 0.0, 0.0, 1.4, 0.0,      # LAB: default home with arms wider + wrists bent up: hand pts x<=0.27 (box starts 0.32), z>=+0.14 (table -0.05)
+             -0.2, -1.1, 0.0, 0.0, 0.0, 1.4, 0.0]
+
+hand:                          # LEFT order: thumb0, thumb1, thumb2, middle0, middle1, index0, index1. TUNE closed
+  open:     [0.0, -0.4, 0.05, -0.4, -0.4, -0.4, -0.4]   # = preshape-like: keeps the thumb tip high over the counter
+  preshape: [0.0, -0.5, 1.5, -0.4, -0.4, -0.4, -0.4]    # wide claw: thumb back + tucked up, fingers half bent
+  closed:   [0.0, 0.5, 0.8, -1.0, -0.6, -1.0, -0.6]     # tips meet ~(0.10, -0.08) in the palm frame. TUNE squeeze
+  right: null                  # optional explicit right-hand postures {open, preshape, closed} in RIGHT DDS order
+
+policy:
+  max_attempts: 2             # same object re-detected after this many tries -> skip it
+  same_object_radius: 0.03
+  order: nearest_bin          # nearest_bin | largest

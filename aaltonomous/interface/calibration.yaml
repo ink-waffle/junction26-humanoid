@@ -1,0 +1,25 @@
+# Camera calibration bundle (spec §4.2, §7; M7). Loader: aaltonomous/interface/calibration.py.
+# All images 640x480. T_pelvis_optical = pose of the camera's OPTICAL frame (z fwd, x right, y down) in the pelvis frame.
+# Values marked (default) are placeholders until M7: RealSense factory intrinsics (rs2 get_intrinsics on PC2),
+# AprilTag check of the head extrinsics, wrist-camera checkerboard + mount pose.
+version: 1
+cameras:
+  head:                      # RealSense D435i colour; depth is aligned to colour, so it shares these intrinsics
+    intrinsics: {width: 640, height: 480, fx: 604.827, fy: 604.298, cx: 325.042, cy: 250.927, dist: [0, 0, 0, 0, 0]}  # D435I s/n 332522071513 factory colour 640x480 (rs2, 2026-11-12)
+    depth_scale: 0.001       # head_depth is uint16 mm
+    T_pelvis_optical:  # head: from URDF d435_link, waist [0.0, 0.0, 0.0] (default)
+      - [0.000000, -0.738455, 0.674302, 0.053660]
+      - [-1.000000, 0.000000, 0.000000, 0.017530]
+      - [0.000000, -0.674302, -0.738455, 0.473870]
+      - [0.000000, 0.000000, 0.000000, 1.000000]
+
+  left_wrist:
+    intrinsics: {width: 640, height: 480, fx: 400.0, fy: 400.0, cx: 320.0, cy: 240.0, dist: [0, 0, 0, 0, 0]}  # (default) unknown lens, resized
+    parent_link: left_wrist_yaw_link   # moves with the arm: pose = FK(arm_q) * T_link_optical
+    T_link_optical: null               # M7: from the mount CAD / hand-eye calibration
+    T_pelvis_optical: null
+  right_wrist:
+    intrinsics: {width: 640, height: 480, fx: 400.0, fy: 400.0, cx: 320.0, cy: 240.0, dist: [0, 0, 0, 0, 0]}  # (default)
+    parent_link: right_wrist_yaw_link
+    T_link_optical: null
+    T_pelvis_optical: null

@@ -1,0 +1,49 @@
+# Drop 1 venue capture checklist (S4). Read by capture.py (step order = capture order) and stats.py.
+# Positions are MAT coordinates (m), as on the printed mat grid and the layout cards (scene.yaml).
+# frames: lossless frames per camera (PNG). ~2.4 MB per frame set (head RGB + depth + 2 wrists).
+# kind: empty | objects | layout | arm_pose | manual
+#   objects/layout steps get per-object masks in stats.py (layout projected with calibration.yaml + colour).
+#   arm_pose: a HUMAN moves the arms with teleop; capture.py never commands the robot. Optional.
+#   manual:   phone photos etc.; capture.py only logs that it was done (files go in via package.py --phone-dir).
+version: 1
+default_frames: 20
+steps:
+  - {id: empty_on, kind: empty, lights: venue_on, frames: 60, minutes: 4,
+     prompt: "Counter with mat + 3 bins only, NO objects. Venue lights as during the event. Nobody in view. Arms at rest."}
+  - {id: phone_hdri, kind: manual, minutes: 8,
+     prompt: "PHONE: (1) panorama/HDRI from the robot's head position (standing right behind/above it), lights as in empty_on;
+              (2) 4 photos of the counter from the front, left, right, top; (3) close-up of the mat under light (glare?);
+              (4) photo of every ceiling/side light source with a white paper sheet on the counter (colour reference)."}
+  - {id: obj_red_a, kind: objects, minutes: 2,
+     objects: [{color: red, shape: cube, x: 0.30, y: 0.155}, {color: red, shape: cylinder, x: 0.45, y: 0.155},
+               {color: red, shape: triangle, x: 0.60, y: 0.155}]}
+  - {id: obj_red_b, kind: objects, minutes: 2,
+     objects: [{color: red, shape: triangle, x: 0.30, y: 0.155}, {color: red, shape: cube, x: 0.45, y: 0.155},
+               {color: red, shape: cylinder, x: 0.60, y: 0.155}]}
+  - {id: obj_yellow_a, kind: objects, minutes: 2,
+     objects: [{color: yellow, shape: cube, x: 0.30, y: 0.155}, {color: yellow, shape: cylinder, x: 0.45, y: 0.155},
+               {color: yellow, shape: triangle, x: 0.60, y: 0.155}]}
+  - {id: obj_yellow_b, kind: objects, minutes: 2,
+     objects: [{color: yellow, shape: triangle, x: 0.30, y: 0.155}, {color: yellow, shape: cube, x: 0.45, y: 0.155},
+               {color: yellow, shape: cylinder, x: 0.60, y: 0.155}]}
+  - {id: obj_blue_a, kind: objects, minutes: 2,
+     objects: [{color: blue, shape: cube, x: 0.30, y: 0.155}, {color: blue, shape: cylinder, x: 0.45, y: 0.155},
+               {color: blue, shape: triangle, x: 0.60, y: 0.155}]}
+  - {id: obj_blue_b, kind: objects, minutes: 2,
+     objects: [{color: blue, shape: triangle, x: 0.30, y: 0.155}, {color: blue, shape: cube, x: 0.45, y: 0.155},
+               {color: blue, shape: cylinder, x: 0.60, y: 0.155}]}
+  - {id: layout_1000, kind: layout, task: sort_fixed, seed: 1000, frames: 10, minutes: 2}
+  - {id: layout_1001, kind: layout, task: sort_fixed, seed: 1001, frames: 10, minutes: 2}
+  - {id: layout_2000, kind: layout, task: sort_language, seed: 2000, frames: 10, minutes: 2}
+  - {id: layout_2000_off, kind: layout, task: sort_language, seed: 2000, lights: venue_off, frames: 10, minutes: 2,
+     prompt: "SAME layout as layout_2000. Venue/ceiling lights OFF (or as dim as they get), our own lamps on."}
+  - {id: empty_off, kind: empty, lights: venue_off, frames: 60, minutes: 3,
+     prompt: "Remove all objects. Lights as in layout_2000_off (venue off, our lamps on)."}
+  - {id: empty_ownlamps_off, kind: empty, lights: own_off, frames: 30, minutes: 2, optional: true,
+     prompt: "Venue lights ON, our own lamps OFF (worst-case if a lamp fails). Then restore event lighting."}
+  - {id: pose_home, kind: arm_pose, frames: 5, minutes: 3, optional: true,
+     prompt: "Teleop operator (spotter at e-stop) brings the arms to the start pose and holds still. Lights as event."}
+  - {id: pose_over_mat, kind: arm_pose, frames: 5, minutes: 2, optional: true,
+     prompt: "Teleop: both hands ~10 cm above the mat centre, palms down, still. (Wrist cameras see the mat.)"}
+  - {id: pose_over_bins, kind: arm_pose, frames: 5, minutes: 2, optional: true,
+     prompt: "Teleop: left hand above the left bin, right hand above the right bin, still."}

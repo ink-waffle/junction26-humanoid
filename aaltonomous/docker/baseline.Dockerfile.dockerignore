@@ -1,0 +1,18 @@
+# BuildKit: used automatically with -f aaltonomous/docker/baseline.Dockerfile. Same as the repo-root .dockerignore (legacy builder).
+.git
+third_party
+!third_party/xr_teleoperate/assets/g1/g1_body29_hand14.urdf
+runs
+data
+docs
+logs
+JUNCTION
+tests
+scripts
+src
+.pytest_cache
+aaltonomous/scene/assets
+**/__pycache__
+**/*.pyc
+**/*.pem
+**/*.key

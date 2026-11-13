@@ -1,0 +1,133 @@
+# Classical rung-1 baseline (sort_fixed): HSV blobs + depth -> pelvis frame -> top-down pick -> bin.
+# Everything tunable at the venue lives here. Units: m, rad, s. Arm vectors (14) = left 7 then right 7
+# (joint_spec.yaml order). Hand vectors (7) are in the LEFT Dex3 DDS order (thumb0,1,2, middle0,1, index0,1);
+# the right hand is mirrored automatically (sign flip, index/middle swapped) unless `right:` is given.
+#
+# PROFILES: the values below are the robot-side defaults; `profiles.<name>` (dotted keys, bottom of this file)
+# override them. `profile: sim` = tuned in the Aalto Isaac sim (what the reference image scores with). Select
+# with $AALTO_PROFILE (e.g. AALTO_PROFILE=none = base values only); run.py --backend real uses `none` unless
+# --profile is given. Re-tune the sim values on the real robot before using them there (M8).
+profile: sim
+
+perception:
+  camera: head
+  # OpenCV HSV (H 0-180, S/V 0-255). Each colour = list of [lo, hi] ranges (red wraps around H=0).
+  hsv:
+    # S min 70: lit TOP faces are washed out (sim: S ~95 red/blue, ~123 yellow vs ~150 on the side faces). With
+    # S >= 120 only the front face matched, so the "top" was its upper edge: 15-20 mm short in x (2026-11-11).
+    red:    [[[0, 70, 70], [10, 255, 255]], [[170, 70, 70], [180, 255, 255]]]
+    yellow: [[[18, 70, 90], [35, 255, 255]]]
+    blue:   [[[100, 70, 50], [130, 255, 255]]]
+  erode_px: 2                 # shrink the mask before using depth (edge pixels mix object + counter depth)
+  open_px: 3                  # morphological opening against speckle
+  min_area_px: 120            # smaller blobs are ignored
+  min_valid_depth_px: 25      # fewer valid depth pixels -> fall back to ray / plane at known object height
+  depth_range_mm: [150, 2000]
+  top_band: 0.006             # points within this of the highest (robust) point count as the top face
+  top_percentile: 92          # robust "highest point" percentile
+  height_range: [0.4, 2.0]    # accepted top height above the counter, in object sizes (rejects hands, bin walls)
+  counter_margin: 0.02        # objects must lie on the mat (+ margin)
+  bin_exclusion_margin: 0.01  # blobs whose centre is inside a bin footprint (+ margin) are bins / sorted objects
+  min_valid_frac: 0.2         # below this fraction of valid depth pixels the frame counts as 'no depth'
+  bin_pixel_margin: 0.004     # pixels whose 3D point is inside a bin footprint (+ margin) are dropped before grouping
+  object_size: null           # null = scene.yaml objects.size (grasp width)
+  xy_offset: [0.0, 0.0]   # pelvis-frame xy added to every detection (head extrinsics correction). TUNE on the robot
+  object_height: null         # null = scene.yaml size * height_ratio
+
+grasp:
+  # Grasp = "claw from above": palm faces the counter (approach axis = palm -y on the LEFT hand, mirrored right),
+  # fingers point roughly forward and curl down in front of the object, the thumb swings in from behind.
+  # Object centre in the LEFT palm frame; auto = midway finger tips <-> thumb tip (`closed`). The Dex3 index/middle
+  # tips are 57 mm apart (URDF): centred between them (auto) a 45 mm object wedges between the two fingers and is
+  # never released, so the point is shifted 15 mm sideways (palm z): pinch = thumb vs ONE finger. TUNE
+  point_in_palm: [0.099, -0.084, 0.015]
+  approach_axis_in_palm: [0.0, -1.0, 0.0]   # palm-frame axis that must point down (left; right mirrors y)
+  finger_hint: [1.0, 0.0, 0.0]              # weak preference for the finger direction (pelvis frame)
+  finger_hints:               # tried in turn (LEFT arm; right mirrors y): forward, forward-inward, inward
+    - [1.0, 0.0, 0.0]
+    - [1.0, -1.0, 0.0]
+    - [0.0, -1.0, 0.0]
+  finger_hint_weight: 0.3
+  height_frac: 0.5            # grasp point z = counter + height_frac * object size (before fingertip check)
+  fingertip_clearance: 0.012  # fingertips (preshape posture, URDF) stay this far above the counter at grasp
+  approach_height: 0.08       # pregrasp = grasp point this far above the grasp height
+  carry_height: 0.16          # grasp point z above the counter while carrying (clears bin walls + object)
+  drop_above_rim: 0.04        # grasp point above bin rim + object half size when releasing
+  retreat_up: 0.08            # then a joint-space move home: start it high enough to clear the bin rims
+  release_posture: release     # hand posture for letting go (hand.<name>); back to `open` on the way home
+  arm: by_y                   # by_y = preferred arm first (bin side; centre bin: object side), other on failure | best = plan both, keep the faster
+  relocate:                   # cross-body: no arm can do object -> bin; pick with one arm, put down where the other can finish
+    enabled: true
+    max_spots: 6              # counter spots tried (nearest the target bin first)
+    region_margin: 0.02       # spots on a grid over layout.region (+ margin), mat coords
+    clearance: 0.07           # spot centre this far from other detected objects
+  y_split: 0.0
+  arm_xy_offset: {left: [0.0, 0.0], right: [0.0, 0.0]}   # per-arm grasp xy correction (pelvis frame). TUNE on the robot
+
+ik:
+  limit_margin: 0.08          # rad inside URDF limits (safety filter clips beyond 0.05)
+  pos_tol: 0.006
+  max_tilt_deg: 25            # approach axis vs straight down
+  orient_weight: [0.3, 0.1, 0.03]   # tried in turn: top-down first, then trade tilt (<= max_tilt) for reach
+  damping: 0.05
+  seed_weight: 0.03          # pull towards the seed (continuity along Cartesian paths)
+  max_iters: 150
+  max_step: 0.2
+  random_restarts: 8
+
+motion:
+  arm_max_vel: 0.5            # rad/s per joint (safety filter allows 1.0)
+  arm_max_acc: 1.5            # rad/s^2
+  hand_max_vel: 1.2           # rad/s (filter allows 3.0)
+  cart_step: 0.02             # Cartesian segments are split into IK waypoints this far apart
+  max_joint_step: 0.4         # rad between neighbouring Cartesian IK waypoints (more = branch flip, bisect / fail)
+  close_hold_s: 0.4           # wait after the hand reaches the closed posture
+  open_hold_s: 0.4
+  settle_s: 0.5               # hold at home before looking (arm lag, motion blur)
+  chunk: 10                   # ticks returned per act() (0.33 s)
+  hold_ticks: 6               # ticks per hold while planning / waiting (fewer requests; <= 0.2 s extra latency)
+  counter_clearance: 0.03     # hand points above the counter footprint stay this high during transit
+
+# Arms out of the head camera's view of the cube region and above counter height. TUNE on the robot
+# (start = where teleop leaves the arms; the first move goes there at arm_max_vel).
+# Default (2026-11-11, layout v1): hands ~22 cm above pelvis height at y = +-0.22 m, all hand points >= 6 cm above
+# the bin rims and >= 40 px outside the head image. (The old [-0.2, 0.9, 0, 0, 0, 1.0, 0] put both hands INTO the
+# side bins of layout v1 -- in the sim the wrists jammed on the bin walls.)
+home_arm_q: [0.2, 0.7, 0.4, -0.2, 0.0, -0.5, 0.0,
+             0.2, -0.7, -0.4, -0.2, 0.0, -0.5, 0.0]
+
+hand:                          # LEFT order: thumb0, thumb1, thumb2, middle0, middle1, index0, index1. TUNE closed
+  open:     [0.0, -0.5, 1.5, -0.4, -0.4, -0.4, -0.4]    # = preshape (thumb back + up): also the release-to-home posture
+  preshape: [0.0, -0.5, 1.5, -0.4, -0.4, -0.4, -0.4]    # wide claw: thumb back + tucked up, fingers half bent
+  closed:   [0.0, -0.1, 1.2, -1.0, -0.6, -1.0, -0.6]    # finger tips (0.101, -0.089), thumb tip (0.065, -0.088) in the
+                                                         # palm frame: 3.6 cm gap = 0.9 cm squeeze on a 4.5 cm object. TUNE
+                                                         # (old [0, 0.5, 0.8, ...] closed the tips onto ONE point = the object
+                                                         # centre: in the sim the cube got wedged between index and middle)
+  release:  [0.0, -0.5, 1.5, -0.05, -0.05, -0.05, -0.05] # let go: thumb back + up, fingers straight (sim: the cube
+                                                         # stayed hooked in half-bent fingers with `open`/`preshape`)
+  right: null                  # optional explicit right-hand postures {open, preshape, closed} in RIGHT DDS order
+
+policy:
+  max_attempts: 2             # same object re-detected after this many tries -> skip it
+  same_object_radius: 0.03
+  order: nearest_bin          # nearest_bin | largest
+
+# Overrides per profile (dotted keys). `sim` = Aalto Isaac sim, ported from the oracle's ORACLE_OVERRIDES
+# (sim/oracle.py) minus anything privileged; SIM-TUNED, not validated on the robot.
+profiles:
+  sim:
+    # Home = the sim task's ARM_HOME (sim/aalto_task/layout.py; arms down, elbows bent), the pose the evaluator
+    # leaves the arms in. Hands ARE in the head view there, but off the objects in the nominal layouts (measured
+    # perception error ~4 mm). The robot default home above keeps them out of view.
+    home_arm_q: [0.0, 0.35, 0.0, -0.5, 0.0, 0.0, 0.0,
+                 0.0, -0.35, 0.0, -0.5, 0.0, 0.0, 0.0]
+    motion.arm_max_vel: 0.97      # safety filter allows 1.0
+    motion.arm_max_acc: 8.0
+    motion.hand_max_vel: 2.5      # filter allows 3.0
+    motion.close_hold_s: 0.25
+    motion.open_hold_s: 0.4
+    motion.settle_s: 0.3
+    motion.counter_clearance: 0.02
+    motion.max_joint_step: 0.6
+    ik.max_tilt_deg: 35
+    ik.random_restarts: 4

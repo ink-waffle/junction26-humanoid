@@ -1,0 +1,35 @@
+# Live sim leaderboard config (S7). Rules: aaltonomous/docs/participants/RULES_AND_SCORING.md §4.
+# Every key marked TBD is an open ranking decision; the values here are the current defaults.
+title: "Aaltonomous Humanoid · sim leaderboard"
+
+# Only eval runs on this variant count (evaluate.py `variant`, = the sim's DR config name). null = any variant.
+variant: eval_heldout
+
+# TBD: which tasks count and their weights. Team total = sum(weight * metric of the selected run per task).
+# sort_language already gives +2 per correct object (vs +1), so equal weights still favour rung 2.
+# weight 0 = shown on the board, not ranked (rung 3 has its own award).
+tasks:
+  sort_fixed: {weight: 1.0, label: "Rung 1"}
+  sort_language: {weight: 1.0, label: "Rung 2"}
+  insert_shapes: {weight: 0.0, label: "Rung 3"}
+
+metric: score_mean        # TBD: score_mean (rules: mean episode score) | score_frac (score / max score) | object_success
+select: best              # TBD: best | latest run per team and task
+min_trials: 5             # TBD: runs with fewer finished trials (interrupted evals) don't count
+require_gate: true        # only gate-passing runs count (rules §4: gate must pass to get robot time)
+# Re-check the gate against these thresholds; a run evaluated with looser --gate-* flags is re-judged from its summary.
+gate_max_clips: 0
+gate_min_hz: 27.0
+# TBD: finalist needs a gate-passing run on every weighted task it attempted ("all") or on at least one ("any").
+finalist_gate: all
+finalists: 5              # TBD: ~5 (rules §4); top N eligible teams are highlighted
+
+# Teams shown greyed out and never ranked (organiser baselines, smoke tests). Matched case-insensitively.
+reference_teams: [oracle, policy, baseline]
+hide_reference: false
+# Team name aliases (eval --team spelled differently across submissions): {alias: canonical}
+aliases: {}
+
+refresh_s: 20             # served page auto-refresh
+max_rows: 20              # rows on the venue screen (JSON always has all teams)
+stale_running_s: 900      # a dir without eval.json and no new episode for this long is shown as stalled, not running

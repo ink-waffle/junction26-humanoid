@@ -1,0 +1,492 @@
+{
+ "summary": {
+  "policy": "oracle",
+  "team": null,
+  "task": "sort_language",
+  "variant": "eval_heldout",
+  "dr": {
+   "name": "eval_heldout",
+   "path": "aaltonomous/sim/dr/eval_heldout.yaml"
+  },
+  "trials": 5,
+  "seeds": [
+   1000,
+   1001,
+   1002,
+   1003,
+   1004
+  ],
+  "score_mean": 5.6,
+  "score_std": 1.96,
+  "score_frac": 0.667,
+  "objects": 21,
+  "objects_correct": 14,
+  "object_success": 0.667,
+  "episodes_all_correct": 1,
+  "outcome_counts": {
+   "correct": 14,
+   "counter": 7
+  },
+  "end_reasons": {
+   "done": 5
+  },
+  "safety_clipped_steps_total": 0,
+  "safety_clipped_steps_max": 0,
+  "effective_hz_min": 30.0,
+  "command_hz_min": 30.0,
+  "gate": {
+   "passed": true,
+   "failed_trials": [],
+   "max_clips": 0,
+   "min_hz": 27.0
+  }
+ },
+ "trials": [
+  {
+   "episode": 0,
+   "seed": 1000,
+   "instruction": "Place every red cube in the center bin. Blue cubes belong in the right bin, and yellow ones in the left bin.",
+   "end_reason": "done",
+   "ticks": 1578,
+   "hold_ticks": 0,
+   "wall_s": 52.595,
+   "effective_hz": 30.0,
+   "command_hz": 30.0,
+   "policy_calls": 173,
+   "latency_ms_mean": 30.76,
+   "latency_ms_max": 57.07,
+   "safety": {
+    "steps": 1578,
+    "clipped_steps": 0,
+    "mode": "ok",
+    "counts": {}
+   },
+   "success": null,
+   "task": "sort_language",
+   "variant": "eval_heldout",
+   "layout": [
+    {
+     "color": "red",
+     "x": 0.574,
+     "y": 0.176,
+     "yaw": -0.395,
+     "shape": "cube"
+    },
+    {
+     "color": "yellow",
+     "x": 0.345,
+     "y": 0.189,
+     "yaw": 0.267,
+     "shape": "cube"
+    },
+    {
+     "color": "blue",
+     "x": 0.493,
+     "y": 0.166,
+     "yaw": 0.626,
+     "shape": "cylinder"
+    },
+    {
+     "color": "yellow",
+     "x": 0.423,
+     "y": 0.123,
+     "yaw": -0.099,
+     "shape": "cylinder"
+    }
+   ],
+   "mapping": {
+    "red": "center",
+    "blue": "right",
+    "yellow": "left"
+   },
+   "outcomes": [
+    {
+     "name": "obj_red_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_cylinder_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_blue_cylinder_0",
+     "outcome": "correct"
+    }
+   ],
+   "score": 8,
+   "max_score": 8,
+   "n_objects": 4,
+   "n_correct": 4,
+   "all_correct": true,
+   "settle_s": 0.03,
+   "episode_wall_s": 52.7,
+   "home_err": 0.012,
+   "mapping_source": "parsed",
+   "gate_ok": true,
+   "gate_why": []
+  },
+  {
+   "episode": 1,
+   "seed": 1001,
+   "instruction": "Place every blue cube in the left bin. Yellow cubes belong in the blue bin, and red ones in the center bin.",
+   "end_reason": "done",
+   "ticks": 2186,
+   "hold_ticks": 0,
+   "wall_s": 72.867,
+   "effective_hz": 30.0,
+   "command_hz": 30.0,
+   "policy_calls": 240,
+   "latency_ms_mean": 30.28,
+   "latency_ms_max": 38.3,
+   "safety": {
+    "steps": 2186,
+    "clipped_steps": 0,
+    "mode": "ok",
+    "counts": {}
+   },
+   "success": null,
+   "task": "sort_language",
+   "variant": "eval_heldout",
+   "layout": [
+    {
+     "color": "blue",
+     "x": 0.341,
+     "y": 0.129,
+     "yaw": 0.76,
+     "shape": "cube"
+    },
+    {
+     "color": "yellow",
+     "x": 0.54,
+     "y": 0.138,
+     "yaw": -0.015,
+     "shape": "triangle"
+    },
+    {
+     "color": "red",
+     "x": 0.428,
+     "y": 0.156,
+     "yaw": 0.476,
+     "shape": "cylinder"
+    }
+   ],
+   "mapping": {
+    "blue": "left",
+    "yellow": "right",
+    "red": "center"
+   },
+   "outcomes": [
+    {
+     "name": "obj_blue_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_red_cylinder_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_triangle_0",
+     "outcome": "counter"
+    }
+   ],
+   "score": 4,
+   "max_score": 6,
+   "n_objects": 3,
+   "n_correct": 2,
+   "all_correct": false,
+   "settle_s": 0.01,
+   "episode_wall_s": 72.9,
+   "home_err": 0.012,
+   "mapping_source": "parsed",
+   "gate_ok": true,
+   "gate_why": []
+  },
+  {
+   "episode": 2,
+   "seed": 1002,
+   "instruction": "Put the red cubes in the red bin, the blue cubes in the center bin and the yellow cubes in the right bin.",
+   "end_reason": "done",
+   "ticks": 3326,
+   "hold_ticks": 0,
+   "wall_s": 110.867,
+   "effective_hz": 30.0,
+   "command_hz": 30.0,
+   "policy_calls": 652,
+   "latency_ms_mean": 16.06,
+   "latency_ms_max": 59.45,
+   "safety": {
+    "steps": 3326,
+    "clipped_steps": 0,
+    "mode": "ok",
+    "counts": {}
+   },
+   "success": null,
+   "task": "sort_language",
+   "variant": "eval_heldout",
+   "layout": [
+    {
+     "color": "blue",
+     "x": 0.417,
+     "y": 0.185,
+     "yaw": -0.239,
+     "shape": "triangle"
+    },
+    {
+     "color": "red",
+     "x": 0.281,
+     "y": 0.177,
+     "yaw": -0.559,
+     "shape": "cube"
+    },
+    {
+     "color": "yellow",
+     "x": 0.538,
+     "y": 0.143,
+     "yaw": -0.751,
+     "shape": "cylinder"
+    },
+    {
+     "color": "yellow",
+     "x": 0.368,
+     "y": 0.121,
+     "yaw": -0.561,
+     "shape": "triangle"
+    }
+   ],
+   "mapping": {
+    "red": "left",
+    "blue": "center",
+    "yellow": "right"
+   },
+   "outcomes": [
+    {
+     "name": "obj_red_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_cylinder_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_triangle_0",
+     "outcome": "counter"
+    },
+    {
+     "name": "obj_blue_triangle_0",
+     "outcome": "counter"
+    }
+   ],
+   "score": 4,
+   "max_score": 8,
+   "n_objects": 4,
+   "n_correct": 2,
+   "all_correct": false,
+   "settle_s": 0.01,
+   "episode_wall_s": 110.9,
+   "home_err": 0.012,
+   "mapping_source": "parsed",
+   "gate_ok": true,
+   "gate_why": []
+  },
+  {
+   "episode": 3,
+   "seed": 1003,
+   "instruction": "Place every blue cube in the left bin. Red cubes belong in the blue bin, and yellow ones in the yellow bin.",
+   "end_reason": "done",
+   "ticks": 3453,
+   "hold_ticks": 0,
+   "wall_s": 115.1,
+   "effective_hz": 30.0,
+   "command_hz": 30.0,
+   "policy_calls": 602,
+   "latency_ms_mean": 18.31,
+   "latency_ms_max": 36.65,
+   "safety": {
+    "steps": 3453,
+    "clipped_steps": 0,
+    "mode": "ok",
+    "counts": {}
+   },
+   "success": null,
+   "task": "sort_language",
+   "variant": "eval_heldout",
+   "layout": [
+    {
+     "color": "red",
+     "x": 0.328,
+     "y": 0.126,
+     "yaw": 0.699,
+     "shape": "cube"
+    },
+    {
+     "color": "blue",
+     "x": 0.478,
+     "y": 0.179,
+     "yaw": -0.365,
+     "shape": "triangle"
+    },
+    {
+     "color": "red",
+     "x": 0.541,
+     "y": 0.128,
+     "yaw": 0.531,
+     "shape": "triangle"
+    },
+    {
+     "color": "yellow",
+     "x": 0.41,
+     "y": 0.134,
+     "yaw": 0.367,
+     "shape": "cube"
+    },
+    {
+     "color": "yellow",
+     "x": 0.62,
+     "y": 0.183,
+     "yaw": -0.605,
+     "shape": "triangle"
+    }
+   ],
+   "mapping": {
+    "blue": "left",
+    "red": "right",
+    "yellow": "center"
+   },
+   "outcomes": [
+    {
+     "name": "obj_red_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_yellow_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_red_triangle_0",
+     "outcome": "counter"
+    },
+    {
+     "name": "obj_yellow_triangle_0",
+     "outcome": "counter"
+    },
+    {
+     "name": "obj_blue_triangle_0",
+     "outcome": "counter"
+    }
+   ],
+   "score": 4,
+   "max_score": 10,
+   "n_objects": 5,
+   "n_correct": 2,
+   "all_correct": false,
+   "settle_s": 0.0,
+   "episode_wall_s": 115.2,
+   "home_err": 0.012,
+   "mapping_source": "parsed",
+   "gate_ok": true,
+   "gate_why": []
+  },
+  {
+   "episode": 4,
+   "seed": 1004,
+   "instruction": "Use the left bin for red, the center bin for yellow and the blue bin for blue cubes.",
+   "end_reason": "done",
+   "ticks": 2968,
+   "hold_ticks": 0,
+   "wall_s": 98.933,
+   "effective_hz": 30.0,
+   "command_hz": 30.0,
+   "policy_calls": 321,
+   "latency_ms_mean": 31.13,
+   "latency_ms_max": 37.67,
+   "safety": {
+    "steps": 2968,
+    "clipped_steps": 0,
+    "mode": "ok",
+    "counts": {}
+   },
+   "success": null,
+   "task": "sort_language",
+   "variant": "eval_heldout",
+   "layout": [
+    {
+     "color": "yellow",
+     "x": 0.29,
+     "y": 0.183,
+     "yaw": -0.156,
+     "shape": "cube"
+    },
+    {
+     "color": "red",
+     "x": 0.522,
+     "y": 0.157,
+     "yaw": -0.046,
+     "shape": "cylinder"
+    },
+    {
+     "color": "blue",
+     "x": 0.351,
+     "y": 0.129,
+     "yaw": -0.03,
+     "shape": "cylinder"
+    },
+    {
+     "color": "blue",
+     "x": 0.437,
+     "y": 0.171,
+     "yaw": -0.118,
+     "shape": "triangle"
+    },
+    {
+     "color": "red",
+     "x": 0.607,
+     "y": 0.186,
+     "yaw": 0.783,
+     "shape": "cylinder"
+    }
+   ],
+   "mapping": {
+    "red": "left",
+    "yellow": "center",
+    "blue": "right"
+   },
+   "outcomes": [
+    {
+     "name": "obj_yellow_cube_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_red_cylinder_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_red_cylinder_1",
+     "outcome": "counter"
+    },
+    {
+     "name": "obj_blue_cylinder_0",
+     "outcome": "correct"
+    },
+    {
+     "name": "obj_blue_triangle_0",
+     "outcome": "correct"
+    }
+   ],
+   "score": 8,
+   "max_score": 10,
+   "n_objects": 5,
+   "n_correct": 4,
+   "all_correct": false,
+   "settle_s": 0.01,
+   "episode_wall_s": 99.0,
+   "home_err": 0.012,
+   "mapping_source": "parsed",
+   "gate_ok": true,
+   "gate_why": []
+  }
+ ]
+}

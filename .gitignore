@@ -1,0 +1,9 @@
+third_party/
+runs/
+data/demos/
+data/lerobot/
+__pycache__/
+*.pyc
+*.pem
+*.key
+logs/
