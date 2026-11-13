@@ -51,6 +51,64 @@ bash aaltonomous/cloud/aalto.sh sim                       # then check / snap / 
 It installs Miniforge to `~/miniforge3` (env `isaac`) and clones the pinned upstream repos into `third_party/`.
 Re-running resumes; `bash aaltonomous/cloud/setup_instance.sh verify` re-checks imports + unit tests.
 
+## 2c. GUI on Verda (VNC over SSH)
+
+Use this path for the interactive Kit viewport in `Aalto-Sort-G129-Dex3-Joint`, or set `TASK=Aalto-Insert-G129-Dex3-Joint` for the lid variant. VNC is bound to loopback and is reachable only through an SSH tunnel. The simulator's host-networked ports stay behind a default-deny firewall.
+
+Install and authenticate the Verda CLI yourself. On your laptop, from the repository root:
+
+```bash
+brew install verda-cloud/tap/verda-cli   # macOS; skip if already installed
+verda auth login                         # interactive, user-only
+make discover
+make discover TYPE=<instance-type>
+```
+
+Choose an available RTX GPU with >= 24 GB VRAM and a CUDA-enabled Ubuntu 24.04 image. Check the availability, SSH key, and cost estimate printed by discovery. Only after approving those values, create the startup script and instance (200 GB is plenty for the image and initial caches):
+
+```bash
+verda --agent startup-script add --name aalto-sim-vnc \
+  --file aaltonomous/cloud/verda/bootstrap-instance.sh -o json
+
+verda --agent vm create --kind gpu \
+  --instance-type <instance-type> --location <location> \
+  --os <image_type> --hostname aalto-sim --ssh-key <ssh-key-id> \
+  --startup-script <startup-script-id> --os-volume-size 200 \
+  --wait --wait-timeout 5m -o json
+```
+
+This uses on-demand billing, not spot. Get the VM's public IP with `verda --agent vm describe <vm-id> -o json`. Check VNC bootstrap with `verda ssh aalto-sim`. If it reports that NVIDIA display modesetting has just been enabled in GRUB, run `systemctl reboot`, reconnect, and rerun `bash aaltonomous/cloud/verda/bootstrap-instance.sh`.
+
+Copy the checkout to the instance from the repository root (no GitHub credentials are needed on the instance):
+
+```bash
+rsync -az --exclude='.git/' --exclude='.venv/' --exclude='third_party/' \
+  ./ root@<instance-ip>:/opt/aaltonomous-humanoid/
+```
+
+Then, on the instance:
+
+```bash
+cd /opt/aaltonomous-humanoid
+cp .env.example .env
+nano .env                       # set CLIENT_CIDR=<your-public-ip>/32
+make host-setup                 # cache directories + default-deny UFW
+make up                         # build and launch the GUI scene
+make logs                       # watch startup / AppReady
+make aalto ARGS=check          # scene checks after startup
+```
+
+From your laptop, keep this tunnel open while using the GUI:
+
+```bash
+ssh -N -T -o ExitOnForwardFailure=yes \
+  -L 5901:127.0.0.1:5901 root@<instance-ip>
+```
+
+Connect a VNC client to `vnc://localhost:5901` (macOS: `open vnc://localhost:5901`). There is no VNC password; the SSH tunnel is the access boundary. First shader compilation can take 5-10 minutes. Stop the simulator with `make down`; stop or delete the VM separately to end its charges.
+
+Useful commands: `make validate` (static checks), `make check` (GPU/Xorg/VNC/container checks), `make ps`, and `make build` (rebuild without starting). If Xorg fails, inspect `journalctl -u isaac-xorg.service` and `/var/log/Xorg.0.log`. NVIDIA display modesetting and a simulated monitor are required on Verda's virtualized GPU; the bootstrap configures both.
+
 ## 3. What to use
 
 | You want | Where |

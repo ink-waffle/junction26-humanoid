@@ -94,12 +94,18 @@ step_torch() {
 
 step_isaacsim() {
     activate
+    # Isaac Lab 3 uses newer click/urllib3. Apply Isaac Sim's exact pins only
+    # during its own resolver, then let Isaac Lab install its required versions.
+    local isaacsim_constraints="$TP/constraints-isaacsim${1:+_$1}.txt"
+    grep -q '^urllib3==' "$PIP_CONSTRAINT"
+    sed -e 's/^urllib3==.*/urllib3==2.7.0/' -e 's/^click==.*/click==8.3.3/' \
+      "$PIP_CONSTRAINT" > "$isaacsim_constraints"
     # The 10.5 GB extension cache first, as its own step (= its own image layer in the Dockerfile).
     if [[ "${1:-}" != rest ]]; then
-        pip install "isaacsim-extscache-kit==6.2.0.0" --extra-index-url https://pypi.nvidia.com
+        PIP_CONSTRAINT="$isaacsim_constraints" pip install "isaacsim-extscache-kit==6.2.0.0" --extra-index-url https://pypi.nvidia.com
     fi
     if [[ "${1:-}" != kit ]]; then
-        pip install "isaacsim[all,extscache]==6.2.0.0" --extra-index-url https://pypi.nvidia.com
+        PIP_CONSTRAINT="$isaacsim_constraints" pip install "isaacsim[all,extscache]==6.2.0.0" --extra-index-url https://pypi.nvidia.com
     fi
 }
 

@@ -7,3 +7,6 @@ __pycache__/
 *.pem
 *.key
 logs/
+.env
+.verda_known_hosts*
+.venv/

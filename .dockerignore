@@ -1,0 +1,9 @@
+.git/
+.venv/
+third_party/
+runs/
+logs/
+**/__pycache__/
+**/*.pyc
+**/*.pem
+**/*.key

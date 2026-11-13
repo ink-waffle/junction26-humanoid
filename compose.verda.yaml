@@ -1,0 +1,39 @@
+services:
+  aalto-sim:
+    build:
+      context: .
+      dockerfile: aaltonomous/cloud/Dockerfile
+    image: ${AALTO_IMAGE:-aalto-sim-verda:v1}
+    runtime: nvidia
+    network_mode: host
+    ipc: host
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${GPU_DEVICE:-all}
+      NVIDIA_DRIVER_CAPABILITIES: all
+      TASK: ${TASK:-Aalto-Sort-G129-Dex3-Joint}
+      AALTO_DR: ${AALTO_DR:-}
+      AALTO_INSTANCE: ${AALTO_INSTANCE:-}
+      DISPLAY: ${DISPLAY:-:0}
+    volumes:
+      - ${AALTO_HOST_DATA:-/opt/aalto-verda/data}/kit-cache:/root/miniforge3/envs/isaac/lib/python3.12/site-packages/isaacsim/kit/cache:rw
+      - ${AALTO_HOST_DATA:-/opt/aalto-verda/data}/work:/data:rw
+      - ${AALTO_HOST_DATA:-/opt/aalto-verda/data}/runs:/opt/aalto/runs:rw
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # Preserve the repository entrypoint, but run in the foreground so Compose owns the simulation.
+    command:
+      - bash
+      - -lc
+      - >-
+        source /root/miniforge3/etc/profile.d/conda.sh &&
+        conda activate isaac &&
+        export PYTHONPATH=/opt/aalto &&
+        exec bash aaltonomous/sim/run_sim.sh
+    restart: unless-stopped
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "aalto", "py", "-m", "aaltonomous.sim.scene_client", "ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10m
+      retries: 3

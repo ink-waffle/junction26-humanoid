@@ -62,7 +62,7 @@ layout:
   # Region where cube centres are sampled (mat coordinates, m) and the minimum centre spacing.
   # pelvis frame: x 0.26-0.35 m forward, y +-0.17 m -> farthest corner r = 0.39 m (near edge = head-cam view limit) (comfortable reach)
   region_x: [0.28, 0.62]                     # kept inside the head camera view (test_scene checks it)
-  region_y: [0.12, 0.19]
+  region_y: [0.13, 0.19]                     # near limit keeps the full object inside the head image
   min_spacing: 0.08
   n_cubes: [3, 5]
   yaw_range_deg: [-45, 45]
