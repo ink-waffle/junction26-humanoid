@@ -4,7 +4,7 @@ World = pelvis frame + PELVIS_W (robot at the origin facing +x). Contents:
   robot            G1 29-DoF + Dex3, fixed base (upstream preset), pelvis at PELVIS_W
   counter          static slab, top at scene.counter_z, footprint counter_size centred on the mat
   mat              visual quad with scene/assets/mat_texture.png (the printed mat), 0.5 mm above the counter
-  bin_<name>_*     static floor + 4 walls per bin (fixed + known), colour from scene.yaml bins.color
+  bin_<name>_*     static floor + 4 walls per bin (fixed + known), colour from scene.yaml bins.rgb (all identical)
   obj_<c>_<s>_<k>  18 rigid objects from the printed STL meshes (scene/assets/object_<shape>.stl), convex hulls
   lid              rung 3 only (Aalto-Insert-*): static triangle-mesh plate with the 3 holes on the lid bin
   front_camera     head RealSense colour, ONE pinhole cam at calibration.yaml head.T_pelvis_optical, rgb + depth
@@ -194,7 +194,7 @@ def bin_cfgs():
     t, ft, h = b["wall_thickness"], b["floor_thickness"], b["wall_height"]
     out = {}
     for name, (cx, cy) in b["centers"].items():
-        rgb = _rgb(b["color"][name])
+        rgb = tuple(c / 255.0 for c in SC.bin_rgb)
         parts = {  # (centre mat xyz, size mat xyz)
             "floor": ((cx, cy, ft / 2), (ox, oy, ft)),
             "wall_xlo": ((cx - ox / 2 + t / 2, cy, h / 2), (t, oy, h)),

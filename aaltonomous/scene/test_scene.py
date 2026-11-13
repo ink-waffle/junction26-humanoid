@@ -6,12 +6,12 @@ import unittest
 
 import numpy as np
 
-from aaltonomous.interface.tasks import BIN_COLOR, SHAPES, make_instruction, sample_layout
+from aaltonomous.interface.tasks import BINS, FIXED_MAPPING, SHAPES, make_instruction, sample_layout
 from aaltonomous.scene.export import bin_tris, cube_tris, lid_tris, mat_image, object_tris
 from aaltonomous.scene.scene import Scene
 
 SC = Scene.load()
-FIXED = {c: b for b, c in BIN_COLOR.items()}
+FIXED = dict(FIXED_MAPPING)
 
 
 def in_bin(name, z=0.03):
@@ -28,8 +28,26 @@ class TestFrames(unittest.TestCase):
         self.assertGreater(in_bin("left")[1], in_bin("right")[1])   # pelvis +y = left
         self.assertGreater(SC.mat_to_pelvis([0, 0.4, 0])[0], SC.mat_to_pelvis([0, 0, 0])[0])  # mat y = forward
 
-    def test_bin_colours_match_tasks(self):
-        self.assertEqual(SC.cfg["bins"]["color"], BIN_COLOR)
+    def test_bins_identical_row(self):
+        """Published layout: identical boxes in a row, 5 cm gaps, near edge 40 cm in front of the pelvis."""
+        b = SC.cfg["bins"]
+        self.assertNotIn("color", b)
+        self.assertEqual(len(SC.bin_rgb), 3)
+        self.assertEqual(set(b["centers"]), set(BINS))
+        bx, by = b["outer_size"]
+        c = {n: SC.mat_to_pelvis([*b["centers"][n], 0]) for n in BINS}
+        for n in BINS:
+            self.assertAlmostEqual(c[n][0] - by / 2, 0.40, places=3)
+        self.assertAlmostEqual(c["left"][1] - c["center"][1] - bx, 0.05, places=3)
+        self.assertAlmostEqual(c["center"][1] - c["right"][1] - bx, 0.05, places=3)
+        self.assertAlmostEqual(c["center"][1], 0.0, places=3)
+        self.assertLessEqual(max(y for _, y in b["centers"].values()) + by / 2, SC.cfg["counter"]["mat_size"][1])
+
+    def test_instructions_name_bins_by_position(self):
+        rng = np.random.default_rng(0)
+        for _ in range(100):
+            text, _ = make_instruction("sort_language", rng)
+            self.assertEqual(sum(text.count(f"{b} bin") + text.count(f"into {b}") for b in BINS), 3, text)
 
 
 class TestChecker(unittest.TestCase):
@@ -195,9 +213,12 @@ class TestExport(unittest.TestCase):
 
     def test_mat_orientation(self):
         img = mat_image(SC).astype(int)
-        # left bin (red) must appear on the LEFT half of a top view with the robot at the bottom
-        red = (img[..., 0] > 150) & (img[..., 1] < 80) & (img[..., 2] < 80)
-        self.assertLess(np.nonzero(red)[1].mean(), img.shape[1] / 2)
+        # the box row (far from the robot) must appear in the TOP half of a top view with the robot at the bottom;
+        # the boxes are identical and symmetric about the robot, so left/right shows only in the box outline count
+        box = np.all(img == np.array(SC.bin_rgb), axis=-1)
+        rows, cols = np.nonzero(box)
+        self.assertLess(rows.mean(), img.shape[0] / 2)
+        self.assertAlmostEqual(cols.mean(), img.shape[1] / 2, delta=img.shape[1] * 0.02)
 
 
 class TestHeadCameraView(unittest.TestCase):

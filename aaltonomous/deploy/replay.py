@@ -16,6 +16,7 @@ import time
 
 import numpy as np
 
+from ..interface import tasks
 from . import protocol as P
 from .runner import Container, PolicyClient
 
@@ -27,7 +28,7 @@ def load_obs(path, n=None, synthetic=False):
     if synthetic:
         steps = n or 100
         return [{**blank_images(), "arm_q": np.zeros(14, np.float32), "arm_dq": np.zeros(14, np.float32),
-                 "hand_q": np.zeros(14, np.float32), "instruction": "Sort each cube into the bin of the same color.",
+                 "hand_q": np.zeros(14, np.float32), "instruction": tasks.FIXED_INSTRUCTION,
                  "t": i / 30.0} for i in range(steps)]
     d = np.load(path, allow_pickle=False)
     T = len(d["arm_q"])
@@ -36,7 +37,7 @@ def load_obs(path, n=None, synthetic=False):
     for i in range(T):
         o = {k: (d[k][i] if k in d.files else v) for k, v in blank.items()}
         o.update(arm_q=d["arm_q"][i].astype(np.float32), arm_dq=d["arm_dq"][i].astype(np.float32),
-                 hand_q=d["hand_q"][i].astype(np.float32), instruction="Sort each cube into the bin of the same color.",
+                 hand_q=d["hand_q"][i].astype(np.float32), instruction=tasks.FIXED_INSTRUCTION,
                  t=float(d["t"][i]))
         out.append(o)
     return out[:n] if n else out

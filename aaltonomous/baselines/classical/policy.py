@@ -24,6 +24,7 @@ import time
 import numpy as np
 
 from aaltonomous.interface.calibration import Calibration
+from aaltonomous.interface.tasks import FIXED_MAPPING
 from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
@@ -69,8 +70,7 @@ class ClassicalPolicy:
         if isinstance(info, str):
             info = {"instruction": info}
         info = info or {}
-        bins = self.scene.cfg["bins"]
-        self.mapping = info.get("mapping") or {c: b for b, c in bins["color"].items()}
+        self.mapping = info.get("mapping") or dict(FIXED_MAPPING)
         self.planner.mapping = self.mapping
         self.time_limit = info.get("time_limit", self.time_limit)
         self.state = "init"

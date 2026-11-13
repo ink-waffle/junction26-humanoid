@@ -38,7 +38,7 @@ of the challenge: sim is free, reality is scarce.
 
 **Do I have to use both arms?** No, but you may. The side bins are each easiest for the arm on that side.
 
-**Are the bin positions fixed?** Yes: left (red), centre (yellow), right (blue), at known positions
+**Are the bin positions fixed?** Yes: three identical orange boxes, left, center and right, at known positions
 ([INTERFACE.md §7](INTERFACE.md#7-scene-geometry)). Only the objects move between episodes.
 
 **Do I get object poses?** Not in a submission. The sim's scene service has them (useful for training, RL rewards,

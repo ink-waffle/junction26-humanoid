@@ -97,6 +97,11 @@ class Scene:
     def colors(self):
         return self.cfg["objects"]["colors"]
 
+    @property
+    def bin_rgb(self):
+        """RGB (0-255) of every bin: all bins are identical, named only by position."""
+        return list(self.cfg["bins"]["rgb"])
+
     def object_height(self, shape=None):
         o = self.cfg["objects"]
         return float(o["size"]) * float(o.get("height_ratio", 1.0))

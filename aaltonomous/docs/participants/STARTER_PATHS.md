@@ -38,7 +38,7 @@ Depth + detection → object pose → grasp → IK → scripted Dex3 grasp.
 
 A VLM/LLM reads the instruction and the image and calls skills **you** write (pick, place, look, ...).
 
-- Fits rung 2 (mapping by language, bins named by position or colour, contradicting the bin colours).
+- Fits rung 2 (mapping by language, bins named by position).
 - **Latency budget:** frontier VLMs take ~10–20 s per call. The runner holds the robot still while an `act()`
   call is in flight (up to 30 s per call), but held ticks don't count toward the sim gate's 27 Hz command rate,
   so: call the model in a background thread, keep returning hold targets from `act()`, and execute skills at

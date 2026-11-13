@@ -179,16 +179,16 @@ layout cards and the success checker). Values marked *(default)* there are estim
 | Item | Value |
 |---|---|
 | Counter | Table top 80 cm above the floor; surface at **z = +0.01 m** in the pelvis frame (pelvis assumed 0.79 m above the floor, *(default)*) |
-| Printed mat | 0.90 × 0.45 m, 5 cm grid, near edge 0.14 m in front of the pelvis, centred left-right. Texture `aaltonomous/scene/assets/mat_texture.png` (same image in sim and on the print) |
+| Printed mat | 0.90 × 0.50 m, 5 cm grid, near edge 0.14 m in front of the pelvis, centred left-right. Texture `aaltonomous/scene/assets/mat_texture.png` (same image in sim and on the print) |
 | Mat frame | Origin at the mat corner on the robot's **right**, nearest edge; x towards the robot's left, y away from the robot. `p_pelvis = (0.14 + y_mat, −0.45 + x_mat, 0.01 + z_mat)` |
 | Objects | Cube, cylinder, equilateral triangular prism; size **0.045 m** (cube side = cylinder diameter = triangle altitude), height = size, 2.5 mm fillets; matte PLA, ~50 g in sim. Printed objects may differ by about a millimetre. Meshes: `aaltonomous/scene/assets/object_*.stl` |
 | Colours | red, yellow, blue (sim RGB in `scene.yaml`) |
 | Object band | centres sampled at pelvis x 0.26–0.33 m, y −0.17–0.17 m (mat x 0.28–0.62, y 0.12–0.19); yaw ±45°; ≥ 8 cm apart; 3–5 objects |
-| Bins | 0.14 × 0.14 m outer, 6 cm walls, 3 mm walls/floor. Centres (pelvis frame): **left (0.28, +0.36)** red, **center (0.445, 0.00)** yellow, **right (0.28, −0.36)** blue |
+| Bins | Three identical orange boxes in a row, 0.21 × 0.21 m outer, 6 cm walls *(default)*, 3 mm walls/floor; 5 cm gaps; near edge 0.40 m in front of the pelvis. Centres (pelvis frame): **left (0.505, +0.26)**, **center (0.505, 0.00)**, **right (0.505, −0.26)** |
 | Lid (rung 3) | On the **left** bin; circle / square / triangle holes, +10 mm clearance (*(default)*). Mesh `assets/lid_shapes.stl` |
 
-- The bins are fixed and known; the centre bin is behind the object band, the side bins beside it. They are
-  reachable but not necessarily in the head camera's view.
-- Reach: about 0.40 m from the waist comfortably, ~0.55 m with a straight arm. The bins sit near the edge of reach.
+- The bins are fixed and known, in a row behind the object band. They are not necessarily in the head camera's view.
+- Reach: about 0.40 m from the waist comfortably, ~0.55 m with a straight arm. The box centres are beyond that:
+  release in the near part of each box (the baseline drops 5 cm inside the wall nearest the robot).
 - Layout sampling code: `aaltonomous/interface/tasks.py` `sample_layout()`; real resets use printed layout cards
   from the same code (`python -m aaltonomous.scene.cards`).

@@ -21,6 +21,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from aaltonomous.interface import tasks                         # noqa: E402
 from aaltonomous.scene.scene import Scene                       # noqa: E402
 from aaltonomous.sim.scene_client import SceneClient            # noqa: E402
 
@@ -69,9 +70,9 @@ def main(argv=None):
               max(errs) < 0.005 and max(moving) < 0.01 and outs == {"counter"},
               f"max pos err {max(errs) * 1000:.1f} mm, max speed {max(moving):.3f} m/s, outcomes {sorted(outs)}")
 
-    # 2. drops into bins: rung 1 colour == bin colour
+    # 2. drops into bins: rung 1 fixed colour -> bin mapping
     bins = sc.cfg["bins"]
-    colour_bin = {col: b for b, col in bins["color"].items()}
+    colour_bin = dict(tasks.FIXED_MAPPING)
     drop_z = bins["wall_height"] + 0.04
     lay = [
         {"color": "red", "shape": "cube", "x": bins["centers"][colour_bin["red"]][0],

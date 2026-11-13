@@ -100,8 +100,8 @@ class _OraclePlanner(Planner):
     clearance + safety dry-run checks still run on the final trajectory."""
     drop_offsets: dict = {}
 
-    def bin_xy(self, name):
-        return super().bin_xy(name) + np.asarray(self.drop_offsets.get(name, (0.0, 0.0)), float)
+    def drop_xy(self, name):
+        return super().drop_xy(name) + np.asarray(self.drop_offsets.get(name, (0.0, 0.0)), float)
 
     def _cartesian(self, side, p0, p1, q0, name, plan):
         if name == "carry":
@@ -138,7 +138,7 @@ class _OraclePlanner(Planner):
         if key not in cache:
             g, sc = self.cfg["grasp"], self.scene
             z = sc.counter_z + max(g["carry_height"], float(sc.cfg["bins"]["wall_height"]) + self.height + 0.03)
-            xy = super().bin_xy(bin_name)
+            xy = super().drop_xy(bin_name)
             cache[key] = bool(self.kin.solve(side, np.r_[xy, z], self.home)[1])
         return cache[key]
 
@@ -199,11 +199,10 @@ def _parse_table():
     for tpl in tasks.TEMPLATES:
         for colors in itertools.permutations(tasks.COLORS):
             for bins in itertools.permutations(tasks.BINS):
-                for by_color in itertools.product((False, True), repeat=3):
-                    w = {f"c{i}": c for i, c in enumerate(colors)}
-                    w.update({f"C{i}": c.capitalize() for i, c in enumerate(colors)})
-                    w.update({f"b{i}": (tasks.BIN_COLOR[b] if by_color[i] else b) for i, b in enumerate(bins)})
-                    table[tpl.format(**w)] = dict(zip(colors, bins))
+                w = {f"c{i}": c for i, c in enumerate(colors)}
+                w.update({f"C{i}": c.capitalize() for i, c in enumerate(colors)})
+                w.update({f"b{i}": b for i, b in enumerate(bins)})
+                table[tpl.format(**w)] = dict(zip(colors, bins))
     return table
 
 
@@ -212,7 +211,7 @@ def parse_instruction(text):
     (e.g. held-out templates: then the oracle falls back to the privileged mapping)."""
     global _PARSE
     if text == tasks.FIXED_INSTRUCTION:
-        return {c: b for b, c in tasks.BIN_COLOR.items()}
+        return dict(tasks.FIXED_MAPPING)
     if _PARSE is None:
         _PARSE = _parse_table()
     m = _PARSE.get(text)
@@ -294,7 +293,7 @@ class OraclePolicy(ClassicalPolicy):
             if m is None and self.privileged_mapping is not None:
                 m, self.mapping_source = self.privileged_mapping(), "privileged"
             if m is None:
-                m, self.mapping_source = {c: b for b, c in tasks.BIN_COLOR.items()}, "default"
+                m, self.mapping_source = dict(tasks.FIXED_MAPPING), "default"
             info["mapping"] = m
         else:
             self.mapping_source = "given"

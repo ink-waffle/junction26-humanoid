@@ -54,10 +54,7 @@ bins:
     left:   [0.75, 0.26]                      # LAB: pelvis (0.40, +0.30), inside the real left box
     center: [0.45, 0.305]
     right:  [0.15, 0.26]                      # LAB: pelvis (0.40, -0.30); put the 2nd box here
-  color:                                      # (default) physical bin colours, mirrored in tasks.BIN_COLOR
-    left: red
-    center: yellow
-    right: blue
+  rgb: [230, 110, 30]                         # all boxes identical (orange); positions name them
 
 layout:
   # Region where cube centres are sampled (mat coordinates, m) and the minimum centre spacing.

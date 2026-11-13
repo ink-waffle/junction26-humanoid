@@ -10,32 +10,34 @@ import numpy as np
 COLORS = ("red", "yellow", "blue")
 SHAPES = ("cube", "cylinder", "triangle")  # extruded square, circle, equilateral triangle (spec §2)
 BINS = ("left", "center", "right")
-BIN_COLOR = {"left": "red", "center": "yellow", "right": "blue"}  # (default) physical bin colours
-FIXED_INSTRUCTION = "Sort each cube into the bin of the same color."
+# Bins are identical (orange), named only by position. Rung 1 uses this fixed colour -> bin mapping.
+FIXED_MAPPING = {"red": "left", "yellow": "center", "blue": "right"}
+FIXED_INSTRUCTION = ("Put the red objects in the left bin, the yellow objects in the center bin "
+                     "and the blue objects in the right bin.")
 INSERT_INSTRUCTION = "Put each object through the hole of the same shape in the lid."
 
-# Training templates for sort_language. {c0..c2} colours, {b0..b2} bins (positions or colours).
+# Training templates for sort_language. {c0..c2} colours, {b0..b2} bin positions (bins are never named by colour).
 TEMPLATES = (
-    "Put the {c0} cubes in the {b0} bin, the {c1} cubes in the {b1} bin and the {c2} cubes in the {b2} bin.",
+    "Put the {c0} objects in the {b0} bin, the {c1} objects in the {b1} bin and the {c2} objects in the {b2} bin.",
     "{C0} goes to the {b0} bin, {c1} to the {b1} bin, {c2} to the {b2} bin.",
-    "Sort the cubes: {c0} into {b0}, {c1} into {b1}, {c2} into {b2}.",
-    "Place every {c0} cube in the {b0} bin. {C1} cubes belong in the {b1} bin, and {c2} ones in the {b2} bin.",
-    "The {b0} bin is for {c0} cubes, the {b1} bin for {c1}, the {b2} bin for {c2}.",
-    "Move {c0} cubes to the {b0} bin, {c1} cubes to the {b1} bin, and {c2} cubes to the {b2} bin.",
+    "Sort the objects: {c0} into {b0}, {c1} into {b1}, {c2} into {b2}.",
+    "Place every {c0} object in the {b0} bin. {C1} objects belong in the {b1} bin, and {c2} ones in the {b2} bin.",
+    "The {b0} bin is for {c0} objects, the {b1} bin for {c1}, the {b2} bin for {c2}.",
+    "Move {c0} objects to the {b0} bin, {c1} objects to the {b1} bin, and {c2} objects to the {b2} bin.",
     "Drop the {c0} ones into the {b0} bin, the {c1} ones into the {b1} bin, the {c2} ones into the {b2} bin.",
-    "Use the {b0} bin for {c0}, the {b1} bin for {c1} and the {b2} bin for {c2} cubes.",
+    "Use the {b0} bin for {c0}, the {b1} bin for {c1} and the {b2} bin for {c2} objects.",
 )
 
 
-def bin_phrase(b, rng):
-    """A bin named by position ('left') or by its colour ('red'), so instructions can contradict colours."""
-    return b if rng.random() < 0.6 else BIN_COLOR[b]
+def bin_phrase(b, rng=None):
+    """Bins are always named by position ('left'); they all look the same."""
+    return b
 
 
 def make_instruction(task, rng):
     """Returns (instruction, mapping colour -> bin position)."""
     if task == "sort_fixed":
-        return FIXED_INSTRUCTION, {c: b for b, c in BIN_COLOR.items()}
+        return FIXED_INSTRUCTION, dict(FIXED_MAPPING)
     if task == "insert_shapes":  # rung 3: no bin mapping, the lid holes define the target
         return INSERT_INSTRUCTION, {}
     if task != "sort_language":

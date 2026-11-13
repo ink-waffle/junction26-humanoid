@@ -21,7 +21,7 @@ Stop with SIGINT to the python pid (`pgrep -f "^python .*aalto_sim_main"`), not 
 |---|---|---|
 | Robot | upstream `g1_29dof_dex3_base_fix` | Pelvis at world (0, 0, 0.79), facing +x: world = pelvis frame + 0.79 z. Arm home pose `layout.ARM_HOME` (arm zero = hands on the counter). **Absolute** joint targets; uncommanded joints (legs, waist) held at the default pose. |
 | Counter, mat | `scene.yaml` `counter`, `assets/mat_texture.png` | Static 4 cm slab + textured quad (the printed mat). |
-| Bins | `scene.yaml` `bins` | Static floor + 4 walls each, bin colours. |
+| Bins | `scene.yaml` `bins` | Static floor + 4 walls each; one colour for all (`bins.rgb`, orange). |
 | Objects (18) | `scene.yaml` `objects`, `assets/object_*.stl` | The print meshes, convex-hull colliders, 50 g, friction 1.2/1.0 (`scene_cfg.py` constants). Names `obj_<colour>_<shape>_<k>`; unused ones parked on the floor behind the robot (never scored). |
 | Lid (Insert task) | `scene.yaml` `lid`, `assets/lid_shapes.stl` | Static exact-mesh collider; every shape drops through its own hole. |
 | Head camera | `interface/calibration.yaml` `head` | ONE 640x480 pinhole at `T_pelvis_optical` (on `pelvis`, waist fixed). RGB on teleimager :55555 (mono), RGB-D on :55560 in the `pc2/head_rgbd_server.py` format, so `AaltoEnv(..., head_rgbd=True)` reads sim and real the same way. ~17 fps. |

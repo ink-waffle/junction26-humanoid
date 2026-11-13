@@ -16,14 +16,14 @@ or improving the sim itself.
 ## The task in one paragraph
 
 3–5 printed objects (cube, cylinder or triangular prism; red, yellow or blue; about 45 mm) lie at random positions on the
-counter. Three bins sit at fixed positions: left, centre (behind the objects) and right. Every 1/30 s your policy
+counter. Three identical orange bins sit in a row behind the objects at fixed positions: left, center and right. Every 1/30 s your policy
 gets head RGB-D, two wrist RGB images, the joint states and a text instruction. It returns absolute joint targets for
 both 7-DoF arms and both 7-DoF hands. Every target passes through our safety filter. An episode lasts at most 120 s.
 
 | Rung | Task ID | What |
 |---|---|---|
-| 1 | `sort_fixed` | Object colour = bin colour |
-| 2 | `sort_language` | A text instruction defines the mapping, which may contradict the bin colours |
+| 1 | `sort_fixed` | Fixed mapping: red → left, yellow → center, blue → right |
+| 2 | `sort_language` | A text instruction defines the mapping; bins are named by position |
 | 3 (stretch) | `insert_shapes` | Each object goes through the matching hole of a lid on one bin (sim; real only as a bonus) |
 
 Details: [RULES_AND_SCORING.md](RULES_AND_SCORING.md).

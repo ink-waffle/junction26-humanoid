@@ -32,7 +32,7 @@ def target_text(sc, card, c):
     if card["task"] == "insert_shapes":
         return f"{c['shape']} hole, {sc.lid_bin} bin lid"
     b = resolve_bin(card["mapping"], c["color"], c["shape"])
-    return f"{b} ({sc.cfg['bins']['color'][b]})"
+    return f"{b} bin"
 
 
 def card_figure(sc, card, path):
@@ -52,7 +52,7 @@ def card_figure(sc, card, path):
     hx, hy = np.asarray(sc.cfg["bins"]["outer_size"]) * 50
     for n, (bx, by) in sc.cfg["bins"]["centers"].items():
         ax.add_patch(Rectangle(((bx * 100) + hx, by * 100 - hy), -2 * hx, 2 * hy, fill=False, lw=2,
-                               ec=np.array(sc.colors[sc.cfg["bins"]["color"][n]]) / 255))
+                               ec=np.array(sc.bin_rgb) / 255))
         ax.text(bx * 100, by * 100, n.upper() + (" + LID" if card["task"] == "insert_shapes" and n == sc.lid_bin else ""),
                 ha="center", va="center", fontsize=9, color="0.4")
     for i, c in enumerate(card["cubes"], 1):

@@ -40,10 +40,7 @@ bins:
     left:   [0.70, 0.15]                      # beside the cube region, robot's left                      # robot's left = large mat x
     center: [0.40, 0.05]                      # in FRONT of the cube region, close to the robot (not seen by head cam)
     right:  [0.10, 0.15]
-  color:                                      # (default) physical bin colours, mirrored in tasks.BIN_COLOR
-    left: red
-    center: yellow
-    right: blue
+  rgb: [230, 110, 30]                         # all boxes identical (orange); positions name them
 
 layout:
   # Region where cube centres are sampled (mat coordinates, m) and the minimum centre spacing.

@@ -1,7 +1,7 @@
 # Classical rung-1 baseline (`sort_fixed`)
 
 Head RGB-D → HSV colour blobs + depth → object top centre in the pelvis frame → top-down "claw" grasp planned with
-Pinocchio IK → carry to the bin of the same colour → release → home → look again, until nothing sortable is left
+Pinocchio IK → carry to the bin given by the mapping (rung 1: red → left, yellow → center, blue → right) → release → home → look again, until nothing sortable is left
 (`done`). Plans are pre-checked against the safety filter (0 clips). Cross-body objects are put down where the other
 arm can finish. Rung 1 only: ignores shape and the instruction text. Meant as a floor and a code reference.
 
