@@ -4,10 +4,10 @@ Three people: the **operator** (Quest), the **spotter** (e-stop and R3 remote, w
 **recorder** (laptop keyboard, resets the layout). The robot is in the final setup: seated or on the gantry,
 counter, mat, bins and objects, and the same cameras and lighting as for the challenge.
 
-Shortcut on erkka-hp: `bash scripts/record.sh teleop|check|rec r1|rec r2|convert` wraps steps 1 and 3
+Shortcut on the recording laptop: `bash scripts/record.sh teleop|check|rec r1|rec r2|convert` wraps steps 1 and 3
 (robot interface auto-detected; convert uses env `lerobot07` = py3.12 + `lerobot[dataset]==0.7.0`, CPU torch).
 
-## 0. One-time setup (laptop `erkka-hp`, env `uni3`)
+## 0. One-time setup (recording laptop, env `uni3`)
 ```bash
 conda activate uni3 && cd ~/UNITREE-G1-RESEARCH && git pull
 python -m unittest aaltonomous/data/test_record.py                   # 11 OK, offline
@@ -56,7 +56,7 @@ episode in progress (left as `.partial`); restart with the same `--session` to a
 
 ## 3. Convert (twinflow or any machine with env `lerobot`)
 ```bash
-rsync -a erkka-hp:UNITREE-G1-RESEARCH/data/demos/ data/demos/
+rsync -a <recording-laptop>:UNITREE-G1-RESEARCH/data/demos/ data/demos/
 conda activate lerobot
 python aaltonomous/data/to_lerobot.py data/demos/r1_* data/demos/r2_* --repo-id aalto/junction_demos_drop0 \
     --root data/lerobot/junction_demos_drop0 --format both

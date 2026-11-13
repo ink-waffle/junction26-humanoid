@@ -4,7 +4,7 @@ One organiser can do it alone except step 6 (arm poses need a teleop operator + 
 The robot only **streams**: `capture.py` never commands it (DDS subscribe-only). Robot on the gantry / seated,
 final counter, mat, bins, lights. Steps and positions: `checklist.yaml`. Time per step in brackets.
 
-## 0. Before (10 min, laptop `erkka-hp`, env `uni3`)
+## 0. Before (10 min, recording laptop, env `uni3`)
 ```bash
 cd ~/UNITREE-G1-RESEARCH && git pull && conda activate uni3
 python -m unittest aaltonomous/data/drop1/test_drop1.py          # 5 OK, offline

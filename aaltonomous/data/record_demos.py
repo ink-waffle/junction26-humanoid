@@ -12,7 +12,7 @@ the mean of all command messages within +-1/60 s of the tick (anti-aliased resam
 
     # laptop, env uni3, while teleop_safe.py runs in another terminal (real robot: DDS domain 0)
     python -m aaltonomous.data.record_demos --backend real --network-interface enx00e04cd30dba \
-        --task sort_fixed --card-seed 1000 --out data/demos --operator erkka
+        --task sort_fixed --card-seed 1000 --out data/demos --operator alice
     python -m aaltonomous.data.record_demos --backend real --network-interface enx00e04cd30dba --check   # rates only
     # twinflow sim test (2nd sim instance: AALTO_DDS_DOMAIN / AALTO_CAM_PORT_BASE / AALTO_RGBD_PORT as for evaluate)
     python -m aaltonomous.data.record_demos --backend sim --img-server-ip 127.0.0.1 --task sort_fixed --out runs/demos

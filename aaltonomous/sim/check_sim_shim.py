@@ -19,6 +19,6 @@ class ImageClient:
 
 m = types.ModuleType("teleimager.image_client"); m.ImageClient = ImageClient
 sys.modules["teleimager.image_client"] = m
-sys.path.insert(0, "/home/erkka/DIGITWIN/UNITREE-G1-RESEARCH")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
 from aaltonomous.interface.check_interface import main
 sys.exit(main(sys.argv[1:]))
