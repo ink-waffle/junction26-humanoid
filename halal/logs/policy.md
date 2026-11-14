@@ -74,6 +74,9 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v14 | e061f54d6437 | 7e94c20 | +3.75 ± 0.66, 30/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.25** | PASS (through the image, 0 clips, 29.99 Hz, rt ≥ 192) | v13 + v12's release slots + a target whose plan would touch a neighbour waits, the last resort plans as if alone + detector deadline 5 s + one target's failure no longer fails the look; lost: the same stacked cube as v13 (pick order); soft sim 30/31: a cube slipped out in the carry and lay 3 cm in front of a bin where no plan reaches |
 | v15 | 455b3c06f0f1 | 7d017e4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 153) | v14 + main 0a9cc58 (orange / yellow boundary from the hue gap of the look, measured object size, lying prisms) + v12's pick order + most room for the fingers when no target is clear + `done` after 10 s of empty looks + lying prisms grasped as unknown objects; 87 of 87 objects, no empty pick; soft sim 31/31, all picks held at the first try |
 | v16 | ae811fa244d1 | f58d8a4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 149) | v15 + main 99e1976: grasps keyed as motion keys them (`lying` passed through, strategy `cage_lying` = the unknown-shape hold for now); no change of behaviour intended: a repeat of v15's result, 87 of 87, no empty pick; soft sim 31/31, all picks held at the first try |
+| v17 | 2332657ddf0e | 3ebbf19 | +3.88 ± 0.78, 31/31 | 7 episodes: 25/25, stopped | – | – | PASS on the 15 episodes run | v16 + main a8d0b63 (`min_wall_height` 0.07, `cage_side` last candidate) + `Grasp.last_resort` kept out of the retry rotation; stopped for v18 (robot slot), contained in it |
+| v18 | b99fd5dd4a9f | e981865 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 134 with four sims running) | v17 + main 4d93acb (perception hardening, bin row finder) + perception's layout is the only layout (no scene-file re-plan, no latch); known leg on sim `d`; soft sim 31/31, 0 empty picks |
+| v19 | ede4203ebfb1 | 6216ebb | see below | | | | | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -602,3 +605,52 @@ failing plan is slow; 5 objects need the whole 120 s in the mock, and the real-l
 and the next pick.
 Mock timing caveat: other agents' benches load the Mac (load 39 at times); the fast mock charges planning at wall time,
 so its episode lengths stretch under load (`robust` looked regressed until rerun alone).
+
+### v18 per leg (through the image, 14.11, 15:43–16:45 UTC; seeds 1000–1007; four sims ran, rtf 0.38 on the stock legs)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Hands | Empty picks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 143 | PASS | stiff | 0 |
+| known | d | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 134 | PASS | stiff | 0 |
+| unseen | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 142 | PASS | stiff | 0 |
+| fixed, soft-hand sim | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 177 | PASS | soft 16/16 | 0 |
+
+No error line; soft lift scores 0.315–0.566; 7 same-bin pairs on the soft leg, smallest gap 53 mm, all flat. Equal to
+v16 on every leg. v17's 15 episodes before it was stopped: 56/56.
+Void runs of this hour (my mistake, kept under `VOID*` and `runs/void/`): the frozen tree's `sims.sh` did not know
+sim tag `d`, so the "d" evaluator fell back to the default sim and two evaluators drove sim `a` at once: objects swapped
+mid-episode, 1/3 and 0/3, and sim `a`'s robot was left with its arms below the counter (clips from step 9 of the next
+episode) until the sim was restarted. Check `AALTO_INSTANCE` in `/proc/<sim_eval pid>/environ` after every start.
+
+### Main f6d3f15: the landing-box reason hid "hand would touch" (found by `neighbours_e2e.py`, fixed in v19)
+The planner loops over the near insets; the insets whose landing box crosses the near wall come last and their text
+("release would land on a bin wall") replaced the reason of a plan that had been tried. The chooser then counted a
+target with a neighbour as unplannable: it neither waits nor goes as if alone. Mock, real planner, two cubes 50 / 60 /
+55 mm apart and a free cylinder: 1 of 3 sorted (2 of 3 once), time limit, 0 "hand would touch" lines, 48 landing lines;
+at 70 mm the cube fell through to `pinch`. Fix (117aee7, in motion's planner): a plan that was tried keeps its reason.
+After it: 3/3 in all five cases, orders and finger rooms as v18. Motion now exports the reason prefixes
+(`halal.motion.TOUCHING`, `LANDING`); the policy imports `TOUCHING`.
+
+### Lying prisms and the arm (v19)
+Stiff hands have a measured grasp for a lying prism (motion: `ridge_opposed` 18/23, `ridge_pinch` 15/21, `cage_lying`
+5/19 and `last_resort`), but an arm can turn its fingers along the ridge only within ±45° of its natural heading. The
+chooser now puts an arm whose candidates are all last resorts after the other arm. First option by ridge direction
+(12 directions, 15° apart): centre bin 0 of 12 start with `cage_lying` (2 of 12 before), side bins 2 of 12 (only
+their own arm reaches). `lying_prism.py`: lying prisms are picked with `ridge_opposed`, release check run, right bin.
+`policy.last_kinds`, `release_check_after` and the 3-pick limit still list `lying`: the soft list is `cage_lying`
+only and no number says the release check can go.
+
+### Black and colourless detections (v19, main 2ac315e)
+Detector: `black` is a colour family; a colourless blob comes back with `color=None`, confidence < 0.05.
+Policy: nothing to change. Mock: colours-only sentence with a black cube between two targets 6 cm away and a black
+cylinder: 3/3 coloured sorted, black untouched (it blocks: two as-if-alone picks); "black left, yellow right": both
+black objects left; "orange right, everything else center": black to the centre; "all cylinders left": the black
+cylinder too (literal, by the orchestrator's decision). A `color=None` detection injected next to a target and in the
+open: `bin_for` was called with red / yellow / blue only, every plan call received all detections as obstacles, 3/3.
+
+### `release_rise` and the silent target (v19)
+Real-look sim, v18, boxes 6 cm farther: purple → centre objects never got a plan and nothing in the log said why:
+`reaches_bin` was false for both arms, so the target had no option and the per-option "no plan for ..." line never
+ran (silent since v16). v19 logs "no plan for <target>: no arm in use reaches the <bin> bin with a grasp";
+`motion.release_rise` is `[0.0, 0.03, 0.06, 0.09, 0.12]` (reach engineer) and main has the `reaches_bin` stale-inset
+fix. Mock at nominal: release points and pick durations unchanged.
