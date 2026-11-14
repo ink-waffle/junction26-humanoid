@@ -379,6 +379,8 @@ policy:
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
   chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
   hold_ticks: 10              # ticks per reply while the planner works
+  hand_lead_cap: null         # rad, contingency: set only if the runner's safety filter gets `hand_max_lead` (stay under it, e.g. 0.25 for 0.3): hand targets are clamped to the measured joints +- this and rate-limited; in the mock that takes a 0.3 filter from an abort to 8-14 clipped steps per episode, not to zero
+  lead_cap_ticks: 3           # ticks per reply while `hand_lead_cap` is set: the clamp is only as fresh as the reply
   start_settle_s: 0.5         # hold before the first look: frames rendered before the episode's reset must have gone by
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone

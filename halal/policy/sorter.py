@@ -78,7 +78,8 @@ class SortPolicy:
         self.calibrator.reset(enabled=bool(s["grip_check"]))
         self.bin_for = bin_for
         self.time_limit = self.episode_s
-        self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
+        capped = s["hand_lead_cap"] is not None   # short replies: each one re-reads where the fingers are
+        self.stream = CommandStream(self.planner.spec, *((s["lead_cap_ticks"],) * 2 if capped else (s["chunk_ticks"], s["hold_ticks"])))
         self.attempts = Attempts(s["same_object_radius"])
         self.shapes = Shapes(s["same_object_radius"])
         self.released: Counter[str] = Counter()
@@ -95,6 +96,7 @@ class SortPolicy:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
+            self.hand_sent = self.stream.hand_cmd.copy()
             self._settle(self.settings["start_settle_s"])   # the first frames can predate the reset and its camera pose
         try:
             self._observe(obs)
@@ -106,9 +108,19 @@ class SortPolicy:
         except Exception:
             log.exception("policy step failed: starting over from a look")
             self._start_over()
-        if self.stream.busy:
-            return self.stream.next_chunk()
-        return self.stream.hold(done=self.stage is Stage.DONE)
+        action = self.stream.next_chunk() if self.stream.busy else self.stream.hold(done=self.stage is Stage.DONE)
+        return self._within_hand_lead(action, obs)
+
+    def _within_hand_lead(self, action: Action, obs: Mapping[str, Any]) -> Action:
+        """For a runner that caps how far a hand command may lead the measured joint (`hand_lead_cap`): hand targets stay within the cap of the measurement."""
+        cap = self.settings["hand_lead_cap"]
+        if cap is None:
+            return action
+        measured, step, sent = np.asarray(obs["hand_q"], float), self._hand_vel / HZ, []
+        for target in np.clip(action["hand_q_target"], measured - cap, measured + cap):
+            self.hand_sent = np.clip(target, self.hand_sent - step, self.hand_sent + step)   # the clamp must not jump either
+            sent.append(self.hand_sent)
+        return {**action, "hand_q_target": np.array(sent)}
 
     def _observe(self, obs: Mapping[str, Any]) -> None:
         """Use the measured hand joints: calibration samples, and the grip check of a running pick."""

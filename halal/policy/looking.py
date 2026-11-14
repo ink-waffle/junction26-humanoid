@@ -66,7 +66,7 @@ class Looker:
         detections = self._detect(obs)
         if situation.primer:
             self.planner.set_layout(self.detector.layout())   # moves checked before the first plan see the bins where they stand
-            return Look(detections, [], None, [], 0, self.detector.layout().source, True)
+            return Look(detections, [], None, [], 0, _origin(self.detector.layout()), True)
         if situation.hands_pending:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
         return self._plan(self.detector.layout(), detections, situation, cancelled)
@@ -101,7 +101,7 @@ class Looker:
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
         pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
                                                 [det.top for det in detections], cancelled)
-        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False)
+        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), _origin(layout), False)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
         """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""
@@ -127,3 +127,8 @@ class Looker:
             if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
                 targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
         return targets
+
+
+def _origin(layout: SceneLayout) -> str:
+    """What fixed the camera and where the bins come from, for the look's log line."""
+    return f"{layout.source}, bins {layout.bins_from}"
