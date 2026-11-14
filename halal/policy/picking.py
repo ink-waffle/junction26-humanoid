@@ -56,6 +56,8 @@ class Pick:
     side: str
     grasp: Grasp
     plan: Plan
+    shift: Shift = (0.0, 0.0)       # release slot the plan uses
+    obstacles: Obstacles = ()       # what the plan was kept clear of: none for a target picked as if it stood alone
 
 
 class PickChooser:
@@ -115,7 +117,7 @@ class PickChooser:
                 break
             plan = self._plan_pick(target, side, grasp, shift, start, obstacles)
             if plan.ok:
-                return Pick(target, side, grasp, plan), False
+                return Pick(target, side, grasp, plan, shift, tuple(obstacles)), False
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
                      shift, plan.reason)
             if TOUCHING in plan.reason:

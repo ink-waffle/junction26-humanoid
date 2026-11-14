@@ -21,6 +21,7 @@ from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
 from halal.policy.picking import Pick, Target, grasp_kind
+from halal.policy.servo import GraspServo, Next
 from halal.policy.transit import checked_move, lowest_clearance, resting_clearance
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class Stage(enum.Enum):
     MOVING = enum.auto()        # a trajectory runs; a look follows when it ends
     LOOKING = enum.auto()       # perception and planning run in the background
     WAITING = enum.auto()       # the next pick does not fit into the remaining time
+    SERVO = enum.auto()         # the hand hovers beside its target: a look at both corrects the grasp (`grasp_feedback`)
     DONE = enum.auto()
 
 
@@ -66,6 +68,7 @@ class SortPolicy:
         self.episode_s = time_limit
         self.calibrator = HandCalibrator(planner, settings)
         self.looker = Looker(detector, planner, self.calibrator, settings)
+        self.servo = GraspServo(planner, detector, settings)
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.arm_travel = 0.0   # rad the commanded arms have travelled since the server started: the frozen-stream check outlives episodes
@@ -76,6 +79,7 @@ class SortPolicy:
         s = self.settings
         self._log_tally()
         self.jobs.cancel()
+        self.servo.reset()
         self.calibrator.reset(enabled=bool(s["grip_check"]))
         self.bin_for = bin_for
         self.time_limit = self.episode_s
@@ -150,6 +154,8 @@ class SortPolicy:
             self._start_look(obs)
         elif self.stage is Stage.LOOKING:
             self._finish_look(t)
+        elif self.stage is Stage.SERVO:
+            self._servo_step(obs, t)
         elif self.stage is Stage.WAITING and t > self.time_limit:
             log.info("t=%.1f the episode outlasts the assumed %.0f s limit: sorting on", t, self.time_limit)
             self.time_limit, self.stage = math.inf, Stage.MOVING
@@ -209,7 +215,7 @@ class SortPolicy:
         situation = Situation(stream.arm_cmd.copy(), self.arm_travel, hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
                               self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
                               calibrate, primer, self.missed)
-        self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
+        self.jobs.submit(lambda cancelled: self.servo.after_look(self.looker.look(obs, situation, cancelled), situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
         self.stage = Stage.LOOKING
@@ -246,8 +252,20 @@ class SortPolicy:
         elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING
+        elif self.servo.hovers(look.pick, t, self.time_limit):
+            self.servo.start(self.stream, t)
+            self.stage = Stage.SERVO
         else:
             self._start_pick(look.pick, t)
+
+    def _servo_step(self, obs: Mapping[str, Any], t: float) -> None:
+        """The hand hovers beside its target: hold while the servo looks and replans, then pick from there (or go home and look again)."""
+        step = self.servo.step(obs, t, self.stream, self.jobs)
+        if step is Next.PICK:
+            self._start_pick(self.servo.final, t)
+        elif step is Next.HOME:
+            self.attempts.record_pick(self.servo.stranded.xy)
+            self.stage, self.next_view = Stage.MOVING, View.HOME
 
     def _waits_for_the_camera(self, look: Look) -> bool:
         """A pick on the nominal camera can miss by centimetres: with the hands in view (not the clear pose) a few more still looks let the detector fix it first."""
@@ -448,6 +466,7 @@ class SortPolicy:
             self.active.window = None
             return
         log.info("t=%.1f hand empty (grip score %.3f): going home", t, score)
+        self.servo.outcome(self.active.pick, score, released=False)
         self.tally.update(empty_hand=1)
         self.stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
         self.active, self.view, self.next_view = None, View.HOME, None
@@ -463,7 +482,9 @@ class SortPolicy:
 
     def _finish_pick(self, t: float) -> None:
         active, self.active = self.active, None
-        if active.lowest_score < self._empty_below(active.pick.side) or active.pick.side in self.blocked:
+        released = not (active.lowest_score < self._empty_below(active.pick.side) or active.pick.side in self.blocked)
+        self.servo.outcome(active.pick, active.lowest_score, released)
+        if not released:
             return
         self.released[active.pick.plan.target_bin] += 1
         self.tally.update(released=1)
