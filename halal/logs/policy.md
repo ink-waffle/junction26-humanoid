@@ -873,3 +873,23 @@ behind `ridge_opposed`).
 
 Suites 36/36 (0 clips, tracebacks only where injected), `neighbours_e2e` 5/5, resting starts 24/24 objects in 6 episodes with the boxes at the file's place,
 frozen cases as v25.
+
+### v26 per leg (through the image, 14.11, from 21:08 UTC; seeds 1000–1007; one sim (b), rtf 0.46–0.50)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 175 | PASS | 0 | scene, bins scene 177 / 177 | cage 28, cage_apex 6 |
+| fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 173 | PASS | 0 | scene, bins scene 177 / 177 | cage 19, cage_apex 6, cage_deep 9 |
+
+### Tries follow a pushed object without being counted twice (for v27, 4c70681)
+v26 known seed 1002: the blue triangle was picked three times (each miss pushed it 2-4 cm) and then left alone: the attempt
+cap counted 5. `Attempts.follow` copied the records of the missed spot to the new spot; the next spot of a 2-3 cm push saw
+the old records and the copies, so each push double counted. Now the records near the missed spot move to the new spot.
+Mock (scratch `p5/follow_pushes.py`: the policy's own `record_pick`, `_follow_missed` and `_targets` along push paths):
+
+| Path | real picks before (v26) | after |
+|---|---|---|
+| v26 known seed 1002 (0.305,0.071) -> (0.324,0.095) -> (0.284,0.101) -> (0.296,0.098) ... | 3 | 5 |
+| random walks, 200 each: pushes of 2 / 2.5 / 3 / 4 / 6 cm | short of 5 in 70 / 43 / 58 / 7 / 0 | 0 / 0 / 0 / 0 / 0 |
+
+Suites 36/36, `neighbours_e2e` 5/5, predecessors' `follow_chain` (1..6) and `follow_missed` (1 0 0) unchanged.
