@@ -178,7 +178,8 @@ class GraspServo:
         if isinstance(result, Hover):
             state.hover = result
             stream.load(result.arm, result.hand, settle_ticks=self._hold_ticks)
-            log.info("t=%.1f servo: hovering again, beside the corrected target", t)
+            log.info("t=%.1f servo: hovering again beside the corrected target, offset (%+.0f,%+.0f,%+.0f) mm, %.0f %% of the top hidden by the model",
+                     t, *(1e3 * result.offset), 100 * result.hidden)
             return Next.WAIT
         self.state, self.final, self.stranded = None, result, state.pick.target
         if result is None:
