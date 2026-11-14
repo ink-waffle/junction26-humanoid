@@ -6,6 +6,19 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 13:00
+- **Hand-in candidate: v10, proxy +21.13 of a possible 21.38 (86 of 87 objects), sim gate PASS on all 24
+  episodes, measured through its container.**
+  `ghcr.io/ink-waffle/halal-policy@sha256:7e65414e990c218d33f5423a95536662901153614f2f7a38ea1a16a3716954f8`
+- **Real-robot rehearsal:** a dev-only "soft hand" sim (finger gains kp 1.5 / kd 0.2 with the inertia fitted to
+  the real finger's step response) now exists. v11 through its image against it: 31/31 on the fixed task, gate
+  PASS, hands classified soft by the policy itself in 16 of 16 calibrations. The published v8 misclassified them
+  there (threshold set from one number) and held 6 of 19 picks; fixed from v11 on.
+- **Now:** v12 (vertex-aligned triangle grasp, slower lift and carry for the soft hand, wider release slots,
+  attempts that follow a pushed object) on the stock sims and the soft sim; grasp sweeps in a grippy-and-light
+  corner of the randomisation that the bench had not covered.
+- Organisers: no form, deadline or new drop as of 10:06; next check due.
+
 ### Sat 14.11, 12:00
 - **Hand-in candidate: v8, proxy +20.38, sim gate PASS on all 24 episodes, measured through its container.**
   `ghcr.io/ink-waffle/halal-policy@sha256:550b70a8b0033063c906b215a7b6b7c09fab69923c8067df636de8dddfb84dc4`
@@ -92,6 +105,8 @@ Full proxy (three legs, 8 seeds each, DR train):
 | v2: topface, verification, retries, organiser pinch | +3.38 (27/31) | +6.75 (27/28) | +6.25 (25/28) | **+19.50** | pass |
 | v4: + cage grasps, perception fix, start settle, parser v6 (through the image) | +3.62 (29/31) | +6.38 (26/28, 1 wrong bin) | +6.50 (26/28) | **+19.75** | pass |
 | v8: + final perception, hand-aware grasps, release check (through the image) | +3.88 (31/31) | +6.75 (27/28) | +6.50 (26/28) | **+20.38** | pass |
+| v9: + cheaper release check, more tries on toppled objects | +3.88 (31/31) | +7.00 (28/28) | +6.50 (26/28) | **+20.63** | pass |
+| v10: + staggered finger release, arm retired only on a confirmed read | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
 
 v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
 27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16
