@@ -1,6 +1,6 @@
 """Offline: which release the planner finds with the bin row moved away from the robot, per bin, arm and release slot.
 
-    python -m halal.eval.reach_bench --offsets 0 0.03 0.06 0.08 0.10 0.12 [--rises 0 0.03 0.06 0.09 0.12]     (no sim needed)
+    python -m halal.eval.reach_bench --offsets 0 0.03 0.06 0.08 0.10 0.12 [--rises 0 0.03 0.06 0.09 0.12] [--shape cylinder]     (no sim needed)
 """
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from halal.perception import ObjectDetection, SceneLayout, scene_layout
 
 ARMS = {"left": ("left",), "center": ("left", "right"), "right": ("right",)}
 OUTWARD = {"left": 1.0, "right": -1.0}
+YAWS = {"cube": 0.0, "triangle": 0.0, "cylinder": None}
 
 
 def moved(planner: PickPlanner, offset: float) -> SceneLayout:
@@ -27,13 +28,13 @@ def moved(planner: PickPlanner, offset: float) -> SceneLayout:
     return SceneLayout(layout.counter_z, {name: xy + [offset, 0.0] for name, xy in layout.bins.items()}, "scene")
 
 
-def cube(planner: PickPlanner, side: str, spot: list[float]) -> ObjectDetection:
-    """An upright cube at a bench spot (forward, outward) on this arm's side."""
+def upright(planner: PickPlanner, side: str, spot: list[float], shape: str) -> ObjectDetection:
+    """An upright object of this shape at a bench spot (forward, outward) on this arm's side."""
     top = np.r_[spot[0], OUTWARD[side] * spot[1], planner.scene.counter_z + planner.height]
-    return ObjectDetection(color="red", top=top, shape="cube", yaw=0.0)
+    return ObjectDetection(color="red", top=top, shape=shape, yaw=YAWS[shape])
 
 
-def rows(planner: PickPlanner, offset: float, hand: str) -> list[dict[str, Any]]:
+def rows(planner: PickPlanner, offset: float, hand: str, shape: str) -> list[dict[str, Any]]:
     """One plan per bin, arm, release slot and object spot with the bins at this offset."""
     settings, slots = config.load()["reach_bench"], config.load()["policy"]["release_shifts"]
     planner.set_layout(moved(planner, offset))
@@ -42,9 +43,9 @@ def rows(planner: PickPlanner, offset: float, hand: str) -> list[dict[str, Any]]
         for side in ARMS[bin_name]:
             for shift in slots[bin_name]:
                 for spot in settings["spots"]:
-                    det = cube(planner, side, spot)
+                    det = upright(planner, side, spot, shape)
                     began = time.perf_counter()
-                    plan = planner.plan_pick(det, candidate_grasps("cube", 0.0, side, hand)[0], side, bin_name, start,
+                    plan = planner.plan_pick(det, candidate_grasps(shape, det.yaw, side, hand)[0], side, bin_name, start,
                                              planner.post["open"].copy(), drop_shift=tuple(shift), end="retreat")
                     out.append({"bin": bin_name, "side": side, "ok": plan.ok, "reason": plan.reason, "wall": time.perf_counter() - began,
                                 "inset": planner.near_inset, "duration": plan.duration,
@@ -73,12 +74,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--offsets", type=float, nargs="+", default=[0.0, 0.03, 0.06, 0.08, 0.10, 0.12])
     ap.add_argument("--rises", type=float, nargs="+", help="motion.release_rise for this run (default: the config's)")
     ap.add_argument("--hand", default="stiff", choices=("stiff", "soft"))
+    ap.add_argument("--shape", default="cube", choices=tuple(YAWS))
     args = ap.parse_args(argv)
     planner = PickPlanner.create()
     if args.rises:
         planner.motion["release_rise"] = args.rises
     for offset in args.offsets:
-        report(offset, rows(planner, offset, args.hand))
+        report(offset, rows(planner, offset, args.hand, args.shape))
     return 0
 
 
