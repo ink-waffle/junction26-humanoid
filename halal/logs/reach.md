@@ -191,3 +191,18 @@ Sim d is back on stock settings.
   inset ≥ 3 cm (n 104): x −34 / −26 / +8 / +75 / +110, outward y −52 / −45 / +8 / +71 / +89; soft risen, inset ≥ 3 cm
   (n 68): x −31 / −20 / 0 / +52 / +79, y −31 / −26 / +6 / +37 / +83; stock risen at the limit, inset ≤ 2 cm (n 48):
   x +3 / +6 / +46 / +117 / +129, y −57 / −46 / −4 / +60 / +82.
+
+## Sweep r7: soft hand, centre bin, +10 cm (a 1 cm inset: the rim release on the real hand's class)
+
+Same sim settings (soft: `HAND_GAINS` 1.5, 0.2, 0.0075), centre bin, one arm at a time, release at y 0, 4 picks per
+shape, code as for r1–r6 (no landing rule). Columns as r3/r4; "landing" is over every carried object.
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | centre to wall passing the rim, min | by shape (binned / carried) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| +10, centre, soft | `rim` [0.02, 0.01] | 12/12 | 11 | 11/11 | 0 / 0 / 0 | +1.00 | 1 cm, +6 cm | +16…+107 mm (median +49) | 26 mm | cube 3/3, cylinder 4/4, triangle 4/4 |
+
+- Per shape, landing minus release point x (median): cube +16…+19 (+18), cylinder +21…+107 (+82), triangle +48…+62 (+51) mm.
+  Stock hand at the same point (r3): cube 2/4 (both misses rest 27–28 mm in front of the near wall), cylinder 4/4,
+  triangle 4/4.
+- One cube was not lifted (grasp matter; not in the 11). The forward drift at the reach limit is there on the soft hand
+  too (median +49 mm). EV stays an upper bound for the real robot (no backlash / stiction in the soft sim).
