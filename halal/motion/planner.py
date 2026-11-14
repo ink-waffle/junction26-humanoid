@@ -16,6 +16,7 @@ from aaltonomous.scene.scene import Scene
 
 from halal import config
 from halal.motion.grasps import Grasp, right_hand
+from halal.perception import SceneLayout
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
@@ -86,8 +87,18 @@ class PickPlanner(Planner):
         return replace(plan, arm=arm, hand=hand, phases=phases, safety_clips=clips, ok=clips == 0,
                        reason="" if clips == 0 else f"{clips} safety clips in dry run")
 
+    def set_layout(self, layout: SceneLayout) -> None:
+        """Plan against the counter height and bin positions perception reports for this episode."""
+        file_scene = self.__dict__.setdefault("file_scene", self.scene)
+        cfg = copy.deepcopy(file_scene.cfg)
+        cfg["counter"]["mat_origin_in_pelvis"][2] = float(layout.counter_z)
+        for name, xy in layout.bins.items():
+            cfg["bins"]["centers"][name] = file_scene.pelvis_to_mat(np.r_[xy, 0.0])[:2].tolist()
+        self.use_scene(Scene(cfg))
+
     def use_scene(self, scene: Scene) -> None:
         """Replace the geometry (counter height, bins) all later plans work against."""
+        self.__dict__.setdefault("file_scene", self.scene)
         self.scene = scene
         self.__dict__.pop("_reach", None)
 
