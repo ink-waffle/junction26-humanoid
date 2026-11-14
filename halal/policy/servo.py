@@ -14,6 +14,7 @@ import numpy as np
 
 from halal.motion import PickPlanner
 from halal.motion.hover import Hover, grasp_point, plan_hover
+from halal.motion.obstacles import top_of
 from halal.perception import Detector
 from halal.perception.geometry import Camera
 from halal.perception.hover import HoverLook, HoverMeasurer
@@ -262,11 +263,11 @@ class GraspServo:
     def _final_pick(self, state: Hovering, arm_q: np.ndarray, hand_q: np.ndarray) -> Pick | None:
         """The pick planned from the hover onto the corrected target; onto the open-loop one if that has no plan; None if neither."""
         pick = state.pick
-        tops = {"corrected": pick.target.detection.top + state.correction} if state.applied else {}
-        for name, top in {**tops, "open-loop": pick.target.detection.top}.items():
-            det = replace(pick.target.detection, top=top)
+        shifts = {"corrected": state.correction} if state.applied else {}
+        for name, shift in {**shifts, "open-loop": np.zeros(3)}.items():
+            det = replace(pick.target.detection, top=pick.target.detection.top + shift)
             plan = self.planner.plan_pick(det, pick.grasp, pick.side, pick.target.bin_name, arm_q, hand_q, drop_shift=pick.shift,
-                                          obstacles=pick.obstacles)
+                                          obstacles=self._neighbours(pick, shift))
             if plan.ok:
                 return replace(pick, plan=plan)
             log.info("servo: no plan from the hover onto the %s target: %s", name, plan.reason)
@@ -288,6 +289,11 @@ class GraspServo:
         self.tally.update(["looks", "believable" if believable else f"refused: {measured.refused}"])
         if state.measured is not None and measured.step is not None:
             self.corrections.append(float(np.linalg.norm(state.measured)))
+
+    def _neighbours(self, pick: Pick, shift: np.ndarray) -> list[np.ndarray]:
+        """The other objects the pick was kept clear of, moved as its target was: the error the look corrected is the camera's, theirs too."""
+        own = self.planner.motion["obstacles"]["radius"]
+        return [top_of(other) + shift for other in pick.obstacles if float(np.linalg.norm(top_of(other)[:2] - pick.target.xy)) > own]
 
     def _bins(self) -> dict[str, np.ndarray]:
         """Bin centres (pelvis xy) the planner works against this look."""
