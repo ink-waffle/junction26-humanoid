@@ -81,8 +81,8 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
 | v22 | cb81d93c1969 | e318a23 (= main cae48ed) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 119; soft sim 31/31) | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
 | v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | +3.88 ± 0.78, 31/31 | skipped (v24 contains v23) | +7.00 ± 1.41, 28/28 | – | PASS on the 16 episodes run (0 clips, ≥ 29.98 Hz, rt ≥ 165) | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
-| v24 | e4869cbc1500 | 3d413a3 | not run | | | | pre-check only | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
-| v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | queued | | | | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
+| v24 | e4869cbc1500 | 3d413a3 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 118; soft sim 31/31) | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
+| v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | see below | stopped (sims to the servo engineer) | 3 episodes: 11/11, stopped | – | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -814,3 +814,61 @@ fresh policy (no reference frame), home start, live depth, colour frozen at a pi
 Limit left: the first pick of a fresh container with every frame so far seen from one pose (no arm travel yet) is still
 planned from the first picture. A false trigger needs a byte-identical frame after an arm move: on a real camera only a
 frozen stream gives that; on the stock sim the v25 legs must show none.
+
+### v24 per leg (through the image, 14.11, 19:56–20:55 UTC; seeds 1000–1007; rtf 0.33–0.37, four sims busy)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 123 | PASS | 0 | scene, bins scene 177 / 177 | cage 28, cage_apex 6 |
+| known | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 118 | PASS | 0 | scene, bins scene 174 / 174 | cage 19, cage_apex 19, pinch 1 |
+| unseen | b | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 124 | PASS | 1 | scene, bins scene 175 / 175 | cage 20, cage_apex 18, cage_deep 1, pinch 1 |
+| fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 123 | PASS | 0 | scene, bins scene 177 / 177 | cage 19, cage_apex 6, cage_deep 9 |
+
+Verdict: publishable (gate PASS on all 24 stock episodes and the soft leg, 87/87 and 31/31 = v22; ties go to the newer);
+published as the robot candidate (main 126bf20). At a home start the v24 additions are no-ops: 0 "camera is still the
+nominal one", 0 "going home before", 0 frozen / ERROR lines in all four legs. Hands stiff 48/48, soft 16/16 (lift scores
+0.403–0.578). Imperfect but sorted: the as-if-alone pick of two blocking triangles (fixed / soft 1004, known / unseen 1001
+and 1003; fingers 0–5 mm from the neighbour); unseen 1007: a red cube at x 0.259 missed by the left arm's `cage` (pushed
+5.6 cm), held by the right arm's `pinch` at try 2 (v23 took it with `pinch` first: order and sim jitter). Same-bin pairs 23,
+all scored (smallest gap 52 mm).
+
+Real-look sim, resting start (realsim rs24-robot6-rest, first four episodes): every episode goes home for the calibration
+close, the first home look is still `nominal`, the policy waits once ("look 1 of 3"), the hand fit is `trusted` at the next
+look and the first pick comes after it: first picks at 7.9 / 15.2 / 6.2 / 7.9 s against v23's 6.9 / 12.2 / 5.6 / 6.6 s on
+the same seeds, 0 empty picks against v23's 18 in the leg. `nominal_camera_looks` 3 stays (one is used).
+
+### v25 legs (through the image, 14.11, 20:45–21:04 UTC; stopped by order when the sims went to the servo engineer)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 126 | PASS | 0 | scene, bins scene 177 / 177 | cage 27, cage_apex 6, cage_deep 1 |
+| unseen, 3 episodes | b | +7.33 | 11/11 | done 3 | 0 | 30.0 | 160 | ok | 0 | scene, bins scene 69 / 69 | |
+
+Known and soft not run; v25 is contained in v26. No frozen ("byte-identical") line in any of the 246 stock looks: no false
+trigger of the travel rule. The one ERROR in the unseen log is the websocket closed by the stop.
+
+### Shape memory against a fallen prism, and targets whose options raise (v26, 9787d0f)
+Realsim rs23-robot6-rest seed 1004: a purple prism held by `ridge_opposed` slipped in the carry and came to rest lying at
+(+0.364,+0.033), within 3 cm of where the RED CYLINDER had been seen through the nominal camera at the start (+0.349,+0.049,
+visible 0.95 against the prism's 0.91). The shape memory matched by position only, so the prism became a "blue lying
+cylinder"; motion had no squeeze depth for that key (KeyError in `_depth`), every look raised in the option build and the
+episode looked again 25 times until the time limit. v26:
+- the shape memory matches only records of the same colour, and the records near a spot are forgotten when a pick starts
+  there (the object leaves, falls or is pushed: what was seen there no longer holds);
+- a lying detection keeps its own shape (perception reports only prisms as lying);
+- a target whose grasp options raise in `policy.broken_target_looks` (3) looks is left alone (log line "is left alone"), so it
+  cannot hold up `done`; "no arm reaches" does not count (reach changes with the camera fit).
+Motion's side (main 7a3a729): every squeeze map covers every shape key, `_depth` falls back to `unknown`. Also in v26: motion
+f42568f (`ridge_skew15` in the soft lying list, a last resort before `cage_lying`; the policy keeps last resorts in list order
+behind `ridge_opposed`).
+
+| Mock (scratch `p5/shape_memory.py`) | v24 tree | v26 tree |
+|---|---|---|
+| purple prism lying where a red cylinder was seen | "blue lying cylinder" | "blue lying triangle" |
+| red cube picked, a red cylinder pushed onto its spot (seen at 0.6) | "red cube" | "red cylinder" |
+| a yellow object without a shape where only red was seen | "yellow cube" | "yellow object" |
+| options for every cylinder raise, seeds 11 / 13 | 47 / 26 "no options" lines, time limit | 3 each, "left alone", `done` at 60 / 95 s, the other objects sorted |
+| a cube read as a lying prism from look 3 on | lying triangle, sorted | the same |
+
+Suites 36/36 (0 clips, tracebacks only where injected), `neighbours_e2e` 5/5, resting starts 24/24 objects in 6 episodes with the boxes at the file's place,
+frozen cases as v25.
