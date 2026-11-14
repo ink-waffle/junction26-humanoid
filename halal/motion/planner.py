@@ -64,12 +64,13 @@ class PickPlanner(Planner):
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
             releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name)
+            tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
             for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
                 if place_xy is None and not self._lands_inside(side, bin_name):
-                    plan = replace(plan, reason="release would land on a bin wall")
+                    plan = plan if tried else replace(plan, reason="release would land on a bin wall")
                     continue
                 with self._released_from(rise):
-                    plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
+                    plan, tried = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy), True
                 if plan.ok:
                     break
         return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
