@@ -234,7 +234,7 @@ policy:
     stiff: 0.0                # the sim hand: deeper drives cubes and cylinders past the fingertips
     soft: 0.45                # the real hand (kp 1.5) needs it for grip; the planner clips at the thumb limit
     unknown: 0.0
-  release_check_squeeze: 0.6  # after a grasp this deep the hand closes once more above the bin to see that it let go
+  release_check_squeeze: 0.0  # after a grasp at least this deep the hand closes once more above the bin (a cube wedged at 0.30)
   release_checks: 3           # such closes per pick (each reopens the hand) before the arm is given up for the episode
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
