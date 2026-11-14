@@ -93,6 +93,20 @@ perception:
       surely_wall: 0.045      # up to this height every bin wall stands: the median count there is what "wall" looks like
       wall_share: 0.5         # the rim is the highest height bin with this share of that count (a finger over a bin has far less)
       min_points: 40          # points per height bin needed to speak of walls at all
+  hover:                      # one look from the grasp hover pose (halal.perception.hover): picking hand -> local shift, target re-fitted
+    arm_fit: true             # first turn the given camera by this look's own fit of both arms (calibration.hands), when believed
+    links: [wrist_, hand_]    # links of the picking side the shift is fitted to; pixels nearer the rest of the arms are theirs
+    floor_clearance: 0.065    # only depth this far above the counter is hand evidence: object tops stay under it
+    bin_margin: 0.01          # around a bin footprint its depth is no hand evidence (rims reach 7 cm)
+    prior_shift: 0.03         # how far the camera may plausibly be off at the hand: holds an axis the hand patch does not fix
+    match_radius: 0.03        # the re-fitted top face lies this close (xy) to the open-loop target, or it is not the target
+    min_visible: 0.4          # a look is trusted with at least this share of the top face seen,
+    min_points: 150           # this many hand pixels matched at the last gate,
+    max_rms: 0.004            # at most this point-to-plane residual,
+    min_coverage: 0.6         # this share of the visible hand model (with depth at its pixel) matched,
+    min_inliers: 0.5          # this share of the depth pixels around the hand on the model,
+    max_spread: 0.003         # at most this predicted standard deviation of the shift,
+    max_shift: 0.05           # and a shift no larger than a head calibration can be wrong at the hand
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
     arm_fits: 5               # believed arm fits clear of the counter gathered per episode; the one nearest to all others fixes the camera
