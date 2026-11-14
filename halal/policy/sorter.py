@@ -110,7 +110,7 @@ class SortPolicy:
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
         self.view, self.next_view = View.START, None
-        self.empty_looks, self.empty_since = 0, math.inf
+        self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
 
     def act(self, obs: Mapping[str, Any]) -> Action:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
@@ -262,7 +262,7 @@ class SortPolicy:
             log.info("t=%.1f no plan for any of %d targets: looking again", t, len(look.unplannable))
             self._pause(self.settings["replan_pause_s"])
         elif look.pick is None:
-            self._nothing_to_pick(t)
+            self._nothing_to_pick(t, look)
         elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING
@@ -292,12 +292,18 @@ class SortPolicy:
         log.info("t=%.1f look from %s: %d detections, %d outside the object area, layout from %s: %s", t,
                  self.view.name.lower(), len(look.detections), len(look.outside), look.layout_source, seen)
 
-    def _nothing_to_pick(self, t: float) -> None:
+    def _nothing_to_pick(self, t: float, look: Look) -> None:
         """Finish only after several looks with the arms out of the way, spread over some time, show nothing sortable."""
         self.stage = Stage.MOVING
-        if self.view is not View.CLEAR:
+        self.start_looks += self.view is View.START
+        if self.view is View.START and not look.detections and self.start_looks < self.settings["start_looks"]:
+            self._settle()   # an empty counter at the very start is a late frame: look again before moving the arms out of view
+        elif self.view is not View.CLEAR:
             self.next_view = View.CLEAR   # an arm in the image can hide an object: only a clear look may say it is gone
-            return
+        else:
+            self._count_empty_look(t)
+
+    def _count_empty_look(self, t: float) -> None:
         self.empty_looks += 1
         self.empty_since = min(self.empty_since, t)
         log.info("t=%.1f nothing to pick (clear look %d in a row)", t, self.empty_looks)
