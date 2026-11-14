@@ -1,0 +1,76 @@
+# Instructions that name black objects (seen on the venue table next to the foam; not a scene colour).
+# Same format as paraphrases.yaml; "black" is literal in text and mapping, the bench then scores the black object types too.
+
+- id: black-only
+  split: test
+  category: color_leave
+  text: "Put the black objects in the {b0} bin."
+  mapping: {black: b0}
+
+- id: black-fourth-colour
+  split: test
+  category: color_rest
+  text: "{C0} objects go in the {b0} bin, {c1} ones in the {b1} bin, {c2} ones in the {b2} bin and black ones in the {b0} bin."
+  mapping: {c0: b0, c1: b1, c2: b2, black: b0}
+
+- id: black-fourth-colour-real-words
+  split: test
+  category: color_rest
+  words: {red: orange, blue: purple}
+  text: "Sort by colour: {c0} to the {b0} box, {c1} to the {b1} box, {c2} to the {b2} box, black to the {b1} box."
+  mapping: {c0: b0, c1: b1, c2: b2, black: b1}
+
+- id: black-and-the-rest
+  split: test
+  category: color_rest
+  text: "Black pieces go {b0}, everything else goes {b1}."
+  mapping: {black: b0, default: b1}
+
+- id: black-left-alone
+  split: test
+  category: color_leave
+  text: "Sort {c0} to the {b0} bin and {c1} to the {b1} bin. Leave the black ones where they are."
+  mapping: {c0: b0, c1: b1}
+
+- id: black-do-not-touch
+  split: test
+  category: color_leave
+  text: "Do not touch the black blocks. {C0} blocks belong in the {b0} box."
+  mapping: {c0: b0}
+
+- id: black-cubes-against-cubes
+  split: test
+  category: color_shape
+  text: "Black cubes go in the {b0} bin and all other cubes in the {b1} bin."
+  mapping: {black/cube: b0, cube: b1}
+
+- id: black-cylinder-single
+  split: test
+  category: color_shape
+  text: "The black cylinder goes {b0}; {c0} things go {b1}."
+  mapping: {black/cylinder: b0, c0: b1}
+
+- id: black-arrows
+  split: test
+  category: color_rest
+  text: "black -> {b0}, {c0} -> {b1}, {c1} -> {b2}"
+  mapping: {black: b0, c0: b1, c1: b2}
+
+- id: black-shares-a-bin
+  split: test
+  category: color_rest
+  text: "{C0} and black objects go to the {b0} bin, {c1} objects to the {b2} bin."
+  mapping: {c0: b0, black: b0, c1: b2}
+
+- id: black-mentioned-only
+  split: test
+  category: color_leave
+  words: {red: orange, blue: purple}
+  text: "There are black and {c0} objects on the table. Put the {c0} ones in the {b0} bin."
+  mapping: {c0: b0}
+
+- id: black-not-in
+  split: test
+  category: negation
+  text: "Black objects go in the {b0} bin, but nothing else goes there: {c0} goes {b1}."
+  mapping: {black: b0, c0: b1}

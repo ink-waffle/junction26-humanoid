@@ -627,6 +627,53 @@ the 8 episodes have a still first frame); once the arm pose is kept it holds to 
 more than 3 cm off, and the camera part stays 2.0 / 2.7 (typical). The "phantoms" under the shift (8 looks of seed 2201) are a
 yellow cube that leaned on a bin wall in the recording and stands on the counter in the re-rendered scene: a bench artefact.
 
+**H6. The arm pose accumulates over looks** (`topface.arm_fits`, `SelfCalibration.consensus`). The first believed hand fit used
+to fix the camera for the episode. Now believed fits are gathered at up to 5 still looks and the one nearest to all others at
+the object band is used (with one or two fits: the first). Why: at bad depth 3 % of single fits are over 10 mm and pass every
+check. The same frame under six depth seeds (45 dev frames, `--shift real`), band error median / p95 / max mm: single look
+typical 3.7 / 4.6 / 6.4, bad 4.3 / 8.1 / 16.8 (8 of 270 over 10 mm); nearest-to-all of three looks 3.7 / 4.4 / 4.4, 4.2 / 8.2 / 12.5;
+of five 3.7 / 4.1 / 4.4, 4.2 / 8.5 / 11.0. Two of 45 frames stay over 10 mm at bad: there most seeds are off (seeds 2010, 2074),
+so it is the frame, not the noise. `motion --still --shift real`: clean and typical unchanged within 0.1 mm, bad camera part
+5.5 / 6.6 -> 5.0 / 6.4. All clean sets including `motion`: identical. Cost: up to four more hand fits per episode (30 ms each,
+200 ms when every restart is tried).
+Tried and dropped: left arm and right arm fitted separately as a cross-check. At `ARM_HOME` the right arm shows 211 model
+points (300 are needed for a fit), so there is nothing to compare.
+
+**H7. Objects of no colour family are reported, with `color` None.** A photo of the venue table shows black cubes, cylinders
+and prisms next to the foam. `perception_bench --blacken blue` paints one colour's objects black (grey value x 0.15). Before:
+0 of 158 (`dr_train`) and 0 of 65 (`lookpose`) black objects detected, clean or typical depth: the top-face fit found them
+and the colour confidence of 0 dropped them, so the policy could not even avoid them. Now every geometry-accepted object
+comes back; its `color` is None and its `confidence` below `min_confidence` when no family fits (black, grey, a hue between
+families). Black objects: `dr_train` recall 1.000 clean, 0.962 typical (the misses are under a thumb), xy 1.7 / 2.5 and 1.3 / 2.9,
+shape right 1.000 of 0.87 and 0.79 decided; `lookpose` 1.000 / 1.000, clean and typical. The red and yellow objects of the same
+frames: unchanged. All unpainted sets including `motion`: identical line by line, so no hand, wall or shadow has become a
+colourless object in 1401 sim frames. Not found: a black prism lying on its side (the fallback blob starts from coloured pixels).
+Not verified: black foam in real depth (if it returns as little as the black hand, it has no top face and stays unseen).
+
+**H8. A fourth colour, black** (orchestrator's order after the venue photo; detector and parser together, neither alone).
+Detector (`color.black`): a geometry-accepted object is black when most of its body pixels are dark against the bare counter
+(value below 0.5 x the counter's median brightness); confidence 0 at half of the pixels, 1 at 80 %. A dark object is black
+whatever its hue: the black hand has a blue cast that would otherwise name it blue. Stragglers (no top face) are never black.
+- `--blacken blue`, black objects found / named black of those found / at confidence >= 0.5: `dr_train` clean 158 of 158 / all / all;
+  typical 152 of 158 / all / all; bad 89 of 158 / all. `lookpose` 65, 65, 46 of 65, all named black. At bad 1 of 403 (`dr_train`)
+  and 3 of 169 (`lookpose`) rightly named detections of any colour fall below 0.5. At bad the depth model takes
+  70 % of every dark pixel's depth, so black objects lose their top face: that is the real risk for black foam, not the colour.
+- Nothing else turns black: every unpainted sim set including `motion` is identical line by line; with `--repaint` (real
+  palette) on `dr_train`, `lowhands`, `closedhands`, `lookpose`: 0 black among 815 detections; real drop 2, 187 foam objects of
+  48 first frames (purple 44, orange 81, yellow 62): dark share 0.000 at most (the table reads 152, the limit is 76; the
+  objects' darkest pixels are above it), while the hand's dark pixels have share 1.00. So the rule separates by a wide margin,
+  and what keeps the hand from being a black object is geometry alone, as before.
+Parser (`halal/language/grammar`): `EXTRA_COLOURS = ("black",)`. The grammar's object types are the nine of the scene unless
+the instruction names black; then black joins them for that instruction ("everything else", negation and key rebuilding
+include it). Words: black, blacks ("dark" is not taken). All 10 846 rendered cases of the three existing sets parse to the
+same mapping and confidence as before, compared one by one; scores unchanged (dev 2781 cases 1.000 exact, 1.934 points; test
+2853, 1.000, 1.909; fresh 4087, 1.000, 1.935; real 1125, 1.000, 1.655). New `halal/eval/paraphrases_black.yaml`, 12 entries, 249
+cases: 1.000 exact, all confident (`language_bench --split test --file halal/eval/paraphrases_black.yaml`; the bench scores the
+black object types whenever a text names black).
+What follows for the policy: a black object is a target only if the mapping reaches it: through a `black` key, or through a
+shape key or `default` ("all cubes left", "everything else right"), exactly like any colour. Under a colours-only
+instruction that does not name black it has no bin and stays an obstacle.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

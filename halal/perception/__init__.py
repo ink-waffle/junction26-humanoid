@@ -7,14 +7,14 @@ from typing import Any, Mapping, Protocol
 
 import numpy as np
 
-COLORS = ("red", "yellow", "blue")
+COLORS = ("red", "yellow", "blue", "black")   # three families of the scene's objects, and black ones seen at the venue
 SHAPES = ("cube", "cylinder", "triangle")
 
 
 @dataclass(frozen=True, eq=False)
 class ObjectDetection:
     """One object on the counter; `top` is the centre of its top face in the pelvis frame (m)."""
-    color: str
+    color: str | None           # one of COLORS; None = no family (grey, a hue between families): an obstacle, never a target
     top: np.ndarray
     shape: str | None = None    # None = not classified
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown
