@@ -27,11 +27,11 @@ class BinFinder:
         scene_pitch = float(np.ptp([xy[1] for xy in self.expected.values()])) / (len(self.names) - 1)
         self.prior = cfg["prior"] * np.array([abs(centre - self.middle) + abs(pitch - scene_pitch) for centre, pitch in self.rows])
 
-    def find(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> dict[str, np.ndarray]:
-        """Centre xy of every bin as seen; the scene file's where no row of boxes is found."""
+    def find(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> dict[str, np.ndarray] | None:
+        """Centre xy of every bin as seen; None when no row of boxes is found."""
         row = self._row_x(depth, camera, counter)
         placed = None if row is None else self._placed(depth, camera, counter, row)
-        return dict(self.expected) if placed is None else self._boxes(depth, camera, counter, row, placed)
+        return None if placed is None else self._boxes(depth, camera, counter, row, placed)
 
     def _comb(self, centre: float, pitch: float) -> np.ndarray:
         """Over `self.y`: +1 where the front wall of a row of boxes centred at `centre` with this pitch stands, else -1."""

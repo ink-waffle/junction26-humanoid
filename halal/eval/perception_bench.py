@@ -286,7 +286,7 @@ def layout_row(frame: Frame, layout: SceneLayout, scene: Scene, wall_height: flo
     band = scene.mat_to_pelvis([*np.mean(scene.layout_kwargs()["region"], axis=1), 0.0])
     rims = [truly(np.r_[xy + half * signs, scene.counter_z + wall_height][None], name)[0, 2]
             for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
-    return {"seed": frame.seed, "tick": frame.tick, "source": layout.source,
+    return {"seed": frame.seed, "tick": frame.tick, "source": layout.source, "bins_from": layout.bins_from,
             "bins_mm": [1e3 * float(np.linalg.norm(layout.bins[name] - bins[name][:2])) for name in file.bins],
             "counter_mm": 1e3 * float(layout.counter_z - truly(band[None])[0, 2]),
             "rim_mm": None if layout.rim_z is None else 1e3 * float(layout.rim_z - max(rims))}
@@ -493,7 +493,9 @@ def layout_report(layouts: Sequence[Row]) -> list[str]:
         rows = [row for row in layouts if row["source"] == source]
         bins, counter = spread([v for row in rows for v in row["bins_mm"]]), spread([abs(row["counter_mm"]) for row in rows])
         rim = [row["rim_mm"] for row in rows if row["rim_mm"] is not None]
-        out.append(f"layout by {source}: {len(rows)} looks  bins mm median {bins['median']:.1f} p95 {bins['p95']:.1f} max {bins['max']:.1f}  "
+        kinds = {kind: sum(row["bins_from"] == kind for row in rows) for kind in ("seen", "kept", "scene")}
+        out.append(f"layout by {source}: {len(rows)} looks (bins {', '.join(f'{k} {n}' for k, n in kinds.items() if n)})  "
+                   f"bins mm median {bins['median']:.1f} p95 {bins['p95']:.1f} max {bins['max']:.1f}  "
                    f"looks with a bin over 30 mm off {sum(max(row['bins_mm']) > 30 for row in rows)}  counter mm median {counter['median']:.1f} "
                    f"max {counter['max']:.1f}  rim mm, signed: " + (f"median {np.median(rim):+.1f} min {min(rim):+.1f} max {max(rim):+.1f}" if rim else "none"))
     out.append("layout source changes inside an episode: " + (", ".join(f"seed {seed}: {' '.join(c)}" for seed, c in changes.items() if c) or "none"))

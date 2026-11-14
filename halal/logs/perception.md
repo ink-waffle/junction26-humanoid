@@ -938,6 +938,45 @@ use the same two passes.
   3 of them by 6 to 7 mm. Those frames have moving arms (no stillness test in that bench); the detector never fits them, and its
   `motion` result is identical.
 
+**H19. The episode keeps the last bin row it found** (red team, assumptions.md row 4). `BinFinder.find` used to return the scene
+file's bins on any look that found no row, under a layout source of hands or nominal, so nothing downstream could tell. It now
+returns None there. The detector keeps the last row found in the episode, with its rim, and places it where this look's camera
+puts the same pixels (`camera.deproject(then.project(..))`). So a row seen through the nominal camera at the start is carried
+over into the hand camera of a later look. Only with no row found yet in the episode are the file's bins used.
+`SceneLayout.bins_from` says which (`seen` | `kept` | `scene`); the detector logs every change, and file bins without the camera
+anchored to the file are a WARNING. The calibration bench counts frames with no row instead of scoring the file's bins.
+
+| | bins from | bin centre error mm, median / p95 / max |
+|---|---|---|
+| `dr_train` dev `--shift real` typical: a full look, then one with no depth beyond x 0.40 (nominal camera), before | scene file | 67.9 / 67.9 / 67.9 |
+| same, now | kept 90 of 90 | 3.5 / 6.7 / 7.9 |
+| the blind look alone (no row ever seen), before and now | scene file (now with the warning) | 67.9 / 67.9 / 67.9 |
+
+The matrix is identical apart from the new label; every non-anchored look in it finds its row. `realsim_looks` (all 2582 frames,
+typical and bad; `--still` bad) is identical too, and its row was found at every look. So the 109 mm bin of that set (seed 1006,
+tick 570, bad depth, arms moving) is a row found in the wrong place, not this fallback. One such look out of 2574, none among the
+1318 still looks.
+
+**H20. The warm split only from seen objects clear of the bins, moved only under a real yellow** (red team, assumptions.md row 8).
+The episode's red / yellow boundary was taken once from every draft, blobs and box tape included, and then kept. Two oranges at
+22 and 31 deg with no yellow, or tape at 20 and an orange at 31, split at about 26. The 31 deg orange was then yellow at confidence
+1.0 for the episode. Now only drafts with a seen face (`visible` > 0: top faces and lying prisms, no blobs) at least
+`warm_split.bin_clearance` (3 cm) from every bin footprint of the look vote. A moved boundary needs the upper side of its gap in
+the yellow basin (>= 39 deg); otherwise the split is None and the basins with their taper decide. The cases with the real
+classifier:
+- 22 + 31 or 20 + 31: None, and 31 is red at 0.82 (was a 26 deg split, 31 yellow at 1.0);
+- 22 + 31 + 55: 36, all right at 1.0;
+- the drop-2 sweep's moved splits (+5 to +15 deg, yellow above): unchanged.
+
+| | before | after |
+|---|---|---|
+| drop 2 (`drop2_colours --sweep`, cached first frames) | purple 44/44, orange 81/81, yellow 62/62, sweep as in the table above | identical |
+| robot frame (frozen run 1, five objects) | split 36, all right at 1.00 | identical |
+| `--repaint` `dr_train` (orange right of matched), `--rotate` 0 / 5 / 10 | 147, 122, 94 of 158 | identical |
+| `--repaint` `motion` | orange 632 of 653 (21 wrong, 20 at confidence >= 0.5) | 648 of 653 (5 wrong, 4) |
+| `--repaint` `lookpose` | 57 of 66 | identical |
+| matrix (plain sim) | | identical |
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

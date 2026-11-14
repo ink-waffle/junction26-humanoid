@@ -58,6 +58,8 @@ class TopFaceDetector:
         self.arm_attempts = 0
         self.split: float | None = None
         self.grey: bool | None = None
+        self.row: tuple[Camera, SceneLayout] | None = None
+        self.bins_from: str | None = None
         self.last_t = -np.inf
         self.last_joints: np.ndarray | None = None
 
@@ -80,6 +82,7 @@ class TopFaceDetector:
         self.pose, camera = pose, pose.camera
         counter = self.calibration.counter(depth, camera)
         self.seen = self._layout(depth, camera, counter)
+        self._log_bins()
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
@@ -91,7 +94,7 @@ class TopFaceDetector:
         solid = [face for face, draft in zip(faces, drafts) if not self._yields(draft)]
         drafts = self._settled(drafts, self._stragglers(solid, camera, cloud, height, free, rgb, gains, counter))
         if self.split is None:
-            self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
+            self.split = self.colors.split([draft.colour for draft in drafts if self._splits(draft)])
         found = [self._named(draft) for draft in drafts if draft.colour is not None]
         if found:
             self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
@@ -127,7 +130,8 @@ class TopFaceDetector:
         hands = self.outline.fit(obs["head_rgb"], self.nominal, obs["arm_q"], obs["hand_q"])
         focal = float(self.nominal.K[0, 0])
         seen = [f"{side} shift ({o.shift[0]:+d}, {o.shift[1]:+d}) px = {np.degrees(np.arctan(np.hypot(*o.shift) / focal)):.1f} deg, on dark "
-                f"{o.on_dark:.2f} -> {o.shifted_on_dark:.2f}, {o.residual_px:.1f} -> {o.shifted_px:.1f} px off, {o.points} points" for side, o in hands.items()]
+                f"{o.on_dark:.2f} -> {o.shifted_on_dark:.2f}, {o.residual_px:.1f} -> {o.shifted_px:.1f} px off, {o.points} points"
+                for side, o in hands.items()]
         if len(hands) == 2:
             seen.append(f"hands disagree by {np.hypot(*np.subtract(hands['left'].shift, hands['right'].shift)):.0f} px")
         LOG.info("outline: %s", "; ".join(seen) or "no black hand in view")
@@ -142,11 +146,35 @@ class TopFaceDetector:
         return bool(waited and same and np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"])
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
-        """Counter height and bins: the scene file's when the camera is anchored to it, else as this camera sees them."""
+        """Counter height and bins: the file's when the camera is anchored to it, else as seen now, as seen last in the episode, or the file's."""
         if self.pose.source == "scene":
             return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, "scene")
-        bins = self.bins.find(depth, camera, counter)
-        return SceneLayout(counter.z_at(self.band_centre), bins, self.pose.source, self.bins.rim_z(depth, camera, counter, bins))
+        counter_z, bins = counter.z_at(self.band_centre), self.bins.find(depth, camera, counter)
+        if bins is not None:
+            self.row = camera, SceneLayout(counter_z, bins, self.pose.source, self.bins.rim_z(depth, camera, counter, bins), "seen")
+            return self.row[1]
+        if self.row is None:
+            return SceneLayout(counter_z, scene_layout(self.scene).bins, self.pose.source)
+        return self._kept(camera, counter_z)
+
+    def _kept(self, camera: Camera, counter_z: float) -> SceneLayout:
+        """The bins and rim of the last look that found the row, placed where this look's camera puts the same pixels."""
+        then, seen = self.row
+        again = lambda points: camera.deproject(then.project(points))
+        centres = again(np.array([[*xy, seen.counter_z] for xy in seen.bins.values()]))
+        middle = np.mean(list(seen.bins.values()), axis=0)
+        rim = None if seen.rim_z is None else float(again(np.r_[middle, seen.rim_z][None])[0, 2])
+        return SceneLayout(counter_z, dict(zip(seen.bins, centres[:, :2])), self.pose.source, rim, "kept")
+
+    def _log_bins(self) -> None:
+        """Log where the bins come from whenever that changes; the scene file's without the camera anchored to it is a warning."""
+        if self.seen.bins_from == self.bins_from:
+            return
+        self.bins_from = self.seen.bins_from
+        guess = self.seen.bins_from == "scene" and self.seen.source != "scene"
+        said = {"seen": "as seen at this look", "kept": "as seen at an earlier look of this episode",
+                "scene": "the scene file's: no row of boxes seen yet in this episode" if guess else "the scene file's (camera anchored to it)"}
+        LOG.log(logging.WARNING if guess else logging.INFO, "bins now %s", said[self.bins_from])
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
@@ -177,6 +205,13 @@ class TopFaceDetector:
             mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
         rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
         return self._distinct(faces + rest)
+
+    def _splits(self, draft: Draft) -> bool:
+        """True for a draft that may set the episode's red / yellow boundary: an object with a seen face (no blob), clear of the bins."""
+        if draft.colour is None or draft.detection.visible <= 0.0:
+            return False
+        half = np.asarray(self.scene.cfg["bins"]["outer_size"])[::-1] / 2 + self.cfg["color"]["warm_split"]["bin_clearance"]
+        return all(np.any(np.abs(draft.detection.top[:2] - centre) > half) for centre in self.seen.bins.values())
 
     def _yields(self, draft: Draft) -> bool:
         """True for an accepted top face seen so little that a lying prism found in its place is the better reading."""

@@ -142,7 +142,7 @@ def depth_look(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -> tup
     """One look with depth: the detector as the policy runs it, then the calibration stages on the same frame."""
     detections = detector.detect(obs)
     layout = detector.layout()
-    row = {"source": layout.source, "counter_z": layout.counter_z, "rim_z": layout.rim_z,
+    row = {"source": layout.source, "bins_from": layout.bins_from, "counter_z": layout.counter_z, "rim_z": layout.rim_z,
            "bins": {name: np.round(xy, 4).tolist() for name, xy in layout.bins.items()},
            "detections": [detection_row(det) for det in detections], **calibration_row(detector, obs, c)}
     return row, detections
@@ -287,7 +287,7 @@ def look_line(row: Row) -> str:
     bins = " ".join(f"{name[0]}({xy[0]:.3f},{xy[1]:+.3f})" for name, xy in row["bins"].items())
     rim = "none" if row["rim_z"] is None else f"{row['rim_z']:.3f}"
     return (f"  t={row['t']:6.1f} by {row['source']:<7} anchor {'fits' if row['anchor'] else 'no  '} {fit}; counter {row['counter_z']:.3f} "
-            f"rim {rim} bins {bins}; {seen or 'nothing seen'}")
+            f"rim {rim} bins ({row['bins_from']}) {bins}; {seen or 'nothing seen'}")
 
 
 def main(argv: list[str] | None = None) -> int:
