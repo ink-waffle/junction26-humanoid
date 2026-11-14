@@ -73,6 +73,7 @@ soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; config
 | Leg | Image | Camera error | Objects | Score | Wrong | Off | Gate | What happened |
 |---|---|---|---|---|---|---|---|---|
 | rs20-robot6 | v20 (b7468d515c78) | six-parameter | 7/31 | +0.88 ± 1.36 | 0 | 0 | PASS, 7 time limits | hand fit rejected on `turn` in all 62 verdicts, `layout from nominal` on all 86 looks; objects seen 3 to 6 cm too far: 27 empty picks that shove them forward, 198 refused options; 24 objects left on the counter |
+| rs21-robot6 | v21 (0f7ca3635d25) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 30 of 30 hand fits `trusted`, `layout from hands` on all 184 looks; 7 empty picks, 14 refused options; 2 of 3 lying prisms sorted with `ridge_opposed` (left arm), the third got 3 empty right-arm `cage_lying` picks |
 
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
