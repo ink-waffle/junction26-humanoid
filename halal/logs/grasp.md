@@ -423,3 +423,18 @@ bin, staggered release, 182 picks.
 Verdict: the soft candidates stand (about one cube or triangle in twelve needs the policy's retry); cube at 0.45 is
 offered as the second soft candidate; the soft triangle stays at 0.80 (0.60 is the lowest depth the policy's contact
 threshold can see). Open: a closed posture with the thumb tip level with the fingertips.
+
+## Sweep 18: cross-body carry on the soft hand (one arm at a time)
+
+Hypothesis: a cube carried across the body is lost because of the arm speed (a policy episode lost one). Soft-hand
+sim, slippery-heavy corner, cubes at y −0.10 and 0.00 of the picking arm's side, own-side bin, soft candidates
+(lift and carry at 4 rad/s²), arm speed 0.97 rad/s against 0.6 rad/s (here on every phase).
+
+| arm speed | binned | slip in the hand, close → mid-carry (median) | pick duration |
+|---|---|---|---|
+| 0.97 rad/s | 11/12 (1 lost in the carry, at y 0.00) | 23 mm (17 at y −0.10, 24 at y 0.00) | 9.0–9.6 s |
+| 0.6 rad/s | 11/12 (1 lost at the start of the lift) | 10 mm | 12.3–13.5 s |
+
+Verdict: not decided by n = 12. The slower arm halves the slide of the cube in the hand, the losses are one each
+(the slow one is the lift-start slide of sweep 17, which speed does not touch). Slowing only lift and carry would
+cost ~1.6 s per pick; not adopted without a larger A/B.
