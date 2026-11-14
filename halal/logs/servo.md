@@ -34,6 +34,9 @@ pregrasp, 91-98 % at the grasp), so the look is taken from beside the object.
 | s2-servo | servo2-servo 5cab02c49bc1 (d7ec748) | 15/15 | +3.75 | 0 | 157.7 | PASS | 11 corrected and held, 1 refused -> open loop from the hover, held; 1 cross-body no hover |
 | s3-measure | servo3-measure 69925dc52e42 (32024af) | 15/15 | +3.75 | 0 | 139.0 | PASS | 14 hovered, 8 believable, 3 refused (rms), all held; 1 no hover |
 | s3-servo | servo3-servo 34443d4b8b17 (32024af) | 15/15 | +3.75 | 0 | 169.6 | PASS | 16 looks applied, 3 refused (rms: the cylinder misread among them), 5 on visible; all held; 1 no hover |
+| s4-measure | servo4-measure 28dd119f2754 (e944ede, v26 base) | 15/15 | +3.75 | 0 | 168.2 | PASS | measure path identical to ca14b09 |
+| s5-servo | servo5-servo 15c5465be573 (ca14b09) | 15/15 | +3.75 | 0 | 166.8 | PASS | 8 corrected and held, 3 open loop from the hover held, 1 no hover |
+| s5-open | servo5-open 5a3cdcf2689d (ca14b09) | 15/15 | +3.75 | 0 | 155.2 | PASS | no hover (open) |
 
 - Believable corrections median 12-15 mm, max 21 mm. Of that, the arm hangs under its command at the hover: tracking
   (commanded minus measured grasp point) about (+3, +1, +7) mm; the object in the arm frame differs from the scene camera by
@@ -54,6 +57,7 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
 | r3-servo-nofit-trans | servo3-servo-nofit-trans | 2/15 | +0.50 | 4 time limits | 0 | PASS | every look refused (rms 3.2-4.1 mm), open loop from the hover |
 | r3-servo | servo3-servo (home fit on) | 15/15 | +3.75 | 4 done | 0 | PASS | camera already fixed at home: does not hurt |
 | r3-servo-nofit | servo3-servo-nofit (hover arm fit allowed) | 3/15 | +0.75 | 4 time limits | 0 | PASS | first 20 looks: 6 applied, 6 "too large", 6 "visible", 2 rms |
+| r5-servo-nofit | servo5-servo-nofit (ca14b09, all three fixes) | 9/15 | +2.25 | 3 time limits, 1 done | 0 | PASS | 18 looks applied (25-45 mm), 12 corrected picks of which 9 held; 7 cross-body picks without a hover; refused: 10 visible, 5 rms/inliers, 1 points, 1 too large |
 
 - Translation-only under a 7.4 deg error: hand shifts 3-34 mm, inconsistent between the arms for the same object (e.g. x -31 /
   +11 mm), rms 3.2-4.1 mm. A rotation over the hand patch is no shift; the rms guard refused all, so servo ran open-loop
@@ -65,3 +69,12 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
   20 such looks ("too large"); 6 more missed the top face because the hover, planned beside the believed object, stood over
   the real one. 8f70397: the arm-fit turn is capped on its own (`servo.max_turn_correction` 8 cm). e944ede: a first look that
   only missed the top face, with its arm fit believed, hovers again beside the turned target.
+- ca14b09: with a correction over 3 cm the replan from the hover counted the target's own uncorrected detection as a
+  neighbour ("hand would touch the object at" its old position) and fell back to open loop (seen in the first r4 episode:
+  37 mm applied, look 2 converged at 1.9 mm, then no plan). The corrected plan now keeps clear of the other objects moved by
+  the same correction. servo5-* is built from it.
+
+Verdict on the real-look sim: servo never hurt (stock 15/15, home fit on 15/15) and with the home hand fit off it took the
+robot-night variant from 1/15 to 9/15, as long as the hover's own arm fit is believed. With no believable arm fit anywhere it
+is open loop plus about 3 s per pick (2/15). Next, by the numbers: re-hover also when `visible` comes with another refusal
+(the arm-fit aim does not use the hand shift), and a hover for the cross-body arm (7 of 19 picks of r5 had none).
