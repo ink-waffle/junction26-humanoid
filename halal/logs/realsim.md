@@ -76,12 +76,19 @@ soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; config
 | rs21-robot6 | v21 (0f7ca3635d25) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 30 of 30 hand fits `trusted`, `layout from hands` on all 184 looks; 7 empty picks, 14 refused options; 2 of 3 lying prisms sorted with `ridge_opposed` (left arm), the third got 3 empty right-arm `cage_lying` picks |
 | rs22-robot6 | v22 (cb81d93c1969) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 31 of 31 hand fits `trusted` ("camera turned 6.4 to 7.7 deg, shifted 21 to 42 mm"), `layout from hands` on all 182 looks; 6 empty picks, 5 refused options; lying prisms as v21: the one lost is seed 1006's orange prism, 3 empty right-arm `cage_lying` picks |
 
-Resting start (`real_eval --start-pose`, arms where the real episode of 19:46 started, driven there past the safety
-filter before the layout is placed; an object can therefore spawn under a hand, which staff would not do).
-rs22-robot6-rest (v22, robot6), first two episodes: seed 1000 3/3, seed 1001 5/5, both done. From this start the first
-look and the first look from home say `layout from nominal`, and the first pick is made before the hand fit exists: in
-seed 1000 it closed on air at a position 4 cm too far (grip 0.013) and pushed the object; the fit was trusted right
-after ("camera turned 7.7 deg") and the rest went as from the home start. Full leg and v23: see the queue in the handoff.
+### Resting start
+
+`real_eval --start-pose`: the arms are driven, past the safety filter, to where the real episode of 19:46 started, and
+then the layout is placed. In this sim the pose is NOT hands-on-the-table: the counter reaches pelvis x 0.09, so the
+wrists come down on it and the arms stop at elbow 0.43 / 0.42 (robot: 0.95 / 0.81). The palms end 5.5 to 6.5 cm above the
+counter, with the lowest hand point at z 0.061 to 0.063 and the counter top at 0.02. These legs therefore test the start
+look on the nominal camera and the missing calibration close ("no room here", which needs 8 cm). They never test
+"leave the table first": no episode logs "the hands start ... above the counter". Objects can spawn under the raised
+hands (3.8 to 12 cm gap in rs22); none touched a hand or was flung.
+
+| Leg | Image | Camera error | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs22-robot6-rest | v22 (cb81d93c1969) | six-parameter | 29/31 | +3.62 ± 0.99 | 0 | 0 | PASS, done 8/8 | every episode: start look `nominal`, "no room here for the hands' calibration close: going home", home look still `nominal`, a pick on the nominal camera, then the fit (all 35 `trusted`, 6.4 to 7.7 deg, 21 to 42 mm). 9 picks before the first trusted fit (1 per episode, 2 in seed 1002), first pick at t 5.2 to 14.2 s: 8 closed on air (grip 0.010 to 0.013), 1 sorted (seed 1005). 17 looks `nominal`, 186 `hands`. Lost, both in seed 1006: the orange cube (try 1 on nominal and try 2 empty, try 3 held 0.424 then slipped in the carry and came to rest on the wall between the center and right boxes, z 0.098) and the orange lying prism (left arm "cannot reach the right bin" x6, 4 empty right-arm `cage_lying` picks) |
 
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
