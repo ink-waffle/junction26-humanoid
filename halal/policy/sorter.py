@@ -289,6 +289,11 @@ class SortPolicy:
         self.missed = None
         for target in look.unplannable:
             self.attempts.record_plan_failure(target.xy)
+        for target in look.broken:
+            self.attempts.record_broken(target.xy)
+            if self.attempts.broken(target.xy) == self.settings["broken_target_looks"]:
+                log.warning("t=%.1f %s is left alone: its grasp options could not be built in %d looks", t, target,
+                            self.settings["broken_target_looks"])
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
         seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};c{d.confidence:.2f};v{d.visible:.2f})"
@@ -321,6 +326,7 @@ class SortPolicy:
     def _start_pick(self, pick: Pick, t: float) -> None:
         self.empty_looks, self.empty_since = 0, math.inf
         self.attempts.record_pick(pick.target.xy)
+        self.shapes.forget(pick.target.xy)
         self.tally.update(picks=1)
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)

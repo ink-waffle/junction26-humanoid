@@ -65,22 +65,23 @@ class PickChooser:
         self.planner, self.slots, self.settings = planner, slots, settings
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
-               hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
-        """The first target whose plan stays clear of the other objects, and the failed ones; a target with a neighbour in the way waits."""
+               hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target], list[Target]]:
+        """The first target whose plan stays clear of the other objects, the failed ones, and those whose options could not even be built; a target with a neighbour in the way waits."""
         start = PlanStart(released, hands, arm_q, hand_q, cancelled)
         unplannable: list[Target] = []
         waiting: list[Target] = []
+        broken: list[Target] = []
         for target in sorted(targets, key=self._order):
-            pick, touching = self._plan(target, start, obstacles)
+            pick, touching = self._plan(target, start, obstacles, broken)
             if pick is not None:
-                return pick, unplannable
+                return pick, unplannable, broken
             (waiting if touching else unplannable).append(target)
-        pick = self._as_if_alone(waiting, start, obstacles)
-        return pick, unplannable if pick is not None else unplannable + waiting
+        pick = self._as_if_alone(waiting, start, obstacles, broken)
+        return pick, unplannable if pick is not None else unplannable + waiting, broken
 
-    def _as_if_alone(self, waiting: Sequence[Target], start: PlanStart, obstacles: Obstacles) -> Pick | None:
+    def _as_if_alone(self, waiting: Sequence[Target], start: PlanStart, obstacles: Obstacles, broken: list[Target]) -> Pick | None:
         """No target is clear of its neighbours: of the least tried, the one whose plan as if it stood alone keeps furthest from them."""
-        picks = [pick for pick, _ in (self._plan(target, start, []) for target in waiting) if pick is not None]
+        picks = [pick for pick, _ in (self._plan(target, start, [], broken) for target in waiting) if pick is not None]
         pick = min(picks, key=lambda pick: (*self._order(pick.target)[:2], -self._room(pick, obstacles)), default=None)
         if pick is not None:
             log.warning("no target is clear of its neighbours: picking %s as if it stood alone, fingers %.0f mm from the nearest",
@@ -97,12 +98,13 @@ class PickChooser:
         """Sort key: least tried first, kinds with a grasp of their own before the others, then nearest its bin."""
         return target.attempts, grasp_kind(target.detection) in self.settings["last_kinds"], self._distance_to_bin(target)
 
-    def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
-        """`_first_plan`; whatever one target's data breaks on the way counts as no plan, so the other targets keep their turn."""
+    def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles, broken: list[Target]) -> tuple[Pick | None, bool]:
+        """`_first_plan`; whatever one target's data breaks on the way counts as no plan and puts it in `broken`, so the other targets keep their turn."""
         try:
             return self._first_plan(target, start, obstacles)
         except Exception:
             log.exception("no options for %s", target)
+            broken.append(target)
             return None, False
 
     def _first_plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:

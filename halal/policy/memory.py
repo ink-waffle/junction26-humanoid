@@ -9,6 +9,7 @@ class Attempts:
         self.radius = radius
         self._picked: list[np.ndarray] = []
         self._unplanned: list[np.ndarray] = []
+        self._broken: list[np.ndarray] = []
 
     def record_pick(self, xy: np.ndarray) -> None:
         """A pick was started on the object at `xy`."""
@@ -17,6 +18,14 @@ class Attempts:
     def record_plan_failure(self, xy: np.ndarray) -> None:
         """No plan was found for the object at `xy` in one look."""
         self._unplanned.append(np.array(xy, float))
+
+    def record_broken(self, xy: np.ndarray) -> None:
+        """Building the grasp options for the object at `xy` raised in one look."""
+        self._broken.append(np.array(xy, float))
+
+    def broken(self, xy: np.ndarray) -> int:
+        """Looks in which the options for the object at `xy` could not be built."""
+        return self._near(self._broken, xy)
 
     def follow(self, old_xy: np.ndarray, new_xy: np.ndarray) -> None:
         """The object tried at `old_xy` now lies at `new_xy`: no fewer tries count there than did at the old spot."""
@@ -36,16 +45,20 @@ class Attempts:
 
 
 class Shapes:
-    """The shape each object showed in the clearest look at it so far."""
+    """The shape each object showed in the clearest look at it so far, matched by colour and position."""
 
     def __init__(self, radius: float) -> None:
         self.radius = radius
-        self._seen: list[tuple[np.ndarray, str, float]] = []
+        self._seen: list[tuple[np.ndarray, str | None, str, float]] = []
 
-    def clearest(self, xy: np.ndarray, shape: str | None, visible: float) -> str | None:
-        """Record one detection and return the shape from the look that saw most of the object at `xy`."""
+    def clearest(self, xy: np.ndarray, color: str | None, shape: str | None, visible: float) -> str | None:
+        """Record one detection and return the shape from the look that saw most of the object of this colour at `xy`."""
         if shape is not None:
-            self._seen.append((np.array(xy, float), shape, visible))
-        near = [(seen_visible, seen_shape) for spot, seen_shape, seen_visible in self._seen
-                if float(np.linalg.norm(spot - xy)) < self.radius]
+            self._seen.append((np.array(xy, float), color, shape, visible))
+        near = [(seen_visible, seen_shape) for spot, seen_color, seen_shape, seen_visible in self._seen
+                if seen_color == color and float(np.linalg.norm(spot - xy)) < self.radius]
         return max(near, key=lambda item: item[0])[1] if near else None
+
+    def forget(self, xy: np.ndarray) -> None:
+        """A pick started on the object at `xy`: it leaves the spot, falls or is pushed, so what was seen there no longer holds."""
+        self._seen = [seen for seen in self._seen if float(np.linalg.norm(seen[0] - xy)) >= self.radius]

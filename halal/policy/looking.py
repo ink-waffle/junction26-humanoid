@@ -29,6 +29,7 @@ class Look:
     outside: list[ObjectDetection]
     pick: Pick | None
     unplannable: list[Target]
+    broken: list[Target]        # of those, the ones whose grasp options could not even be built
     unclear: int                # sortable objects seen too poorly to grasp from this view
     layout_source: str          # what fixed the camera: scene | hands | nominal (no reference found yet)
     bins_from: str              # where the bins come from: seen | kept | scene
@@ -68,7 +69,7 @@ class Looker:
         detections = self._detect(obs)
         if situation.primer:
             self.planner.set_layout(self.detector.layout())   # moves checked before the first plan see the bins where they stand
-            return Look(detections, [], None, [], 0, self.detector.layout().source, self.detector.layout().bins_from, True)
+            return Look(detections, [], None, [], [], 0, self.detector.layout().source, self.detector.layout().bins_from, True)
         if situation.hands_pending:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
         return self._plan(self.detector.layout(), detections, situation, cancelled)
@@ -101,9 +102,9 @@ class Looker:
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
-        pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
-                                                [det.top for det in detections], cancelled)
-        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, layout.bins_from, False)
+        pick, unplannable, broken = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
+                                                        [det.top for det in detections], cancelled)
+        return Look(detections, outside, pick, unplannable, broken, len(targets) - len(clear), layout.source, layout.bins_from, False)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
         """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""
@@ -116,16 +117,18 @@ class Looker:
             attempts.follow(missed.xy, nearest)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
-        """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
+        """Confident detections with their clearest-seen shape (a lying prism keeps its own) that the instruction sends to a bin, with picks left and options that can be built."""
         targets = []
         for seen in detections:
-            det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
+            clearest = situation.shapes.clearest(seen.top[:2], seen.color, seen.shape, seen.visible)
+            det = seen if seen.lying else replace(seen, shape=clearest)   # perception reports only prisms as lying
             sure = det.confidence >= self.settings["min_detection_confidence"]
             bin_name = situation.bin_for(det.color, det.shape) if sure else None
             if sure and bin_name is None and det.shape is None and any(situation.bin_for(det.color, shape) for shape in SHAPES):
                 log.info("the %s object at (%+.3f,%+.3f) stays: shape unknown under a shape-keyed instruction", det.color, *det.top[:2])
             standing = det.visible > 0 and not det.lying
             limit = self.settings["max_attempts"] if standing else self.settings["blob_attempts"]
-            if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
+            buildable = situation.attempts.broken(det.top[:2]) < self.settings["broken_target_looks"]
+            if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit and buildable:
                 targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
         return targets
