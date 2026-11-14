@@ -7,9 +7,10 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, FUZZY_TARGETS, INTENSIFIED, MAX_PHRASE,
-                                            MODAL_FOLLOWERS, NOT_TYPOS, NUMBERS, PHRASES, RELATIVE_PRONOUNS,
-                                            ROW_JOINERS, ROW_STARTERS, STAY_WORDS, SURFACES, WH_WORDS, WORDS, Tag)
+from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, DEFINING_WORDS, FUZZY_TARGETS, INTENSIFIED,
+                                            MAX_PHRASE, MODAL_FOLLOWERS, NAMING_WORDS, NOT_TYPOS, NUMBERS, PHRASES,
+                                            RELATIVE_PRONOUNS, ROW_JOINERS, ROW_STARTERS, STAY_WORDS, SURFACES,
+                                            TRAVEL_WORDS, WH_WORDS, WORDS, Tag)
 
 _QUOTES = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"',
                          **{emoji: f" {colour} " for emoji, colour in COLOUR_EMOJI.items()}})
@@ -28,6 +29,7 @@ _CONTRACTIONS = (
 )
 _WORD = re.compile(r"[^\W\d_]+|\d+(?:st|nd|rd|th)?|[.;!?,:=→()&/+#]")
 _SEPARATORS = (Tag.BREAK, Tag.COMMA, Tag.CLAUSE)
+_OPPOSITE = {"left": "right", "right": "left"}
 
 
 @dataclass(frozen=True)
@@ -171,16 +173,44 @@ def _expand_rows(tokens: list[Token]) -> list[Token]:
 
 def _row_at(tokens: list[Token], position: int) -> tuple[str, int]:
     """(side the row starts from, index after the phrase) for a row phrase at `position`, else ('', position)."""
-    first = position
-    if tokens[position].text in ROW_STARTERS:
-        first = position + 1
-        while _at(tokens, first).text in ("from", "at", "the", "your"):
-            first += 1
-    side, far = _at(tokens, first), _row_end(tokens, first)
-    stated_alone = first > position + 1 and _is_side(side)
-    if far is None and not stated_alone:
+    for read in (_span_row, _origin_row, _heading_row):
+        side, end = read(tokens, position)
+        if side:
+            return side, _skip(tokens, end, (Tag.CONTAINER,))
+    return "", position
+
+
+def _span_row(tokens: list[Token], position: int) -> tuple[str, int]:
+    """'left to right', 'leftmost bin to the rightmost', 'left - center - right'."""
+    far = _row_end(tokens, position)
+    return ("", position) if far is None else (tokens[position].value, far + 1)
+
+
+def _origin_row(tokens: list[Token], position: int) -> tuple[str, int]:
+    """'from the left', 'starting at your right': a direction of travel along the bins from one side."""
+    index = position
+    while _at(tokens, index).text in ROW_STARTERS | {"from", "at", "with", "the", "your"}:
+        index += 1
+    lead = [token.text for token in tokens[position:index]]
+    if not lead or lead[0] in ("the", "your", "at", "with") or not _is_side(_at(tokens, index)):
         return "", position
-    return side.value, _skip(tokens, (first if far is None else far) + 1, (Tag.CONTAINER,))
+    if "from" not in lead and {"at", "with"}.isdisjoint(lead) or _row_end(tokens, index):
+        return "", position
+    return tokens[index].value, index + 1
+
+
+def _heading_row(tokens: list[Token], position: int) -> tuple[str, int]:
+    """'Moving along the bins towards the right, ...': a clause that opens with travel towards one side."""
+    index = _skip(tokens, position + 1, (Tag.FILL,))
+    side, after = _at(tokens, index), _at(tokens, index + 1)
+    if tokens[position].text not in ("to", "towards", "toward") or not _is_side(side) or after.tag is Tag.CONTAINER:
+        return "", position
+    clause_start = position
+    while _at(tokens, clause_start - 1).tag in (Tag.FILL, Tag.LINK, Tag.OTHER, Tag.CONTAINER):
+        clause_start -= 1
+    opens_clause = _at(tokens, clause_start - 1).tag in (Tag.BREAK, Tag.COMMA)
+    travels = any(token.text in TRAVEL_WORDS for token in tokens[clause_start:position])
+    return (_OPPOSITE[side.value], index + 1) if opens_clause and travels else ("", position)
 
 
 def _is_side(token: Token) -> bool:
@@ -203,6 +233,79 @@ def _row_end(tokens: list[Token], first: int) -> int | None:
             return None
         index = _skip(tokens, index + 1, (Tag.CONTAINER,))
     return None
+
+
+def _resolve_aliases(tokens: list[Token]) -> list[Token]:
+    """Bins renamed by a defining clause ('L = left bin', 'call the bins A, B, C from left to right') go by alias."""
+    table, defined = _explicit_aliases(tokens)
+    if not table:
+        table, defined = _listed_aliases(tokens)
+    for index, token in enumerate(tokens):
+        if index in defined:
+            token.text, token.tag, token.value = "", Tag.FILL, ""
+        elif token.text in table and _is_label(token) and _names_bin(tokens, index):
+            _retag(token, Tag.BIN, table[token.text])
+    return tokens
+
+
+def _is_label(token: Token) -> bool:
+    """A word free to serve as a bin label: unknown, or a single letter or digit."""
+    return token.tag is Tag.OTHER or (len(token.text) == 1 and token.text.isalnum())
+
+
+def _names_bin(tokens: list[Token], index: int) -> bool:
+    """A label that is also a real word ('a', 'i', '1') counts only after a bin noun or beside an arrow."""
+    around = (_at(tokens, index - 1).tag, _at(tokens, index + 1).tag)
+    return tokens[index].tag is Tag.OTHER or around[0] is Tag.CONTAINER or Tag.ARROW in around
+
+
+def _explicit_aliases(tokens: list[Token]) -> tuple[dict[str, str], set[int]]:
+    """Aliases from 'L = left bin' or 'the left bin is called L', kept when at least two bins are renamed and reused."""
+    found: dict[str, tuple[str, range]] = {}
+    for index, token in enumerate(tokens):
+        position = _skip(tokens, index + 2, (Tag.FILL,))
+        if _is_label(token) and _at(tokens, index + 1).text in DEFINING_WORDS and _at(tokens, position).tag is Tag.BIN:
+            found[token.text] = (tokens[position].value, range(index, _skip(tokens, position + 1, (Tag.CONTAINER,))))
+        label = _skip(tokens, index + 1, (Tag.CONTAINER,))
+        while _at(tokens, label).text in DEFINING_WORDS | NAMING_WORDS:
+            label += 1
+        named = label > index + 1 and _at(tokens, label - 1).tag is not Tag.CONTAINER and _is_label(_at(tokens, label))
+        if token.tag is Tag.BIN and named and _at(tokens, label + 1).tag in (Tag.COMMA, Tag.BREAK, Tag.AND):
+            found[tokens[label].text] = (token.value, range(index, label + 1))
+    defined = {index for _, span in found.values() for index in span}
+    reused = {token.text for index, token in enumerate(tokens) if index not in defined}
+    table = {label: position for label, (position, _) in found.items() if label in reused}
+    return (table, defined) if len(set(table.values())) > 1 else ({}, set())
+
+
+def _listed_aliases(tokens: list[Token]) -> tuple[dict[str, str], set[int]]:
+    """Aliases from three labels listed beside a row direction or a naming verb: 'call the bins A, B and C'."""
+    for labels in _label_lists(tokens):
+        low = max((i for i in range(labels[0]) if tokens[i].tag is Tag.BREAK), default=-1) + 1
+        high = next((i for i in range(labels[-1], len(tokens)) if tokens[i].tag is Tag.BREAK), len(tokens))
+        sentence = tokens[low:high]
+        marker = next((i for i in range(low, high) if tokens[i].tag is Tag.RESPECTIVELY and tokens[i].value), None)
+        describes_objects = any(token.tag in (Tag.COLOUR, Tag.SHAPE) for token in sentence)
+        if describes_objects or (marker is None and not any(token.text in NAMING_WORDS for token in sentence)):
+            continue
+        row = BINS[::-1] if marker is not None and tokens[marker].value == "right" else BINS
+        row_span = set(range(marker, marker + len(BINS) + 1)) if marker is not None else set()
+        return {tokens[i].text: name for i, name in zip(labels, row)}, set(labels) | row_span
+    return {}, set()
+
+
+def _label_lists(tokens: list[Token]) -> Iterator[list[int]]:
+    """Index triples of labels joined only by commas and conjunctions: 'A, B and C'."""
+    run: list[int] = []
+    for index, token in enumerate(tokens):
+        if _is_label(token) and token.text not in NAMING_WORDS | TRAVEL_WORDS:
+            run.append(index)
+        elif token.tag not in (Tag.COMMA, Tag.AND):
+            if len(run) == len(BINS):
+                yield run
+            run = []
+    if len(run) == len(BINS):
+        yield run
 
 
 def _resolve_left(tokens: list[Token]) -> list[Token]:
@@ -308,18 +411,12 @@ def _declared_side(tokens: list[Token]) -> str:
 
 
 def _counting_side(tokens: list[Token], index: int) -> str:
-    """Side named by 'from the left' / 'counting from your right' at `index` (consumed), else ''."""
-    if _at(tokens, index).text not in ("from", "counting"):
-        return ""
-    end = index
-    while _at(tokens, end).text in ("from", "counting", "the", "your", "my"):
-        end += 1
-    side = _at(tokens, end)
-    if side.tag is not Tag.BIN or side.value == "center":
-        return ""
-    value = side.value
-    _retag(side, Tag.FILL)
-    return value
+    """Side of a row phrase standing right at `index` ('second bin [from the left]'); the phrase is consumed."""
+    marker = _at(tokens, index)
+    side = marker.value if marker.tag is Tag.RESPECTIVELY else ""
+    for token in tokens[index:index + len(BINS) + 1] if side else []:
+        _retag(token, Tag.FILL)
+    return side
 
 
 def _set_ordinal(token: Token, side: str) -> None:
@@ -339,7 +436,8 @@ def _resolve_numbered(tokens: list[Token]) -> list[Token]:
         while _at(tokens, number_index).text in ("number", "no", "nr", "#"):
             number_index += 1
         number = _at(tokens, number_index)
-        if number.text in NUMBERS and _at(tokens, number_index + 1).tag not in (Tag.COLOUR, Tag.SHAPE, Tag.OBJECT):
+        counts_objects = _at(tokens, number_index + 1).tag in (Tag.COLOUR, Tag.SHAPE, Tag.OBJECT)
+        if number.text in NUMBERS and number.tag is not Tag.BIN and not counts_objects:
             for label in tokens[index + 1:number_index]:
                 _retag(label, Tag.FILL)
             number.value = str(NUMBERS[number.text])
@@ -416,6 +514,14 @@ def _describes(tokens: list[Token], index: int) -> bool:
     return _at(tokens, _skip(tokens, index + 1, (Tag.FILL, Tag.NOT))).tag in (Tag.COLOUR, Tag.SHAPE)
 
 
+def _resolve_no(tokens: list[Token]) -> list[Token]:
+    """'No, the right bin' / 'no wait' retract what was just said; they do not negate what follows."""
+    for index, token in enumerate(tokens):
+        if token.text == "no" and _at(tokens, index + 1).tag in (Tag.COMMA, Tag.CORRECTION):
+            _retag(token, Tag.CORRECTION)
+    return tokens
+
+
 def _resolve_not(tokens: list[Token]) -> list[Token]:
     """Decide whether a negation word negates a property ('not red') or a clause ('do not put ...')."""
     for index, token in enumerate(tokens):
@@ -447,6 +553,15 @@ def _resolve_unless(tokens: list[Token]) -> list[Token]:
     return tokens
 
 
+def _resolve_same(tokens: list[Token]) -> list[Token]:
+    """'the same bin as yellow' points at yellow's bin, not at the bin named last."""
+    for index, token in enumerate(tokens):
+        noun_end = _skip(tokens, index + 1, (Tag.CONTAINER, Tag.OBJECT))
+        if token.tag is Tag.SAME and _at(tokens, noun_end).text == "as":
+            _retag(token, Tag.COMPANION)
+    return tokens
+
+
 def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
     """'my left' is the speaker's side and may be mirrored for the robot."""
     for index, token in enumerate(tokens):
@@ -455,6 +570,7 @@ def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
     return tokens
 
 
-_CONTEXT_RULES = (_expand_rows, _resolve_left, _resolve_right, _resolve_between, _resolve_ordinals,
-                  _resolve_numbered, _resolve_relative, _resolve_can, _resolve_blocks, _resolve_but,
-                  _resolve_pronouns, _resolve_not, _resolve_unless, _flag_viewpoint)
+_CONTEXT_RULES = (_expand_rows, _resolve_aliases, _resolve_left, _resolve_right, _resolve_between,
+                  _resolve_ordinals, _resolve_numbered, _resolve_relative, _resolve_can, _resolve_blocks,
+                  _resolve_but, _resolve_pronouns, _resolve_no, _resolve_not, _resolve_unless, _resolve_same,
+                  _flag_viewpoint)

@@ -46,7 +46,9 @@ class ObjectMention:
     leave: bool = False             # the instruction says not to move these
     add: bool = False               # an additive cue stands next to it: "blue too", "same for blue"
     universal: bool = False         # "regardless of colour", "whatever its shape" stands next to it
+    corrects: bool = False          # follows "sorry, I meant" / "actually": replaces what was said before
     sentence: int = 0
+    topic: int = 0                  # first of the sentences chained to its own by introducing colons
     descriptive: bool = False       # its sentence names no bin: "you will see red, yellow and blue objects"
     issues: tuple[Issue, ...] = ()
 
@@ -68,10 +70,12 @@ class BinMention:
     start: int
     end: int
     position: str | None = None
-    anaphor: str = ""               # "same" | "remaining" when the position is not stated
+    anaphor: str = ""               # "same" | "opposite" | "remaining" when the position is not stated
     negated: bool = False           # "not in the left bin", "the center bin stays empty"
     optional: bool = False          # named in passing: "from left to right", "skip the center bin"
+    corrects: bool = False          # follows "sorry, I meant" / "actually": replaces what was said before
     sentence: int = 0
+    topic: int = 0
     descriptive: bool = False       # its sentence names no objects: "there are three bins: left, center, right"
     issues: tuple[Issue, ...] = ()
 
@@ -143,7 +147,7 @@ def _mentions_at(tokens: list[Token], position: int) -> tuple[int, list[Mention]
     if token.tag is Tag.PRONOUN:
         return position + 1, [ObjectMention(position, position + 1, pronoun=token.text)]
     if token.tag is Tag.SAME and _bin_noun_end(tokens, position + 1) > position + 1:
-        return position + 1, [BinMention(position, position + 1, anaphor="same")]
+        return position + 1, [BinMention(position, position + 1, anaphor=token.value)]
     return end, _noun_phrase(tokens, position, end) if end > position else []
 
 
@@ -247,7 +251,7 @@ def _quantifier_phrase(tokens: list[Token], start: int, end: int, scope: Scope) 
         return [BinMention(start, end, anaphor="remaining")]
     span = tokens[start:end]
     pronominal = any(token.tag is Tag.OBJECT or token.text in PRONOUN_QUANTIFIERS for token in span)
-    counts_bins = _next_tag(tokens, end) is Tag.CONTAINER
+    counts_bins = _next_tag(tokens, end) in (Tag.CONTAINER, Tag.PRONOUN)
     stands_alone = scope is Scope.ALL and pronominal and not counts_bins and not _floats(tokens, start, end)
     return [ObjectMention(start, end, scope=scope)] if scope is Scope.REST or stands_alone else []
 
@@ -446,8 +450,19 @@ def _apply_universal(mentions: list[Mention], tokens: list[Token], position: int
         mentions[index].universal = True
 
 
+def _apply_correction(mentions: list[Mention], tokens: list[Token], position: int) -> None:
+    """'sorry, I meant the right bin': what the rest of that sentence says replaces what was said before."""
+    first = _first_after(mentions, position)
+    if first == len(mentions) or sum(t.tag is Tag.BREAK for t in tokens[position:mentions[first].start]) > 1:
+        return
+    start = mentions[first].start
+    end = next((i for i in range(start, len(tokens)) if tokens[i].tag is Tag.BREAK), len(tokens))
+    for mention in mentions[first:]:
+        mention.corrects = mention.corrects or mention.start < end
+
+
 _OPERATORS = {Tag.LEAVE: _apply_leave, Tag.NOT: _apply_not, Tag.EXCEPT: _apply_except, Tag.VOID: _apply_void,
-              Tag.UNIVERSAL: _apply_universal}
+              Tag.UNIVERSAL: _apply_universal, Tag.CORRECTION: _apply_correction}
 
 
 # ---------------------------------------------------------------- cues
@@ -466,12 +481,14 @@ def _mark_cues(mentions: list[Mention], tokens: list[Token]) -> None:
 
 def _mark_sentences(mentions: list[Mention], tokens: list[Token]) -> None:
     """Number each mention's sentence; a mention is descriptive when its sentence has none of the other kind."""
-    sentence_of, sentence = [], 0
+    sentence_of, topic_of, sentence, topic = [], [], 0, 0
     for token in tokens:
         sentence_of.append(sentence)
+        topic_of.append(topic)
         sentence += token.tag is Tag.BREAK
+        topic = topic if token.tag is not Tag.BREAK or token.text == ":" else sentence
     for mention in mentions:
-        mention.sentence = sentence_of[mention.start]
+        mention.sentence, mention.topic = sentence_of[mention.start], topic_of[mention.start]
     with_objects = {m.sentence for m in mentions if isinstance(m, ObjectMention)}
     with_bins = {m.sentence for m in mentions if isinstance(m, BinMention)}
     for mention in mentions:
