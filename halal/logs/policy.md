@@ -562,3 +562,43 @@ Mock, real planner, a cube and two cylinders 3.5–4 cm before the bins' near wa
 tree: 36 cases as before, neighbours_e2e (same orders; "hand would touch" reaches the chooser; the logged finger room
 is now measured to the neighbour's outline, 30 mm less than before), behind_pair, lying_prism, harden, real colours,
 blind_spell: unchanged, 0 clips.
+
+### v16 on fresh seeds (14.11, 14:24–15:11 UTC, through the image, sim `a`, seeds 1008–1015)
+
+| Leg | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | "hand would touch" / as if alone |
+|---|---|---|---|---|---|---|---|---|---|
+| fixed | +4.12 ± 0.78 | 33/33 | done 8 | 0 | 30.0 | 185 | PASS | 0 | 8 / 0 |
+| known | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 179 | PASS | 1 (seed 1014, sorted on the retry) | 7 / 1 |
+| unseen | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 174 | PASS | 0 | 7 / 1 |
+
+Proxy +22.25 of 22.25. No error line, no detector deadline; 10 same-bin pairs on the fixed leg, smallest gap 51 mm, all
+flat. With seeds 1000–1007: 178 of 178 objects for v16 on stock legs, so there is no rare failure to explain at this
+sample size; seeds 1016–1023 were dropped in favour of v18's legs. (In the eval log `t=` is wall time; `sim_s` in
+`eval.json` is the episode: 46–73 s, 11–12 s per object.)
+
+### Perception's layout is the only layout (v18)
+Found by the orchestrator in the real-look sim (boxes 6 cm farther than the scene file, v16, fixed seed 1004): the
+detector's layout was `hands` all episode; at t = 48.5 the one remaining target (a lying prism) had no plan, the look
+re-planned it with the scene file's layout, got a plan, and `use_file_layout` stayed set: every later release went to the
+file's slot (x 0.463, 6 cm short) and an object landed on the counter in front of its box. The fallback dated from
+when a perceived layout could be garbage; since the detector reports `scene` or `nominal` (= the file's bins) unless
+the hands fit, it only ever replaced a measured layout.
+v18: the look plans with `detector.layout()` and nothing else; no re-plan, no latch, and a view move without a safe way
+is replaced by "look from here", never by the file's layout.
+Mock (`far_bins.py`: world with the boxes 6 cm farther, detector layout `hands` + 6 cm, real planner, one colour
+refused whenever the planner holds the perceived layout, real-time pace):
+
+| Case | v17 tree | v18 tree |
+|---|---|---|
+| every target has a plan | 5/5, releases at x 0.493 / 0.503 | the same |
+| blue has no plan in the perceived layout | source turns to `scene`, both blue objects released at x 0.463 (near wall of the real boxes at 0.46) | blue stays on the counter, 3/3 others, releases at 0.493 / 0.503 only |
+| red has no plan | all releases at 0.463, a yellow cube on the counter in front of its box (x 0.459) | red stays, 3/3 others |
+| a view move finds no safe way | the same latch, the same yellow cube | 4/5 at the limit, no file layout |
+
+Cost: a measured layout that is grossly wrong (bins 10 cm closer and counter 6 cm higher, source `hands`) was saved by
+the fallback (3/3) and now loses the episode (0/3, `done` at 34 s: every detection lies within a perceived bin's
+clearance). Seen on the way, for motion: with the boxes 6 cm farther many plans fail on IK before one passes and a
+failing plan is slow; 5 objects need the whole 120 s in the mock, and the real-look log shows 8.8 s between a release
+and the next pick.
+Mock timing caveat: other agents' benches load the Mac (load 39 at times); the fast mock charges planning at wall time,
+so its episode lengths stretch under load (`robust` looked regressed until rerun alone).
