@@ -149,3 +149,29 @@ forward at the reach limit (median +46…+58 mm here), which is unexplained and 
   reach the center bin". The centre box at +12 cm is out of reach for every release.
 - Soft hand at +6 cm: the risen release behaves as on the stock hand (stock: 36/36, −34…+56 mm, 26 mm). One cube was
   lost during the carry (a grasp matter; it is not in the 35).
+
+## Sweep r5 (soft hand, side bins, +8 cm) and the landing box of risen releases
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|---|
+| +8, side, soft | rise list | 36/36 | 33 | 33/33 | 0 / 0 | 4 cm, +6 cm | −17…+79 mm (median −2) | 23 mm, 0 contacts |
+
+Three objects were lost before the release (not lifted, lost in the lift, lost in the carry: grasp matters).
+
+Landing minus release point over every binned release of r1–r5 (outward = away from the robot's midline):
+
+| hand, release | n | x min…max | x p5 / median / p95 | outward y min…max |
+|---|---|---|---|---|
+| stock, today's height | 48 | −15…+51 mm | −13 / +6 / +32 | −49…+46 mm |
+| stock, risen 6–9 cm | 152 | −34…+129 mm | −17 / +17 / +88 | −57…+89 mm |
+| soft, risen 6 cm | 68 | −31…+79 mm | −17 / 0 / +42 | −31…+83 mm |
+
+- Backward the risen release is no worse than the box the motion log has for the nominal height (−32 mm): −34 mm.
+  Forward it reaches +129 mm on the stock hand, with the long tail from the releases at the reach limit (insets
+  ≤ 2 cm, medians +25…+58 mm); sideways the spread grows to −57…+89 mm.
+- The soft hand shows no forward drift at +6 / +8 cm (median 0); it was not run at the reach limit, so whether the
+  drift that carries the rim releases inside exists there is unknown. Sim EV of the rim releases stays an upper bound.
+
+Verdict so far: `release_rise: [0, 0.03, 0.06, 0.09, 0.12]` holds on both hands up to +8 cm (164/164 carried objects
+binned at +6 / +8, no rim contact that kept an object out). Insets under 3 cm: pending the joint proposal with motion.
+Sim d is back on stock settings.
