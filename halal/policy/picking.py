@@ -105,7 +105,10 @@ class PickChooser:
 
     def _first_plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
         """The first arm, grasp and release slot with a plan; none, and True, if that plan would touch a neighbouring object."""
-        for side, grasp, shift in self._options(target, start.released.get(target.bin_name, 0), start.hands):
+        options = self._options(target, start.released.get(target.bin_name, 0), start.hands)
+        if not options:
+            log.info("no plan for %s: no arm in use reaches the %s bin with a grasp", target, target.bin_name)
+        for side, grasp, shift in options:
             if start.cancelled():
                 break
             plan = self._plan_pick(target, side, grasp, shift, start, obstacles)
