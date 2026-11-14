@@ -6,6 +6,18 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 11:10
+- **Hand-in candidate: v4, proxy +19.75, sim gate PASS on all 24 episodes, measured through its container.**
+  `ghcr.io/ink-waffle/halal-policy@sha256:994a14f7b1991dfece9d08265ef88ecb2a9d96c90258ab2a60ecb8bd7d4267db`
+  (public, pulls anonymously). Also run through the exact hand-in path (`evaluate --container`): 8/8 objects.
+- v4 sorts 81 of 87 objects over the three legs (v2: 79). Grasping is solved (2 empty picks in 16 episodes); the
+  six losses are four objects wedged in a hand that did not let go (one fell into a wrong bin later: our only
+  −1) and two toppled triangles.
+- **Now:** v6 through its image (release check above the bin, final perception, hand-aware grasps); a staggered
+  finger release that ejects wedged objects (16/24 wedged → 0/24 in the worst case) is being confirmed at the
+  depths the policy uses; then a dev-only "soft hand" sim to measure the real-robot grasp regime.
+- Organisers: nothing new at 10:06 (no form, no deadline, no new drop).
+
 ### Sat 14.11, 10:30
 - **Best measured version: v2, proxy +19.50, sim gate PASS on all 24 episodes** (0 clips, 30 Hz, policy
   real-time rate ≥ 167 Hz). Fixed +3.38 (27/31), known template +6.75 (27/28), unseen paraphrase +6.25 (25/28).
@@ -69,6 +81,7 @@ Full proxy (three legs, 8 seeds each, DR train):
 | Version | Fixed | Known template | Unseen paraphrase | Proxy | Gate |
 |---|---|---|---|---|---|
 | v2: topface, verification, retries, organiser pinch | +3.38 (27/31) | +6.75 (27/28) | +6.25 (25/28) | **+19.50** | pass |
+| v4: + cage grasps, perception fix, start settle, parser v6 (through the image) | +3.62 (29/31) | +6.38 (26/28, 1 wrong bin) | +6.50 (26/28) | **+19.75** | pass |
 
 v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
 27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16
