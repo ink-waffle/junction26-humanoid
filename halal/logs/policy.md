@@ -514,3 +514,91 @@ Scratch check (real detector, one object's detections rewritten): "Put the orang
 right box." → {red/triangle: right}; reported lying: picked with `cage`, grasp asked for (None, None), release
 check run, right bin, nothing else touched; reported upright: `cage_apex` for ('triangle', yaw); reported as a
 cube: not touched. Under the three-colour sentence the lying prism goes last, to its colour's bin.
+
+### What the finals may vary, in the mock (14.11 afternoon, v16 tree unless stated)
+Organisers (15:07): colours, count and placement vary at random; cubes, prisms and cylinders; prisms stand or lie; 120 s;
+real `sort_fixed` is yellow → left, purple → center, orange → right. Scratch script `crowd.py`: objects placed at random
+in the object band (cubes and cylinders, the mock draws prisms as boxes), 6.5 cm apart at least, real colours, the real
+sentence unless stated. The fast mock runs ~10× real time and charges planning at wall time, which made a 5-object
+episode look 98 s long; every number below is from runs paced at real time (planning as fast as the Mac plans).
+
+| Case | Result | Clips |
+|---|---|---|
+| 6 objects, 4 layouts | 24/24, last release 73–99 s, done | 0 |
+| 7 objects, 4 layouts | 28/28, last release 81–118 s (two only just) | 0 |
+| 8 objects, 4 layouts, 4 runs at a time | 31/32, last release 109–114 s, time limit | 0 |
+| one colour only, 5 and 8 objects, each colour | 15/15 and 24/24 (8: last release 107–116 s) | 0 |
+| sentence names one colour / two colours, 6 / 7 objects | 4/4 and 5/5 sorted, the other 2 + 2 untouched | 0 |
+| "Put all (the) cylinders in / to the left box." | every cylinder left, cubes untouched | 0 |
+| "cylinders left, cubes right", "cubes left, cylinders center, prisms right" | 6/6, 6/6 | 0 |
+| "yellow cylinders left, purple cubes right", "the orange cube into the center box" | 4/4 + 2 untouched, 2/2 + 4 untouched | 0 |
+| an object in a colour nobody names: green, cyan, teal, pink, magenta, white, grey, black | not detected, untouched | 0 |
+| the same, brown (orange hue, dark) and lime (85°) | sorted as orange / as yellow: wrong bin (perception's hue basins; told the orchestrator) | 0 |
+
+Nothing went to a wrong bin or was moved without being asked for, except the two foreign colours.
+Time: sim v16 needs 11–12 s per object (5 objects: done at ~70 s including the 10 s `done` span); 8 objects is the
+ceiling at 120 s, and only with objects that hold at the first pick. In a crowd (neighbours closer than 8.5 cm) nearly
+every look finds every target blocked: each is planned with the obstacles, refused, then the least tried are planned as
+if alone. A refused plan costs 0.45–1.1 s on the Mac (the planner runs the whole IK chain for each heading before it
+gives up; a clear plan is 0.14–0.3 s): 6–8 s per look with 7 targets, 19–24 refusals per 8-object episode.
+Tried and not adopted: a memory of refusals (a target refused for a neighbour is not planned with obstacles again while
+no object within 15 cm of it came, went or moved, same number of tries, same hands): refusals 22–24 → 15–20 per episode,
+32/32 instead of 31/32, last release 108–118 s: inside the noise of four runs. With planning twice as slow both sort 5–6
+of 8. The lever is a cheaper refusal in the planner (reported). Patch kept outside the repo.
+Not measurable in the mock: a third object in one bin takes the first object's release slot again (two slots per bin);
+the mock has no stacking and the sim never spawns more than five objects.
+
+### `cage_side` and the retry order (v17)
+Main a8d0b63 (motion ec8dcf9): `motion.min_wall_height` 0.07 (release 10 mm higher; the policy's transit checks go
+through the planner and see the same wall, nothing in the policy assumed 60 mm) and `cage_side` as the last candidate
+for cube, cylinder and unknown shape. The policy starts a retry with the NEXT candidate (`_rotated`), so the plain merge
+would have retried a cylinder, an unknown shape or a soft-hand cube missed once in the open with `cage_side` first
+(motion's verdict: only when nothing else plans; soft hand not measured). v17: a strategy can be flagged
+`last_resort: true` in `motion.grasps` (`Grasp.last_resort`); the policy rotates the others and keeps those at the end.
+Order tried, stiff cylinder, tries 1–4: before `cage | side side cage | side cage side | cage side side`, now always
+`cage side side`; stiff cube: `cage pinch side side`, `pinch cage side side`, alternating.
+Mock, real planner, a cube and two cylinders 3.5–4 cm before the bins' near walls and one free cylinder: v16 tree 1/4
+(the three never get a plan, time limit), v17 tree 4/4, the three with `cage_side`, 0 clips. All suites on the v17
+tree: 36 cases as before, neighbours_e2e (same orders; "hand would touch" reaches the chooser; the logged finger room
+is now measured to the neighbour's outline, 30 mm less than before), behind_pair, lying_prism, harden, real colours,
+blind_spell: unchanged, 0 clips.
+
+### v16 on fresh seeds (14.11, 14:24–15:11 UTC, through the image, sim `a`, seeds 1008–1015)
+
+| Leg | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | "hand would touch" / as if alone |
+|---|---|---|---|---|---|---|---|---|---|
+| fixed | +4.12 ± 0.78 | 33/33 | done 8 | 0 | 30.0 | 185 | PASS | 0 | 8 / 0 |
+| known | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 179 | PASS | 1 (seed 1014, sorted on the retry) | 7 / 1 |
+| unseen | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 174 | PASS | 0 | 7 / 1 |
+
+Proxy +22.25 of 22.25. No error line, no detector deadline; 10 same-bin pairs on the fixed leg, smallest gap 51 mm, all
+flat. With seeds 1000–1007: 178 of 178 objects for v16 on stock legs, so there is no rare failure to explain at this
+sample size; seeds 1016–1023 were dropped in favour of v18's legs. (In the eval log `t=` is wall time; `sim_s` in
+`eval.json` is the episode: 46–73 s, 11–12 s per object.)
+
+### Perception's layout is the only layout (v18)
+Found by the orchestrator in the real-look sim (boxes 6 cm farther than the scene file, v16, fixed seed 1004): the
+detector's layout was `hands` all episode; at t = 48.5 the one remaining target (a lying prism) had no plan, the look
+re-planned it with the scene file's layout, got a plan, and `use_file_layout` stayed set: every later release went to the
+file's slot (x 0.463, 6 cm short) and an object landed on the counter in front of its box. The fallback dated from
+when a perceived layout could be garbage; since the detector reports `scene` or `nominal` (= the file's bins) unless
+the hands fit, it only ever replaced a measured layout.
+v18: the look plans with `detector.layout()` and nothing else; no re-plan, no latch, and a view move without a safe way
+is replaced by "look from here", never by the file's layout.
+Mock (`far_bins.py`: world with the boxes 6 cm farther, detector layout `hands` + 6 cm, real planner, one colour
+refused whenever the planner holds the perceived layout, real-time pace):
+
+| Case | v17 tree | v18 tree |
+|---|---|---|
+| every target has a plan | 5/5, releases at x 0.493 / 0.503 | the same |
+| blue has no plan in the perceived layout | source turns to `scene`, both blue objects released at x 0.463 (near wall of the real boxes at 0.46) | blue stays on the counter, 3/3 others, releases at 0.493 / 0.503 only |
+| red has no plan | all releases at 0.463, a yellow cube on the counter in front of its box (x 0.459) | red stays, 3/3 others |
+| a view move finds no safe way | the same latch, the same yellow cube | 4/5 at the limit, no file layout |
+
+Cost: a measured layout that is grossly wrong (bins 10 cm closer and counter 6 cm higher, source `hands`) was saved by
+the fallback (3/3) and now loses the episode (0/3, `done` at 34 s: every detection lies within a perceived bin's
+clearance). Seen on the way, for motion: with the boxes 6 cm farther many plans fail on IK before one passes and a
+failing plan is slow; 5 objects need the whole 120 s in the mock, and the real-look log shows 8.8 s between a release
+and the next pick.
+Mock timing caveat: other agents' benches load the Mac (load 39 at times); the fast mock charges planning at wall time,
+so its episode lengths stretch under load (`robust` looked regressed until rerun alone).

@@ -1,4 +1,4 @@
-"""One look: detections -> sortable targets -> the next pick, with the scene parts where perception (or the scene file) has them."""
+"""One look: detections -> sortable targets -> the next pick, with the scene parts where perception has them."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,7 @@ import numpy as np
 
 from halal.language import SHAPES
 from halal.motion import PickPlanner
-from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
+from halal.perception import Detector, ObjectDetection, SceneLayout
 from halal.policy.area import ObjectArea
 from halal.policy.background import Cancelled, within
 from halal.policy.hands import HandCalibrator
@@ -30,13 +30,12 @@ class Look:
     unplannable: list[Target]
     unclear: int                # sortable objects seen too poorly to grasp from this view
     layout_source: str
-    layout_rejected: bool       # the perceived layout allowed no plan at all and the scene file's was used instead
     primer: bool                # nothing was planned: the frame only went to the detector
 
 
 @dataclass(frozen=True)
 class Situation:
-    """What a look plans from: the pose the pick starts in, the view, and the episode's mapping, memory and layout choice."""
+    """What a look plans from: the pose the pick starts in, the view, and the episode's mapping and memory."""
     arm_q: np.ndarray
     hand_q: np.ndarray
     clear_view: bool
@@ -45,7 +44,6 @@ class Situation:
     shapes: Shapes
     released: Mapping[str, int]
     arms: tuple[str, ...]       # arms still in use: one whose hand could not let go of an object is retired for the episode
-    file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
     primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
     missed: Target | None = None   # the last pick came up empty on this target: the object has probably been pushed aside
@@ -55,7 +53,6 @@ class Looker:
     def __init__(self, detector: Detector, planner: PickPlanner, calibrator: HandCalibrator, settings: Mapping[str, Any]) -> None:
         self.detector, self.planner, self.calibrator, self.settings = detector, planner, calibrator, settings
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
-        self.file_layout = scene_layout(planner.scene)
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings)
         self.detect_patience_s = float(settings["detect_deadline_s"])
 
@@ -65,16 +62,10 @@ class Looker:
             return None
         detections = self._detect(obs)
         if situation.primer:
-            return Look(detections, [], None, [], 0, self.detector.layout().source, False, True)
+            return Look(detections, [], None, [], 0, self.detector.layout().source, True)
         if situation.hands_pending:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
-        seen = self.file_layout if situation.file_layout else self.detector.layout()
-        look = self._plan(seen, detections, situation, cancelled)
-        rejected = len(look.unplannable) + len(look.outside)
-        if look.pick is None and rejected and seen.source != self.file_layout.source:
-            log.warning("the perceived layout leaves no pick among %d detections: trying the scene file's", rejected)
-            return replace(self._plan(self.file_layout, detections, situation, cancelled), layout_rejected=True)
-        return look
+        return self._plan(self.detector.layout(), detections, situation, cancelled)
 
     def _detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]:
         """The detector's answer; a call that outlasts its deadline is left behind and the next one gets twice as long."""
@@ -87,7 +78,7 @@ class Looker:
 
     def _plan(self, layout: SceneLayout, detections: list[ObjectDetection], situation: Situation,
               cancelled: Cancelled) -> Look:
-        """The sortable targets and the next pick with counter and bins where `layout` has them."""
+        """The sortable targets and the next pick with counter and bins where perception's `layout` has them."""
         self.planner.set_layout(layout)
         inside = [det for det in detections if self.area.contains(det.top[:2], layout.bins)]
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
@@ -97,7 +88,7 @@ class Looker:
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
         pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
                                                 [det.top for det in detections], cancelled)
-        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
+        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
         """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""

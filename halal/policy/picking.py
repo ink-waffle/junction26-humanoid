@@ -126,9 +126,14 @@ class PickChooser:
         shifts = self.slots.candidates(target.bin_name, released)
         arms = _rotated([side for side in self._arms(target) if side in hands], turns)
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
-                         for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
+                         for grasp in self._in_turn(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
                   for side in arms}
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
+
+    @staticmethod
+    def _in_turn(grasps: list[Grasp], turns: int) -> list[Grasp]:
+        """The candidates starting `turns` places later; motion's last resorts stay behind all the others."""
+        return _rotated([grasp for grasp in grasps if not grasp.last_resort], turns) + [grasp for grasp in grasps if grasp.last_resort]
 
     def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, start: PlanStart, obstacles: Obstacles) -> Plan:
         """One planner call; an exception inside the planner counts as no plan."""
