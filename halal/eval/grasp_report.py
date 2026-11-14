@@ -18,6 +18,7 @@ HELD_MARKS = ("lift", "carry")
 TOPPLED_DEG = 45.0
 RELEASED_BELOW = 0.05
 NEIGHBOUR_MOVED_MM = 10.0
+RIM_TOUCH_MM = 22.5
 
 
 def by_role(error: list[float]) -> list[float]:
@@ -106,6 +107,20 @@ def aftermath_table(picks: list[dict[str, Any]]) -> None:
               f"{shift[:, 0].mean():+5.0f} / {shift[:, 1].mean():+5.0f}   toppled {toppled}  off {gone}")
 
 
+def wall_table(picks: list[dict[str, Any]]) -> None:
+    """How close released objects come to their bin's inner walls: as their bottom passes the rim, and at rest."""
+    groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    for pick in picks:
+        if pick.get("rim_gap_mm") is not None and pick.get("held", {}).get("carry"):
+            groups[(pick["variant"], pick["shape"])].append(pick)
+    if groups:
+        print(f"\nreleased objects and the bin walls (centre to nearest inner wall, mm): n, passing the rim min / p5, under {RIM_TOUCH_MM:.1f} (touches the rim), at rest min, not binned")
+    for key, group in sorted(groups.items()):
+        rim, rest = np.array([p["rim_gap_mm"] for p in group]), np.array([p["wall_gap_mm"] for p in group])
+        print(f"{key[0]:<16} {key[1]:<9} {len(group):2d}  {rim.min():5.0f} / {np.percentile(rim, 5):4.0f}   {np.sum(rim < RIM_TOUCH_MM):2d}   {rest.min():5.0f}   "
+              f"{sum(p['outcome'] != 'correct' for p in group):2d}")
+
+
 def neighbour_table(picks: list[dict[str, Any]]) -> None:
     """Picks beside a second object: target binned, and what happened to the neighbour (moved, toppled, off the counter)."""
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -137,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     finger_table(picks)
     aftermath_table(picks)
     landing_table(picks)
+    wall_table(picks)
     neighbour_table(picks)
     return 0
 
