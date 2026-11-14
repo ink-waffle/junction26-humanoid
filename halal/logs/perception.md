@@ -11,6 +11,8 @@ instance under `/data/halal/runs/frames/` and `/data/wt/perception/runs/frames/`
 | `lowhands` | 20 | both hands ~9 cm above the counter over the object band |
 | `motion` | 1017 | every 20th tick of 8 organiser-baseline episodes (`sim_eval --record-frames`): arms anywhere, held objects, objects in bins |
 | `armless` | 40, rendered | organiser mock world (no arm drawn) × 4 joint poses that put the kinematic hands in view |
+| `closedhands` | 20 | `ARM_HOME`, hands closed (10) and half closed (10), at rest |
+| `movinghands` | 168 | every tick while both hands close and reopen at `ARM_HOME` (4 seeds) |
 
 All errors are of the top-face centre against the simulator's object pose. "Camera part" = error caused by the
 camera model in use, "detector part" = the rest.
@@ -30,17 +32,18 @@ camera model in use, "detector part" = the rest.
 | runtime per look, Mac CPU | 21 ms | 72 ms first look (30 ms of it the hand fit), 31 ms later looks |
 
 `motion` (1017 frames, one detector per episode): baseline recall 0.912, precision 0.662 (1305 phantoms: held
-objects, objects in bins, bin walls), xy 12.8 / 21.4 (median / p95). `topface` recall 0.907, precision 1.000 (0
-phantoms), colour 2537 of 2537, xy 1.9 / 9.9 / 27.3; fully visible objects: recall 1.000, xy 1.9 median.
+objects, objects in bins, bin walls), xy 12.8 / 21.4 (median / p95). `topface` recall 0.906, precision 1.000 (0
+phantoms), colour 2536 of 2536, xy 1.9 / 10.0 / 27.4; fully visible objects: recall 1.000, xy 1.9 median.
 In the sim, same policy, fixed task, 8 seeds, DR (measured by the policy workstream): baseline 12/31 objects
 sorted (39 %), `topface` 27/31 (87 %).
 
 ## What the detector does
 
-1. Camera pose for the episode (`calibration.py`): counter plane → roll, pitch, height; front-wall line of the bin
-   row → yaw, x; where that wall starts and stops → y ("scene anchor", depth only, 3 ms). In parallel the robot's own
-   forearms and hands, posed by FK of the measured joints, are registered against the depth image (`hands.py`). The
-   scene anchor is used unless the hands contradict it by more than `agree_within`; then the hand pose; else nominal.
+1. Camera pose (`calibration.py`), at every look: counter plane → roll, pitch, height; front-wall line of the bin
+   row → yaw, x; where that wall starts and stops → y ("scene anchor", depth only, 3 ms). Once per episode, when the
+   robot stands still, its own forearms and hands, posed by FK of the measured joints, are registered against the
+   depth image (`hands.py`). The scene anchor is used unless the hands contradict it by more than `agree_within`;
+   then the hand pose; else nominal.
 2. Counter plane refitted at every look in that camera frame; `top[2]` = plane under the object + 45 mm.
 3. Blobs at object-top height, split by colour class; around each, a 1 mm top-plane grid in which every cell is
    "top face seen" (+1), "seen empty" (−1) or "hidden / outside the image" (0); the three outlines at every yaw are
@@ -93,7 +96,7 @@ costs 5 % of decided shapes on `dr_train`.
 hues between basins (orange) come back with confidence 0 and are not returned. Stress on 60 frames / 236 objects
 (image-space changes on top of DR): hue rotation ±6°, ±12°: 0 wrong, 229–236 found; ±20°: 0 wrong, 160–204 found;
 ±30°: 14 and 21 wrong, some above confidence 0.5. Saturation ×0.4: 0 wrong, 48 below 0.34. Gain ×0.6–1.5 and
-colour casts of ±20 % per channel: no effect. Sim sets: no wrong colour in 3274 detections, 99.8 % at ≥ 0.8.
+colour casts of ±20 % per channel: no effect. Sim sets: no wrong colour in 3273 detections, 99.8 % at ≥ 0.8.
 Recommended policy threshold 0.5. The confidence is a monotone score, not a calibrated probability: the sim offers
 no colour errors to calibrate on.
 Mistake corrected: confidence used to be colour × outline score, so half-hidden objects with a certain colour got
@@ -115,11 +118,17 @@ Failures of the hand fit, each found by a counter-example:
 - *Wrong minimum* in 2 of 20 `lowhands` frames (22.5 and 16.5 mm; coverage 0.66 / 0.70 gave it away). Fix: restart
   from the camera shifted ±15 mm per axis until 80 % of the model is covered, keep the result with most pixels on the
   model: 20 of 20 within 4.8 mm. Wider first gates made it worse (the sim wrist carries a camera box the URDF lacks).
-- *Closed hands* (policy's calibration close, live sim): +11–13 mm in x, the hand pose overrode the scene anchor.
-  Not reproduced offline (no closed-hand frames at rest). Mitigation: finger links are left out of the model when an
-  index or middle joint is bent beyond 0.5 rad; at `ARM_HOME` the remaining surface (≈ 210 visible points) is too
-  small and the fit rejects itself. Forearm and palm alone are not a substitute there: 11 of 20 trusted at 6.1 median
-  / 19.0 max on `lowhands`. Root cause open.
+- *Fingers in motion* (policy's calibration close, live sim: +11–13 mm in x, the hand pose overrode the scene
+  anchor). Reproduced on `movinghands`: while the fingers REOPEN the fit is off by +6…+15 mm in x and +4…+7 mm in
+  z (up to 22.8 mm from the scene anchor) and still passes every check (rms 2.1–2.7 mm, coverage 0.75–0.89); while
+  they close it stays within 3 mm; closed or half closed at rest it is as good as open (`closedhands`: 20 of 20 within
+  2.5 mm per axis). So the cause is the image not matching the measured finger joints during motion, not the closed
+  posture. Fix: the hand fit is only attempted when an earlier look of the episode, at least 0.1 s before, saw every
+  arm and hand joint within 0.02 rad of where it is now (and `arm_dq` is small). `movinghands`, one detector per
+  seed: source scene 168 of 168, xy 1.6 / 2.3 / 2.6. Consequence: the first look of an episode never uses the hands.
+  Kept from the first mitigation: finger links are left out when an index or middle joint is bent beyond 0.5 rad
+  (a hand that holds something); forearm and palm alone are no substitute at `ARM_HOME` (≈ 210 visible model points:
+  the fit rejects itself; on `lowhands` 11 of 20 trusted at 6.1 median / 19.0 max mm).
 - A Cauchy weight on residuals made the fit worse (max 3.5 → 6.4 mm); removed, the 8 mm final gate stays.
 
 **7. Which pose to believe.** First rule: scene anchor if the hands agree within 10 mm, else hands. In sim the two
@@ -139,8 +148,7 @@ Verdict: a blend is only better than a switch if the hand fit is as good as meas
 costs 1 mm in sim and saves centimetres on a displaced table. With a hand fit that can be 12 mm off it is the worst
 choice in sim. The 25 mm switch is right for sim today; on the real robot it leaves a table displaced by 10–20 mm
 uncorrected. Once the hand fit is verified on real depth, `agree_within` 10 mm (or the blend) is a config change.
-The camera fit is retried at later looks while no arm has been seen and never replaced by one with less evidence
-(`CameraFit.evidence`: 0 nothing, 1 scene anchor unconfirmed, 2 arms, 3 scene anchor confirmed by arms).
+The arm pose, once a look kept one, stays for the episode; until then it is tried at up to 4 still looks.
 
 **8. Scene layout as output.** `SceneLayout(counter_z, bins, source)` from `Detector.layout()`. When the hands fixed
 the camera, bins are found by geometry (`bins.py`): per bin the nearest vertical surface that fills the visible part
@@ -168,6 +176,21 @@ no phantom added; 220 such detections, centre 10–14 mm median, 27.3 max off.
 `ARM_HOME`: no thumb over the band). In sim the first look needs no hand in view. `lowhands`: recall 1.000, xy
 1.7 / 2.7 / 22.7 (the maximum is an object under a hand, reported by the blob fallback), shape decided 0.61.
 
+**12. A stale first frame must not stick.** Live: the policy's first observation of an episode was rendered before
+the evaluator's reset (previous episode's camera pose, empty counter); the one-shot calibration locked onto it and
+every detection of the episode was shifted by the difference of two DR camera poses (6–25 mm). Fix: the scene anchor
+is refitted at EVERY look (3 ms) and the newest is used; the stored anchor (for looks in which walls or counter are
+covered) and the arm pose are only kept from looks that found at least one object. Benchmark `--stale` (each
+detector first sees the frame of another episode, no `t` reset): `dr_train` 1.7 / 2.4 / 2.7 mm, recall and
+precision 1.000, identical to a fresh detector; held-out likewise. Price of refitting per look: on `motion` the
+camera part rises from 2.5 to 3.7 mm at worst (arms over the bin row), 1.6 median unchanged.
+
+**13. Objects at the near image border.** The bottom image row meets the object-top plane at x = 0.213 in sim
+(0.204–0.221 with ±1° camera pitch; 0.221 with the yaml intrinsics). A top face is complete in the image for a
+centre x ≥ 0.236–0.245. Sweep in the mock world: centre within 1.5 mm down to 17 % of the top face inside the image
+(centre 15 mm beyond the edge), shape named down to ~50 % inside, 8 mm off at 6 %, nothing beyond. So in sim an
+object pushed to x < ~0.20 is gone for the head camera; the head cannot tilt.
+
 ## Known failure cases
 
 - Object mostly under a hand: centre up to 2.5 cm off, flagged by `visible` < 0.3 or 0 (blob). `lowhands` seed 2407
@@ -175,7 +198,8 @@ no phantom added; 220 such detections, centre 10–14 mm median, 27.3 max off.
 - Toppled object: colour and a rough centre only (`motion` seed 2206, yellow triangle; ~1 cm).
 - Cylinder cut by the lower image border: shape None; one case in 1891 decided shapes still wrong (`motion` seed 2202).
 - Hue rotated by ±30° or more: wrong colours at high confidence (stress test only).
-- Closed hands at the first look: hand fit biased by ~12 mm (live sim); harmless with the 25 mm rule, cause open.
+- Object pushed towards the robot beyond x ≈ 0.20: outside the head image, not detected.
+- A hand fit taken while fingers move would be biased by up to 15 mm; prevented by the stillness rule, which needs two looks.
 - Two touching objects of one colour whose row ends are both hidden: no cue for the seam.
 - Not handled: an object of a foreign colour inside a basin (purple foam reads blue).
 
@@ -195,8 +219,9 @@ of the real arm; depth edges fatter than in sim (the silhouette correction of id
 
 ## Next
 
-1. Frames at `ARM_HOME` with closed and half-closed hands on sim `c`: find the cause of the closed-hand bias.
-2. First real depth drop: hand fit on real data, then `agree_within` and the blend decision.
+1. First real depth drop: hand fit on real data, then `agree_within` (10–12 mm instead of 25) and the blend decision.
+2. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
+   actuator lag showing in the render but not in `hand_q`): not investigated beyond the measurement above.
 3. Not done: the red < yellow < blue cluster-order check. In sim every object has its own ±7° hue shift, so two reds
    differ by up to 14° and cluster order adds nothing to the basins; "all three colours present" holds at the first
    look only. It would be a policy-level rule for the first look.

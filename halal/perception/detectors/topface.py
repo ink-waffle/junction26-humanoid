@@ -1,6 +1,7 @@
 """Depth-first detector: calibrated camera, top faces at object height, outline fit for shape, yaw and centre."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 import cv2
@@ -17,6 +18,9 @@ from halal.perception.geometry import Camera, PlaneFit
 from halal.perception.shapes import OutlineFitter, TopFace
 
 
+LOG = logging.getLogger(__name__)
+
+
 class TopFaceDetector:
     name = "topface"
 
@@ -30,14 +34,22 @@ class TopFaceDetector:
         self.fitter = OutlineFitter(self.scene, self.cfg["outline"])
         self.colors = ColorClassifier(self.cfg["color"])
         self.band_centre = self.calibration.band[-1, :2]
-        self.pose: CameraFit | None = None
+        self.pose = CameraFit(self.nominal, "nominal")
         self.seen = scene_layout(self.scene)
+        self._forget()
+
+    def _forget(self) -> None:
+        """Drop what earlier looks established: a new episode has its own camera pose and scene."""
+        self.anchor: Camera | None = None
+        self.arms: Camera | None = None
+        self.arm_attempts = 0
         self.last_t = -np.inf
+        self.last_joints: np.ndarray | None = None
 
     @property
     def extrinsics(self) -> np.ndarray:
-        """`T_pelvis_optical` in use: the episode's calibrated pose once there is one, else nominal."""
-        return (self.pose.camera if self.pose else self.nominal).T
+        """`T_pelvis_optical` used at the last look."""
+        return self.pose.camera.T
 
     def layout(self) -> SceneLayout:
         return self.seen
@@ -46,7 +58,11 @@ class TopFaceDetector:
         depth, rgb = obs["head_depth"], obs["head_rgb"]
         if not depth.any():
             return []
-        camera = self._camera(obs)
+        anchor, arms = self._references(obs)
+        pose = self.calibration.decide(self.nominal, anchor or self.anchor, arms)
+        if pose.source != self.pose.source:
+            LOG.info("head camera now fixed by %s (was %s)", pose.source, self.pose.source)
+        self.pose, camera = pose, pose.camera
         counter = self.calibration.counter(depth, camera)
         self.seen = self._layout(depth, camera, counter)
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
@@ -57,25 +73,36 @@ class TopFaceDetector:
         faces = self._faces(depth, camera, cloud, height, free, counter, rgb, gains)
         found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
         found += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
-        return [d for d in found if d.confidence >= self.cfg["min_confidence"]]
+        found = [d for d in found if d.confidence >= self.cfg["min_confidence"]]
+        if found:
+            self.anchor, self.arms = anchor or self.anchor, arms
+        return found
 
-    def _camera(self, obs: Mapping[str, Any]) -> Camera:
-        """The episode's camera pose: refitted while no arm has been seen, replaced only by a fit with better evidence."""
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, Camera | None]:
+        """This look's scene anchor, and the arm pose: the episode's once a look with objects kept one, else a new attempt."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
-            self.pose = None
-        self.last_t = t
-        if self.pose is None or self.pose.evidence < self.cfg["settled_evidence"]:
-            still = np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"]
-            fit = self.calibration.fit(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]) if still else None)
-            if self.pose is None or fit.evidence > self.pose.evidence:
-                self.pose = fit
-        return self.pose.camera
+            self._forget()
+        still = self._still(obs, t)
+        anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
+        if self.arms is not None or not still or self.arm_attempts >= self.cfg["arm_attempts"]:
+            return anchor, self.arms
+        self.arm_attempts += 1
+        return anchor, self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+
+    def _still(self, obs: Mapping[str, Any], t: float) -> bool:
+        """True when arms and fingers stand where an earlier look of this episode saw them: their image shows the joints."""
+        joints = np.r_[obs["arm_q"], obs["hand_q"]]
+        waited = t - self.last_t >= self.cfg["still_time"]
+        same = self.last_joints is not None and np.abs(joints - self.last_joints).max() < self.cfg["still_tolerance"]
+        if waited or self.last_joints is None:
+            self.last_t, self.last_joints = t, joints
+        return bool(waited and same and np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"])
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
         """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
-        if self.pose is None or self.pose.source != "hands":
-            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source if self.pose else "nominal")
+        if self.pose.source != "hands":
+            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source)
         return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), "hands")
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:

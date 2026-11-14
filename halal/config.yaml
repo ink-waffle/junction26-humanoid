@@ -73,8 +73,10 @@ perception:
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
   topface:                    # halal.perception.detectors.topface
-    settled_evidence: 2       # the camera fit is retried at later looks until arms were seen (CameraFit.evidence)
+    arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
+    still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
+    still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm
     depth_median: 3           # median filter on the depth image before anything else, px
     workspace_x: [0.12, 0.75] # objects are looked for on the counter inside this pelvis-frame box ...
     workspace_y_half: 0.50    # ... and outside the bin footprints
