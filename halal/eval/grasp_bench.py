@@ -7,7 +7,9 @@ Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = gripp
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
 `repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `neighbour` ([forward, outward] m: a second object beside the target),
-`avoid` (pass the neighbour to the planner as an obstacle), `overrides`
+`avoid` (pass the neighbour to the planner as an obstacle), `topple_deg` (before the pick a scripted push in about this
+pelvis direction, mirrored for the right arm, tips the upright prism onto a side; it is then perceived as lying),
+`drop_shift` ([forward, outward] m added to the release point), `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
@@ -20,7 +22,7 @@ import os
 import ssl  # noqa: F401  must load before DDS, as in the organisers' evaluator
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, TypeVar
 
@@ -29,7 +31,7 @@ import yaml
 
 from aaltonomous.baselines.classical import config as baseline
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
-from aaltonomous.baselines.classical.planner import Plan
+from aaltonomous.baselines.classical.planner import Plan, ramp, time_scale
 from aaltonomous.interface.env import AaltoEnv
 from aaltonomous.interface.tasks import FIXED_MAPPING
 from aaltonomous.sim import evaluate
@@ -47,6 +49,8 @@ BIN_COLOR = {bin_name: color for color, bin_name in FIXED_MAPPING.items()}
 MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
 GRIP_JOINTS = [1, 3, 5]
 STUCK_ABOVE = 0.15
+LYING_TILT = np.radians(45.0)
+LYING_TOP = 2.0 / 3.0
 T = TypeVar("T")
 
 
@@ -79,6 +83,7 @@ class Pick:
     squeeze: float
     neighbour: str | None
     neighbour_start: np.ndarray | None
+    lying: bool
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
@@ -116,8 +121,22 @@ def quat_tilt(quat_xyzw: list[float]) -> float:
     return float(2 * np.arcsin(min(1.0, float(np.hypot(x, y)))))
 
 
+def quat_axis(quat_xyzw: list[float]) -> np.ndarray:
+    """The object's own z axis (a prism's extrusion axis) in the pelvis frame."""
+    x, y, z, w = quat_xyzw
+    return np.array([2 * (x * z + w * y), 2 * (y * z - w * x), 1 - 2 * (x * x + y * y)])
+
+
+def is_lying(shape: str, quat_xyzw: list[float]) -> bool:
+    """Whether a prism rests on one of its rectangular sides."""
+    return bool(shape == "triangle" and quat_tilt(quat_xyzw) > LYING_TILT)
+
+
 def perceived_yaw(shape: str, quat_xyzw: list[float]) -> float | None:
-    """Sim pose -> the perception convention: cube = a face normal, triangle = apex direction, cylinder = none."""
+    """Sim pose -> the perception convention: cube = a face normal, triangle = apex direction (lying: its ridge), cylinder = none."""
+    if is_lying(shape, quat_xyzw):
+        axis = quat_axis(quat_xyzw)
+        return float(np.arctan2(axis[1], axis[0]))
     offset = {"cube": 0.0, "triangle": np.pi / 2}.get(shape)
     return None if offset is None else quat_yaw(quat_xyzw) + offset
 
@@ -176,7 +195,7 @@ class Bench:
         dr = self.scene_client.randomize(seed).get("params") or {}
         self.scene_client.reset([entry for c, n in zip(cases, neighbours) if c.present for entry in self._layout_entries(c, n)])
         self._hold(self.settings["settle_ticks"])
-        truth = {o["name"]: o for o in self.scene_client.state()["objects"]}
+        truth = self._toppled(cases, {o["name"]: o for o in self.scene_client.state()["objects"]})
         rng = np.random.default_rng(seed)
         picks = self._while_holding(lambda: [self._prepare(c, n, truth, rng) for c, n in zip(cases, neighbours)])
         trace = self._execute(picks)
@@ -208,6 +227,58 @@ class Bench:
         return [{"color": color, "shape": shape, "x": float(mat[0]), "y": float(mat[1]), "yaw": float(turn)}
                 for color, shape, mat, turn in mats]
 
+    def _toppled(self, cases: list[Case], truth: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Object states after the scripted pushes of the cases whose variant asks for a lying prism; `truth` itself when none does."""
+        pushes = [(c.side, self._push(c, truth[self._target(c)])) for c in cases
+                  if c.present and "topple_deg" in self.spec["variants"][c.variant]]
+        if not pushes:
+            return truth
+        self._follow([(side, plan) for side, plan in pushes if plan.ok])
+        evaluate.settle(self.scene_client, 4.0, float(self.scene.cfg["success"]["at_rest_speed"]))
+        return {o["name"]: o for o in self.scene_client.state()["objects"]}
+
+    def _push(self, case: Case, state: Mapping[str, Any]) -> Plan:
+        """Closed hand through the prism's upper part, from the vertex nearest the variant's direction towards the opposite face."""
+        planner, cfg, cols = self.planners[case.variant], self.settings["topple"], ArmKinematics.sl(case.side)
+        wanted = np.radians(self.spec["variants"][case.variant]["topple_deg"]) * (1.0 if case.side == "left" else -1.0)
+        headings = perceived_yaw("triangle", state["quat_xyzw"]) + np.pi + np.radians([0.0, 120.0, 240.0])
+        heading = min(headings, key=lambda h: abs((h - wanted + np.pi) % (2 * np.pi) - np.pi))
+        along, centre, up = np.array([np.cos(heading), np.sin(heading), 0.0]), np.asarray(state["pos"], float), np.array([0.0, 0.0, 1.0])
+        arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
+        fist = hand.copy()
+        fist[cols] = planner.post["closed"][cols]
+        plan = Plan(True, side=case.side)
+        start = np.r_[centre[:2], self.scene.counter_z + planner.height] - cfg["back"] * along
+        for _ in range(2):
+            q, _ = planner._ik(case.side, start, arm, "push", plan)
+            start[2] += cfg["height"] - planner.clearance(case.side, q, fist, fingers_only=True)
+        stop = start + (cfg["back"] + cfg["through"]) * along
+        above, ok = planner._ik(case.side, start + cfg["lift"] * up, arm, "above", plan)
+        down = ok and planner._cartesian(case.side, start + cfg["lift"] * up, start, above, "descend", plan)
+        push = down and planner._cartesian(case.side, start, stop, down[-1], "push", plan)
+        rise = push and planner._cartesian(case.side, stop, stop + cfg["lift"] * up, push[-1], "lift", plan)
+        if not rise:
+            return replace(plan, ok=False)
+        motion, home = planner.cfg["motion"], np.r_[arm[:cols.start], planner.home[cols], arm[cols.stop:]]
+        parts = [time_scale([arm, above, *down], motion["arm_max_vel"], motion["arm_max_acc"], planner.dt),
+                 time_scale([down[-1], *push], cfg["speed"], motion["arm_max_acc"], planner.dt),
+                 time_scale([push[-1], *rise, home], motion["arm_max_vel"], motion["arm_max_acc"], planner.dt)]
+        plan.arm = np.vstack(parts)
+        closing = ramp(hand, fist, motion["hand_max_vel"], planner.dt)[:len(plan.arm)]
+        plan.hand = np.vstack([closing, np.repeat(fist[None], len(plan.arm) - len(closing), 0)])
+        plan.ok = planner.dry_run_safety(arm, hand, plan.arm, plan.hand) == 0
+        return plan
+
+    def _follow(self, plans: list[tuple[str, Plan]]) -> None:
+        """Run arm plans side by side to their ends without tracing."""
+        for tick in range(max((len(plan.arm) for _, plan in plans), default=0)):
+            arm, hand = self._targets(plans, tick)
+            self.env.step({"arm_q_target": arm, "hand_q_target": hand})
+
+    @staticmethod
+    def _target(case: Case) -> str:
+        return f"obj_{BIN_COLOR[case.bin_name]}_{case.shape}_0"
+
     def _hold(self, ticks: int) -> None:
         action = {"arm_q_target": self.env.filter.arm_cmd.copy(), "hand_q_target": self.env.filter.hand_cmd.copy()}
         for _ in range(ticks):
@@ -223,21 +294,23 @@ class Bench:
 
     def _prepare(self, case: Case, neighbour: str | None, truth: Mapping[str, Any], rng: np.random.Generator) -> Pick:
         """Detection with the case's perception error, the variant's grasp for it, and the plan."""
-        name = f"obj_{BIN_COLOR[case.bin_name]}_{case.shape}_0" if case.present else None
+        name = self._target(case) if case.present else None
         pos = np.asarray(truth[name]["pos"], float) if name else np.r_[mirrored(case)[0], self.rest_z]
         yaw = perceived_yaw(case.shape, truth[name]["quat_xyzw"]) if name else None
         angle, sign = rng.uniform(0, 2 * np.pi), rng.choice([-1.0, 1.0])
         outward = 1.0 if case.side == "left" else -1.0
         error = case.pos_noise * np.r_[np.cos(angle), np.sin(angle)] + [case.offset[0], outward * case.offset[1]]
-        top = pos + np.r_[error, self.scene.object_height() / 2]
+        lying = name is not None and is_lying(case.shape, truth[name]["quat_xyzw"])
+        top = pos + np.r_[error, self.scene.object_height() * (LYING_TOP if lying else 0.5)]
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
-        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
+        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw, lying=lying,
+                                    size=float(top[2] - self.scene.counter_z) if lying else None)
         beside = np.asarray(truth[neighbour]["pos"], float) if neighbour else None
         avoid = neighbour is not None and self.spec["variants"][case.variant].get("avoid", False)
         grasp, plan = self._plan(case, detection, [beside + [0.0, 0.0, self.scene.object_height() / 2]] if avoid else [])
         depth = self._squeeze_override(case.variant)
         return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth,
-                    neighbour, beside)
+                    neighbour, beside, lying)
 
     def _squeeze_override(self, variant: str) -> float | None:
         """A variant's `squeeze` when it is one number for every shape; None leaves the depth to the grasp."""
@@ -249,15 +322,17 @@ class Bench:
         variant, planner = self.spec["variants"][case.variant], self.planners[case.variant]
         hand = variant.get("hand", "stiff")
         if variant.get("candidates"):
-            grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand)
+            grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand, detection.lying)
         else:
             base = strategy_params(variant["base"]) if "base" in variant else {}
             params = {**for_hand(base, hand), **variant}
             grasps = strategy_grasps(case.variant, params, detection.shape, detection.yaw, case.side)
         plan = Plan(False, side=case.side, reason="no grasp for this object")
+        forward, outward = variant.get("drop_shift", (0.0, 0.0))
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
                                      self.env.filter.hand_cmd.copy(), end=self.spec["end"],
+                                     drop_shift=(forward, outward if case.side == "left" else -outward),
                                      squeeze=self._squeeze_override(case.variant), obstacles=obstacles)
             if plan.ok:
                 return grasp, plan
@@ -269,7 +344,7 @@ class Bench:
         rows: dict[str, list] = {key: [] for key in ("arm_cmd", "hand_cmd", "arm_q", "hand_q", "poses")}
         tick = 0
         while any(p.plan.ok and tick < len(p.plan.arm) for p in picks):
-            arm, hand = self._targets(picks, tick)
+            arm, hand = self._targets([(p.case.side, p.plan) for p in picks], tick)
             obs, info = self.env.step({"arm_q_target": arm, "hand_q_target": hand})
             if info["clipped"]:
                 raise RuntimeError(f"safety clip during a dry-run-checked plan: {info['clip_reasons']}")
@@ -284,13 +359,13 @@ class Bench:
         trace = {key: np.array(value, float) for key, value in rows.items()}
         return {**trace, "poses": trace["poses"].reshape(-1, len(names), 7)}
 
-    def _targets(self, picks: list[Pick], tick: int) -> tuple[np.ndarray, np.ndarray]:
+    def _targets(self, plans: list[tuple[str, Plan]], tick: int) -> tuple[np.ndarray, np.ndarray]:
         """Arm and hand targets of this tick: each arm follows its own plan and holds once it is done or has none."""
         arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
-        for pick in picks:
-            if pick.plan.ok:
-                cols, row = ArmKinematics.sl(pick.case.side), min(tick, len(pick.plan.arm) - 1)
-                arm[cols], hand[cols] = pick.plan.arm[row, cols], pick.plan.hand[row, cols]
+        for side, plan in plans:
+            if plan.ok:
+                cols, row = ArmKinematics.sl(side), min(tick, len(plan.arm) - 1)
+                arm[cols], hand[cols] = plan.arm[row, cols], plan.hand[row, cols]
         return arm, hand
 
     def _deepen_if_weak(self, pick: Pick, tick: int, error: np.ndarray) -> None:
@@ -309,6 +384,7 @@ class Bench:
                 outcomes: Mapping[str, str], final: Mapping[str, Mapping[str, Any]], dr: Mapping[str, Any]) -> dict[str, Any]:
         record: dict[str, Any] = {"episode": index, "seed": seed, **asdict(pick.case), "object": pick.name,
                                   "true_pos": pick.true_pos.round(4).tolist(), "true_yaw": pick.true_yaw,
+                                  "lying": pick.lying,
                                   "seen_yaw": pick.detection.yaw, "grasp": pick.grasp.name if pick.grasp else None,
                                   "finger_yaw": pick.grasp.finger_yaw if pick.grasp else None,
                                   "planned": bool(pick.plan.ok), "plan_reason": pick.plan.reason, "squeeze": pick.squeeze,
@@ -327,6 +403,8 @@ class Bench:
         record.update(self._object_metrics(pick, slot, marks, trace))
         record["outcome"], record["final_pos"] = outcomes[pick.name], np.round(final[pick.name]["pos"], 4).tolist()
         record["final_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.name]["quat_xyzw"]))), 1)
+        record["wall_gap_mm"] = round(1000 * self._wall_gap(pick.case.bin_name, final[pick.name]["pos"]), 1)
+        record["rim_gap_mm"] = self._rim_gap(pick, trace["poses"][marks["open"] // self.settings["trace_every"]:, slot])
         if pick.neighbour is not None:
             moved = np.subtract(final[pick.neighbour]["pos"], pick.neighbour_start)
             record["neighbour_shift_mm"] = round(1000 * float(np.linalg.norm(moved[:2])), 1)
@@ -336,6 +414,17 @@ class Bench:
             record["neighbour_gap_mm"] = round(1000 * self.planners[pick.case.variant].digit_gap(pick.plan, pick.case.side, top), 1)
         record["failure"] = self._failure(record)
         return record
+
+    def _wall_gap(self, bin_name: str, pos: Any) -> float:
+        """Distance (m) from a point to the nearest inner wall of a bin, seen from above; negative outside the walls."""
+        inner = self.scene.mat_to_pelvis(np.array(self.scene.bin_inner_box(bin_name)))[:, :2]
+        return float(min((pos[:2] - inner.min(0)).min(), (inner.max(0) - pos[:2]).min()))
+
+    def _rim_gap(self, pick: Pick, poses: np.ndarray) -> float | None:
+        """Centre-to-wall distance (mm) when the released object's bottom first passes the rim of its bin; None if it never does."""
+        rim = self.scene.counter_z + float(self.scene.cfg["bins"]["wall_height"]) + self.scene.object_height() / 2
+        below = poses[poses[:, 2] < rim]
+        return round(1000 * self._wall_gap(pick.case.bin_name, below[0]), 1) if len(below) else None
 
     @staticmethod
     def _tick(plan: Plan, phase: str, fraction: float) -> int:

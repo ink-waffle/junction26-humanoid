@@ -6,6 +6,19 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 15:00
+- **Hand-in candidate: v14, proxy +21.25, sim gate PASS on all 24 episodes through its container; soft-hand sim
+  30/31, gate PASS.** First published version that sees and names the real robot's colours.
+  `ghcr.io/ink-waffle/halal-policy@sha256:e061f54d6437c359f9b35851f2ae571caf2316e9ceb3b87d12b8229ecfd8b39a`
+- Since 13:50: colour families in the detector (real drop: orange 81/81, purple 44/44, yellow 62/62 named right;
+  sim sets unchanged); orange/yellow boundary taken from the scene's own hue gap (tolerates a global hue turn of
+  +10..15° instead of +5°); prisms lying on a side detected with their ridge direction (185 of 237 in sim);
+  obstacle-aware picking validated in physics (26/26 neighbours untouched); stacking traced to pick order.
+- **Now:** v15 (v12's pick order, scene-based colour boundary, lying prisms, 10 s before `done`) on four legs;
+  grasp for lying prisms, release-slot wall risk and the 70 mm box rim on the motion side.
+- **Organisers, 14:39:** teams with "exceptional readiness" may get to run on the robot through a deployment
+  tool; our five questions (form, deadlines, objects, scene, start pose), posted 14:07, are unanswered.
+
 ### Sat 14.11, 13:50
 - **Hand-in candidate: v12, proxy +21.13 (86 of 87 objects), sim gate PASS on all 24 episodes through its
   container; and 31/31 with the gate passing on the soft-hand sim** (hands classified soft by itself, 16/16).
@@ -122,6 +135,8 @@ Full proxy (three legs, 8 seeds each, DR train):
 | v9: + cheaper release check, more tries on toppled objects | +3.88 (31/31) | +7.00 (28/28) | +6.50 (26/28) | **+20.63** | pass |
 | v10: + staggered finger release, arm retired only on a confirmed read | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
 | v12: + vertex-aligned triangle grasp, soft-hand identification and carry profile (soft sim: fixed 31/31) | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
+| v13: + obstacle check, neighbour-count order, narrow release slots (soft sim 29/31) | +3.75 (30/31) | +6.75 (27/28) | +7.00 (28/28) | +21.00 | pass |
+| v14: + colour families and real colour words, v12's slots, waiting rule (soft sim 30/31) | +3.75 (30/31) | +7.00 (28/28) | +7.00 (28/28) | **+21.25** | pass |
 
 v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
 27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16

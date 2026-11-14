@@ -32,10 +32,10 @@ def right_hand(left: np.ndarray) -> np.ndarray:
     return np.array([left[0], -left[1], -left[2], -left[5], -left[6], -left[3], -left[4]])
 
 
-def candidate_grasps(shape: str | None, yaw: float | None, side: str, hand: str = "stiff") -> list[Grasp]:
-    """Grasps worth trying for this object with this arm, best first, closed as the hand class (stiff | soft) needs."""
+def candidate_grasps(shape: str | None, yaw: float | None, side: str, hand: str = "stiff", lying: bool = False) -> list[Grasp]:
+    """Grasps worth trying for this object with this arm, best first, closed as the hand class (stiff | soft) needs; `lying` = a prism on a side, yaw = its ridge."""
     motion = config.load()["motion"]
-    names = motion["candidates"][hand][shape or "unknown"]
+    names = motion["candidates"][hand]["lying" if lying else shape or "unknown"]
     return [grasp for name in names
             for grasp in strategy_grasps(name, for_hand(strategy_params(name), hand), shape, yaw, side)]
 
