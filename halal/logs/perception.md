@@ -201,7 +201,7 @@ object pushed to x < ~0.20 is gone for the head camera; the head cannot tilt.
 - Object pushed towards the robot beyond x ≈ 0.20: outside the head image, not detected.
 - A hand fit taken while fingers move would be biased by up to 15 mm; prevented by the stillness rule, which needs two looks.
 - Two touching objects of one colour whose row ends are both hidden: no cue for the seam.
-- Not handled: an object of a foreign colour inside a basin (purple foam reads blue).
+- By design since drop 2: orange reads `red`, purple reads `blue` (colour families, below); box tape and sim bins are `red` too.
 
 ## Real robot: what the recordings changed, and what must hold
 
@@ -216,6 +216,169 @@ depth within 8 mm of the model on at least half of the visible forearm, palm and
 such pixels more than 65 mm above the table, at least half of the depth pixels within 4 cm of the arms on the
 model. Doubts: stereo depth on glossy black fingers; the wrist camera mount and cables the URDF lacks; FK accuracy
 of the real arm; depth edges fatter than in sim (the silhouette correction of idea 3 assumes exact edges).
+
+## Real colours and drop 2
+
+Organisers, Sat 14 Nov: the real objects are purple / yellow / orange foam, the sim keeps red / yellow / blue. Decision
+(orchestrator): three colour FAMILIES under the canonical names, `red` = red and orange, `yellow`, `blue` = blue and
+purple. Drop 2 (`zupermiez/g1_junction_drop_2`, 48 episodes, RGB only) has the finals' object set: purple cube, orange
+cube, orange triangular prism, yellow cube, yellow cylinder, on a bare glossy table in front of three orange-taped boxes.
+
+Scripts (`halal/eval/real/`, environment as in realdata.md): `drop2_frames` (PNG samples under `runs/real_frames/drop2/`),
+`drop2_colours` (tables below; `--sheets DIR` writes the segmentation to check), `drop2_size` (cube edge).
+
+### Colour statistics
+
+First head frame of all 48 episodes. Objects segmented by hue seeds and size, only blobs on the table in front of the
+boxes, shapes labelled by hand: 81 orange, 62 yellow, 44 purple instances. Hue = the detector's angle (deg), cvH = OpenCV
+H; pixels pooled, hue p1 / p5 / p50 / p95 / p99, the rest p5 / p50 / p95.
+
+| class | hue deg | cvH | S | V |
+|---|---|---|---|---|
+| orange cube | 19 / 21 / 25 / 30 / 31 | 11 / 13 / 15 | 146 / 180 / 232 | 124 / 208 / 252 |
+| orange prism | 18 / 20 / 24 / 30 / 31 | 10 / 12 / 15 | 146 / 220 / 246 | 115 / 177 / 248 |
+| orange, lit faces | 20 / 22 / 25 / 30 / 32 | 11 / 13 / 15 | 145 / 176 / 232 | 173 / 218 / 253 |
+| orange, shaded faces | 18 / 19 / 24 / 28 / 30 | 10 / 12 / 14 | 156 / 214 / 244 | 114 / 149 / 196 |
+| yellow cube | 41 / 47 / 77 / 88 / 91 | 23 / 39 / 44 | 71 / 85 / 152 | 117 / 210 / 248 |
+| yellow cylinder | 41 / 45 / 80 / 97 / 103 | 22 / 40 / 48 | 57 / 77 / 150 | 119 / 211 / 255 |
+| yellow, lit faces | 59 / 70 / 81 / 93 / 100 | 36 / 41 / 47 | 61 / 77 / 94 | 187 / 226 / 254 |
+| yellow, shaded faces | 39 / 42 / 56 / 81 / 85 | 21 / 28 / 41 | 84 / 116 / 164 | 109 / 137 / 181 |
+| purple cube | 216 / 217 / 223 / 246 / 261 | 108 / 111 / 124 | 104 / 151 / 183 | 99 / 210 / 246 |
+| purple, lit faces | 216 / 217 / 222 / 227 / 230 | 108 / 111 / 113 | 133 / 153 / 183 | 184 / 219 / 247 |
+| purple, shaded faces | p5 222, p50 236, p95 259, p99 266 | 111 / 118 / 130 | 80 / 128 / 188 | 94 / 110 / 160 |
+| box tape | -4 / 2 / 10 / 18 / 28 | 1 / 5 / 10 | 91 / 169 / 215 | 62 / 115 / 211 |
+| bare table | any (chroma < 0.15) | any | 6 / 19 / 35 | 120 / 152 / 202 |
+| hand (V < 60) | mostly ~200 | 0 / 101 / 115 | 40 / 132 / 228 | 14 / 40 / 58 |
+| forearm cover (cyan plastic, left wrist) | 181 / 189 / 200 / 208 / 211 | 95 / 100 / 104 | 84 / 149 / 203 | 64 / 136 / 251 |
+
+The colour the detector names per object (median of the most saturated 30 %, white-balanced on the table; the table is
+nearly neutral, so the balance moves hues by a degree or two), min / p5 / p50 / p95 / max:
+
+| | n | hue deg | chroma min / p50 |
+|---|---|---|---|
+| orange cube | 41 | 20.2 / 21.7 / 24.5 / 29.3 / 30.2 | 0.58 / 0.77 |
+| orange prism | 39 | 19.4 / 20.1 / 26.6 / 29.0 / 30.9 | 0.59 / 0.89 |
+| yellow cube | 34 | 40.7 / 43.6 / 55.6 / 79.8 / 81.6 | 0.37 / 0.47 |
+| yellow cylinder | 23 | 45.2 / 46.0 / 52.8 / 95.9 / 98.4 | 0.24 / 0.48 |
+| purple cube | 44 | 217.0 / 217.3 / 220.1 / 223.4 / 225.0 | 0.57 / 0.66 |
+| tape, 40 x 40 px patches | 831 | 0.9 / 4.2 / 8.7 / 14.7 / 27.6 | 0.39 / 0.76 |
+
+- Orange against yellow: separable by hue, gap 30.9 to 40.7 deg, about 5 deg on either side of a boundary at 36. Thin,
+  but without exception in 48 episodes of one room's light. Second cue on the real foam only: orange chroma >= 0.58,
+  yellow <= 0.5 (the sim's yellow is as saturated as its red, so it is not used).
+- Orange object against tape: medians 25 against 10 deg (cvH 13 against 5; drop 1 said 4 to 8 units: confirmed), but lit
+  tape rims reach 18 (p95) to 28 (p99) and single patches read up to 27.6, inside the objects' 19 to 31. Hue cannot tell
+  a lit piece of tape from an orange object.
+- Purple: this camera renders it blue. Lit faces 216 to 230, named colour 217 to 225; shaded faces drift violet to 259
+  (p95) and 266 (p99), never near 290. The old basin ended at 250.
+- Yellow is greenish and pale here: lit tops 70 to 100 deg (the old basin ended at 90), saturation a third of the orange's.
+- In a family at pixel level without being an object (mean pixels per frame): all tape, `red`, 60 k; the cyan forearm
+  cover, `blue`, 13.6 k (hue 195 to 211: sim blue's lit tops reach 200, so hue cannot cut it); arm shadows and
+  reflections on the glossy table, `blue`, chroma 0.18 to 0.29, 1.6 k on the bright table and more in the shadow;
+  cardboard inside the boxes, `yellow`, hue 38 to 68; the black hand 135 (the value floor holds). All of these are
+  left to geometry: table height, bin footprints, pixels above an object's top.
+
+### What changed in the detector
+
+1. **Basins** (`topface.color.basins`): red 335..33 (was 335..15), yellow 39..110 (was 40..90), blue 195..280 (was
+   195..250), taper 6 deg. Drop 2 objects under the old basins: orange 58 `red` + 23 `yellow`, all at confidence 0;
+   new: 81 of 81 `red` at 1.00, 44 of 44 purple `blue` at 1.00, 62 of 62 yellow `yellow` (59 at 1.00, minimum 0.59: a
+   washed-out cylinder, chroma 0.24).
+2. **Own-family sample** (`color.own_share`): when at least half of an object's pixels lie in one family, only those
+   are sampled. Reason: touching real objects. The colour sample is everything within 30 mm of the centre, so a
+   touching neighbour contributes an edge up to 7.5 mm deep, and the most saturated 30 % of "pale yellow + a slice of
+   orange" is the orange. Emulated on drop 2 (own pixels plus the neighbours' within n px; 13 px is about 7.5 mm):
+   named another family or a hue between families 1 of 72 at 13 px and 15 of 93 at 20 px before, 0 and 0 after;
+   2 of 122 at 30 px (a purple cube mostly hidden behind its neighbours).
+3. **Wall guard** (`topface.wall_guard`), active only while the scene has not anchored the camera. With orange in the
+   `red` family the sim's bin walls (hue 24) no longer fail the colour test, which had been a second line of defence:
+   with the calibration switched off (nominal camera, 11 mm median error) the phantoms on `dr_train` / `motion` went
+   from 14 / 15 (old basins) to 36 / 214, nearly all wall slivers from the toppled-object fallback. Now a fit's top
+   cells must form a level patch (|cos| to the counter normal >= 0.7; wall faces 0.03 to 0.61, 99.5 % of true tops >=
+   0.8) and a fallback blob needs depth in plan view (std >= 4 mm; wall slivers 1.0 median, toppled objects 7.7): 4 / 0
+   phantoms, recall 0.996 / 0.895 (0.998 / 0.906 without the guard). Anchored, the guard does nothing.
+4. **Object size** (`topface.size_range`, `size_snap`, `min_size_visible`; `ObjectDetection.size`). Top faces are looked
+   for from 45 to 55 mm above the counter (band 39 to 61 mm, was 39 to 51); every blob is fitted on the plane at its
+   own median height, which IS the scene file's 45 mm when within 2.5 mm of it. `size` = that height (edge length =
+   height, m) when at least 30 % of the top face was seen, else None; an unexpected size with less than 30 % seen is
+   not reported as an object (bin rims under a wrong camera pose looked like that). `top[2]` = counter + that height.
+   Outlines are not scaled.
+
+### Sim benchmarks, before (a158a92) and after
+
+Recall / precision, colour right, xy median / p95 / max mm, shape decided / right of decided:
+
+| set | before | after |
+|---|---|---|
+| dr_train (120 frames, 472 objects) | 1.000 / 1.000, 472/472, 1.65 / 2.45 / 2.74, 0.892 / 1.000 | 1.000 / 1.000, 472/472, 1.66 / 2.45 / 2.74, 0.892 / 1.000 |
+| held-out (30, 114) | 1.000 / 1.000, 114/114, 1.62 / 2.45 / 2.69, 0.851 / 1.000 | same, median 1.63 |
+| motion (1017, 2798) | 0.906 / 1.000, 2536/2536, 1.93 / 9.95 / 27.37, 0.746 / 0.999 | 0.906 / 1.000, 2536/2536, 1.94 / 9.95 / 27.37, 0.746 / 0.999 |
+| lookpose (45, 188) | 1.000 / 1.000, 188/188, 1.62 / 2.40 / 2.65, 0.984 / 1.000 | same, p95 2.42 |
+| lowhands (20, 77) | 1.000 / 1.000, 77/77, 1.68 / 2.66 / 22.67, 0.610 / 1.000 | same, median 1.70 |
+| closedhands (20, 79) | 1.000 / 1.000, 79/79, 1.63 / 2.44 / 21.22, 0.937 / 1.000 | same, median 1.62 |
+| movinghands (168, 588) | 1.000 / 1.000, 588/588, 1.60 / 2.34 / 2.66, 0.888 / 1.000 | same, median 1.61 |
+| armless (40, 172) | 1.000 / 1.000, 172/172, 0.50 / 0.63 / 0.66, 1.000 / 1.000 | same |
+| dr_train `--stale` | as dr_train | as dr_train |
+
+Phantoms 0 and wrong colours 0 on every set, before and after. The hundredths move because lit pixels of red tops
+(hue 15 to 33) now have a class, which shifts a few seeds. `size` in sim: reported for 0.913 of the detections on
+`dr_train` (0.815 on `motion`), every one exactly 45.00 mm. The raw blob height reads 43.8 mm median (p5 43.2, p95 44.0):
+1.1 mm low, the sim's principal point again (see "Facts"); that is what the 2.5 mm snap absorbs.
+
+Other sizes, organiser mock world (no arms, 1 mm depth noise, 43 objects, detector expecting 45 mm):
+
+| true size mm | found | xy median / max mm | `size` read mm | top z error mm | shape right of decided |
+|---|---|---|---|---|---|
+| 45 | 43/43 | 0.5 / 0.7 | 45.0 | 0.0 | 43/43 |
+| 47 | 43/43 | 0.9 / 2.9 | 45.0 (snapped) | -2.0 | 20/20 (cylinders undecided) |
+| 48 | 43/43 | 0.6 / 1.6 | 47.8 to 48.0 | -0.1 | 20/20 |
+| 50 | 43/43 | 0.6 / 2.2 | 49.7 to 49.9 | -0.1 | 20/21 |
+| 52 | 43/43 | 0.9 / 2.4 | 51.7 to 51.9 | -0.2 | 20/43 |
+| 55 | 43/43 | 0.8 / 5.3 | 54.7 to 54.9 | -0.2 | 20/43 |
+
+Position, colour and size hold over the range; the SHAPE does not above 50 mm (every cylinder is called a cube: the
+45 mm outlines are not scaled with the size). Scaling them is the fix if the finals' objects turn out larger.
+
+### The real palette under the sim's light (`--repaint`)
+
+`perception_bench --repaint` turns the hue of every lying object's pixels (ground-truth outline) by `bench.repaint_deg`:
+red +25 (orange foam), yellow +4, blue -7 (purple foam), everything else of the sim's randomisation staying on top.
+
+| set | recall / precision | colour right | wrong colours | phantoms |
+|---|---|---|---|---|
+| dr_train | 1.000 / 1.000 | 446/472 (0.945) | 26, all orange named `yellow`, 18 at confidence >= 0.8 | 0 |
+| motion | 0.904 / 1.000 | 2481/2530 (0.981) | 48, all orange named `yellow` | 1 |
+
+Yellow and blue-as-purple: 0 wrong in 2190. Orange: 26 of 158 on `dr_train` cross into yellow, exactly the objects the
+sim gave a hue shift of +3.2 to +7.1 deg (those named right: 0.1 to 7.0, median 3.3). So the families hold for purple
+and yellow under the sim's randomisation, and for orange only up to about +5 deg: the sim's per-object hue shift of
++-7 deg is wider than the real gap allows. The real foam's own spread (19.4 to 30.9 over 81 objects and 48 episodes)
+is inside the basin; what would break it is a hue shift of the whole image that the table white balance does not
+remove. The boundary was not moved on this: 36 deg is the middle of the measured gap. A policy-level cue remains
+for the finals: the scene holds two orange and two yellow objects, and the orange ones are by far the more saturated.
+
+### Real object size
+
+`drop2_size`: the centre box (21 cm outer, scene.yaml) is the ruler. Its six outline corners, read by eye in one frame
+per camera view, give the camera's pitch, roll and height over the table; a cube's lit top face is then placed at the
+height where its edge equals its height. Two views (episodes 36 to 47 and 16 to 18): optical axis 56.6 / 56.4 deg below
+the table plane, camera 467 / 483 mm above the table, box wall 70 / 70 mm (sim 60), worst corner 7.5 / 6.1 px.
+16 cube top faces (purple, orange): edge median 45.9 mm, p16..p84 44.7..46.6, min 42.9, max 47.0; box corners read 3 px
+off move a value by about 1 mm. So the real cubes are the scene file's 45 mm (within 1 to 2 mm), not 50. Not measured:
+cylinder diameter, prism, yellow cube (no clean square top). In most first frames the orange prism lies on a
+rectangular side: a ridge, no top face, so the detector can only report it through the toppled-object fallback
+(`shape=None`, `visible=0`).
+
+### Unverified without real depth
+
+- Everything geometric on the real scene: the counter plane on a glossy table, top faces of foam at 45 mm, the hand fit,
+  the bin finder, the wall guard (thresholds are from sim depth; real walls are 70 mm and cardboard).
+- `size` on real depth: expected within about 2 mm (D435 at 0.55 m: 1.5 mm per pixel, averaged over a face; what remains
+  is bias between the table fit and the foam top), so real cubes should snap to 45 mm.
+- The forearm cover and table shadows are `blue` by hue; that they never form a top face at 45 to 55 mm is an assumption.
+- A prism lying on its side next to a taped box, and whether the fallback separates the two.
+- The orange / yellow boundary under the finals' light: 5 deg of margin each way, measured in one room; the repainted
+  sim shows what a +5 deg shift does (orange named `yellow` at full confidence).
 
 ## Next
 

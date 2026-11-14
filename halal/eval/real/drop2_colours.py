@@ -219,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         for name, mask in masks.items():
             pixels.setdefault(name, []).append(rgb[mask])
         for patch in tape_patches(rgb, masks["tape"]):
-            named.setdefault("tape patch", []).append((colour := classifier.vivid(patch, gains), *classifier.name(colour)))
+            named.setdefault("tape patch", []).append((colour := classifier.vivid(classifier.own(patch, gains), gains), *classifier.name(colour)))
         for name, group in blobs.items():
             for index, blob in enumerate(b for b in group if b.single):
                 body = rgb[grow(blob.mask, -2)]
@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
                 lit, shaded = lit_shaded(body)
                 for key, part in ((label, body), (f"{name} lit faces", lit), (f"{name} shaded faces", shaded)):
                     pixels.setdefault(key, []).append(part)
-                named.setdefault(label, []).append((colour := classifier.vivid(body, gains), *classifier.name(colour)))
+                named.setdefault(label, []).append((colour := classifier.vivid(classifier.own(body, gains), gains), *classifier.name(colour)))
     print(f"{len(frames)} first frames of {args.root.name}; basins {dict(classifier.cfg['basins'])}")
     print_pixels(dict(sorted(pixels.items())))
     print_instances(dict(sorted(named.items())))
