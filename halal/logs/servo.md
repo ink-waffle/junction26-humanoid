@@ -53,7 +53,7 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
 | r3-open-nofit | servo3-open-nofit | 1/15 | +0.25 | 4 time limits | 0 | PASS | - |
 | r3-servo-nofit-trans | servo3-servo-nofit-trans | 2/15 | +0.50 | 4 time limits | 0 | PASS | every look refused (rms 3.2-4.1 mm), open loop from the hover |
 | r3-servo | servo3-servo (home fit on) | 15/15 | +3.75 | 4 done | 0 | PASS | camera already fixed at home: does not hurt |
-| r3-servo-nofit | servo3-servo-nofit (hover arm fit allowed) | see below | | | | | first 20 looks: 6 applied, 6 "too large", 6 "visible", 2 rms |
+| r3-servo-nofit | servo3-servo-nofit (hover arm fit allowed) | 3/15 | +0.75 | 4 time limits | 0 | PASS | first 20 looks: 6 applied, 6 "too large", 6 "visible", 2 rms |
 
 - Translation-only under a 7.4 deg error: hand shifts 3-34 mm, inconsistent between the arms for the same object (e.g. x -31 /
   +11 mm), rms 3.2-4.1 mm. A rotation over the hand patch is no shift; the rms guard refused all, so servo ran open-loop
