@@ -47,6 +47,11 @@ class PickPlanner(Planner):
                 plan = self._check_finger_yaw(plan, side, grasp.finger_yaw)
         return self._ending_at(plan, end)
 
+    def use_scene(self, scene: Scene) -> None:
+        """Replace the geometry (counter height, bins) all later plans work against."""
+        self.scene = scene
+        self.__dict__.pop("_reach", None)
+
     def reaches_bin(self, side: str, bin_name: str) -> bool:
         """Whether this arm can hold the grasp point above the bin's release point at carry height (cached)."""
         cache = self.__dict__.setdefault("_reach", {})

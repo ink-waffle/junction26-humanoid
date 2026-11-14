@@ -70,18 +70,19 @@ class Pick:
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
-    """Every variant on every shape, yaw, spot and noise level, arms alternating so both get each combination."""
-    cases: list[Case] = []
-    for name, variant in spec["variants"].items():
-        grid = itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"],
-                                 variant.get("noise", spec["noise"]), range(spec["repeats"]))
-        for shape, spot, yaw, noise, _ in grid:
-            side = SIDES[len(cases) % 2]
-            cases.append(Case(variant=name, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])),
-                              side=side, bin_name=side if spec["bin"] == "side" else spec["bin"],
-                              pos_noise=float(noise["pos"]), yaw_noise_deg=float(noise["yaw_deg"]),
-                              yaw_known=bool(noise["yaw_known"]), present=not spec["empty"]))
-    return cases
+    """Every variant on every shape, spot, yaw and noise level in a seeded random order, arms alternating."""
+    grid = [(name, *rest) for name, variant in spec["variants"].items()
+            for rest in itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"],
+                                          variant.get("noise", spec["noise"]), range(spec["repeats"]))]
+    order = np.random.default_rng(spec["seed"]).permutation(len(grid))
+    return [_case(spec, *grid[k], SIDES[i % 2]) for i, k in enumerate(order)]
+
+
+def _case(spec: Mapping[str, Any], variant: str, shape: str, spot: list[float], yaw: float, noise: Mapping[str, Any],
+          _repeat: int, side: str) -> Case:
+    return Case(variant=variant, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])), side=side,
+                bin_name=side if spec["bin"] == "side" else spec["bin"], pos_noise=float(noise["pos"]),
+                yaw_noise_deg=float(noise["yaw_deg"]), yaw_known=bool(noise["yaw_known"]), present=not spec["empty"])
 
 
 def mirrored(case: Case) -> tuple[np.ndarray, float]:

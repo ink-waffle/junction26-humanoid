@@ -5,7 +5,9 @@ perception:
   detector: baseline          # key of halal.perception.DETECTORS
 
 motion:
-  finger_yaw_weight: 3.0      # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
+  # Arms swung outward: no hand or forearm point in the head image of the object band (0.67 s from the sim home pose).
+  look_arm_q: [0.0, 0.65, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0, -0.65, -0.5, -0.5, 0.0, 0.0, 0.0]
+  finger_yaw_weight: 3.0     # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
   finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
   natural_heading_deg: 25     # finger heading an arm reaches most easily: forward, turned inward by this much
   max_heading_deviation_deg: 75   # headings further than this from the natural one are not tried

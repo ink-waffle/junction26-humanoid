@@ -13,8 +13,14 @@ from typing import Any
 
 import numpy as np
 
-JOINTS = ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
+JOINTS = ("thumb_0", "thumb_1", "thumb_2", "finger_0", "finger_1")
 HELD_MARKS = ("lift", "carry")
+
+
+def by_role(error: list[float]) -> list[float]:
+    """LEFT-order finger error (7) as thumb joints plus the more loaded of index / middle per joint: the sim swaps them on the right hand."""
+    e = np.abs(error)
+    return [e[0], e[1], e[2], max(e[3], e[5]), max(e[4], e[6])]
 
 
 def load(runs: list[Path]) -> list[dict[str, Any]]:
@@ -47,14 +53,14 @@ def finger_table(picks: list[dict[str, Any]]) -> None:
             continue
         for mark in HELD_MARKS:
             in_hand = pick["present"] and pick.get("held", {}).get(mark)
-            (held if in_hand else empty)[pick["variant"]].append(pick["finger_error"][mark])
-    print(f"\nfinger error after close, measured - target (rad), LEFT order {' '.join(JOINTS)}")
+            (held if in_hand else empty)[pick["variant"]].append(by_role(pick["finger_error"][mark]))
+    print(f"\nfinger error |measured - target| (rad) at lift and mid-carry: {' '.join(JOINTS)}")
     for variant in sorted(set(held) | set(empty)):
         for label, rows in (("held", held[variant]), ("empty", empty[variant])):
             if rows:
-                values = np.abs(np.array(rows))
-                print(f"{variant:<16} {label:<5} n={len(rows):<3d} median |e| {np.round(np.median(values, 0), 3).tolist()}  "
-                      f"min of max-joint {values.max(1).min():.3f}  max of max-joint {values.max(1).max():.3f}")
+                values = np.array(rows)
+                print(f"{variant:<16} {label:<5} n={len(rows):<3d} median {np.round(np.median(values, 0), 3).tolist()}  "
+                      f"largest joint: min {values.max(1).min():.3f}  max {values.max(1).max():.3f}")
 
 
 def main(argv: list[str] | None = None) -> int:
