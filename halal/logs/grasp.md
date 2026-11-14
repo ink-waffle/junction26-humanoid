@@ -544,14 +544,14 @@ mid-height, narrower than the 40 mm between the fingertips, so a centred cage st
 45 mm long sloped faces span the fingertips like a cube face, but they lean 30° inward: the squeeze pushes the roof
 down and the fingers up the slope, friction only (needs µ > 0.58).
 
-Lying and planned picks, 23a = soft-hand sim (smoke), 23b = stock sim (78 of 80 picks; sweeps 23d / 23e,
+Lying and planned picks, 23a = soft-hand sim (smoke), 23b = stock sim (80 picks; sweeps 23d / 23e,
 from x 0.29 on both sims, are queued and land in `runs/grasp/` on the instance):
 
 | grasp | stock | soft | what happens |
 |---|---|---|---|
 | unknown-shape cage, default hints, 0.75 (the policy's fallback, `cage_lying`) | 1/5 | | |
 | cage along the ridge, 0.30 | 0/4 | 0/3 | grip signal 0.00–0.19: the fingers straddle the end face |
-| organiser pinch along the ridge | 0/4 | | grip signal 0 |
+| organiser pinch along the ridge | 0/5 | | grip signal 0 |
 | cage across the ridge, 0.45 / 0.60 / 0.60 with the grasp point at 0.4 of the height / 0.80 | 0/2, 1/1, 0/3, 2/2 | 0/2 at 0.60 | soft: grip reads firm (0.25–0.33), the roof stays on the counter |
 | pinch along the ridge, thumb swung opposite one finger (`thumb_0` −0.63), 0.30 | 2/5 | | |
 | the same with the grasp point at 0.4 of the height | 4/5 | | |
