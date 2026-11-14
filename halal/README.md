@@ -27,14 +27,29 @@ Interface and timing
 - The safety filter caps the change of the command: 1 rad/s arms, 3 rad/s hands, per tick, plus joint limits and
   the workspace / counter keep-out boxes for wrist and palm frames. Plans are dry-run through `SafetyFilter`
   before execution (baseline `Planner.dry_run_safety`); a plan with a clip is never sent.
-- Hand joints are position controlled with kp 1.5, kd 0.2 (set by the runner, also on the real robot). Grip force
-  is therefore `kp × (target − measured)`: a deeper `closed` target squeezes harder.
+- REAL hand joints are position controlled with kp 1.5, kd 0.2 (fixed by the runner): grip torque is
+  `1.5 × (target − measured)`, so holding needs a closure commanded 0.15–0.4 rad past contact (what the teleop
+  operator does). The SIM ignores those gains: its hand actuators are implicit PD with stiffness 100, damping 10
+  (`third_party/unitree_sim_isaaclab/robots/unitree.py`), ~67× stiffer. In sim a 0.05 rad error is already ~50 N,
+  friction and mass barely matter for holding and failures are geometric (spin, squirt, wedge). A grasp must be
+  judged for both regimes.
+- In sim the right hand's DDS slots 3,4 drive the MIDDLE finger and 5,6 the INDEX finger, the opposite of
+  `INTERFACE.md` and the real robot. Keep index and middle commands identical, and never read contact from one
+  finger only.
+- The real fingers lag: 90 % of a step after 300–380 ms (thumb_0 ~450 ms); free fingers carry a 0.02–0.04 rad
+  bias. Contact test that works on real data: `Σ_joints max(0, s·(e − e0)) > 0.3`, read ≥ 0.4 s after the hand
+  command settled, with e0 from closing the empty hand once per episode.
 
 Sim
 - `evaluate.py` homes the arms to `ARM_HOME`, calls `randomize(seed)`, resets the layout, runs the episode on the
   sim clock, lets objects settle, scores with the scene service. Seeds 1000+ are our fixed eval seeds.
-- Real-time factor on our instance: ~0.45 with one sim, ~0.27 each with two (CPU bound, 30 vCPU). A 120 s
-  episode is 4–7 min of wall time, so sim time is the scarce resource: do cheap loops offline first.
+- Real-time factor on our instance with the `sims.sh` defaults (`OMP_NUM_THREADS=1`, four pinned cores per sim,
+  Kit task pool 4, PhysX 2 threads; see `halal/logs/infra.md`): ~0.58 idle, ~0.45 under an evaluator, three sims
+  at once. Untuned it was 0.45 for one sim and 0.27 each for two: torch's 30-thread OpenMP pool only spin-waits.
+  A 120 s episode is still 4–5 min of wall time: do cheap loops offline first.
+- The sim is not deterministic run to run (the same seed can lose or keep a grasp): compare versions on several
+  seeds, and repeat a reference run after changing sim settings.
+- Once a client has called `randomize`, the DR camera corruption costs ~5 ms per step until the sim restarts.
 - `evaluate.py --container X` without `--policy ws://...` silently scores the oracle. Always pass `--policy`.
 - Dropping the wrist cameras from the sim (`--camera_include front_camera`) crashes the task. Do not try again.
 - Sim start is ~15 s when warm. Black frames after a start: stop and start again.
@@ -42,8 +57,19 @@ Sim
 Scene and view (head camera, 640×480, pitched 48° down)
 - Objects lie in pelvis x 0.26–0.33, y ±0.17; the near ones are at the very bottom edge of the head image and can be
   cut off. At `ARM_HOME` both hands are inside the head image and can hide objects near y ±0.17.
+- The counter height relative to the pelvis varied by 1–5 cm between real recording sessions: the planner takes it
+  from the detection (`det.top[2]` minus the object height, `motion.counter_from_detection`), so perception's top
+  z must be good to ~5 mm.
 - Bins: near edge x 0.40, centres (0.505, +0.26 / 0 / −0.26), 6 cm walls. The baseline releases 5 cm inside the near wall.
 - The mat has a printed 5 cm grid (`scene/assets/mat_texture.png`, same print on the real counter).
+- The sim head camera does not render with `calibration.yaml`'s principal point (325.0, 250.9): Omniverse ignores
+  aperture offsets, so the rendered image has it at the centre (319.5, 239.5), f = 604.8. Deprojecting with the
+  yaml puts objects ~6 mm too high and 4–5 mm off in xy even without DR (like 1.0° pitch + 0.5° yaw of camera
+  error). On the real robot the yaml is presumably right, so we do not hardcode the sim value: per-episode
+  self-calibration has to absorb it.
+- Organiser detector on 120 DR frames (472 objects): recall 0.99, colour 1.00, but precision 0.69 (phantom "yellow"
+  objects on washed-out bin rims) and top-centre xy error median 11.6 mm, p95 24 mm, almost all of it camera
+  model error. A third of the objects are partly hidden by the hands at `ARM_HOME` (thumbs over |y| > 0.1).
 
 Hand (left palm frame: x = finger direction, fingers curl towards −y, thumb in the z = 0 plane)
 - Index and middle fingertips sit at z = ±29 mm (57 mm apart); the thumb opposes them along x at z = 0.
@@ -63,6 +89,13 @@ Baseline and oracle (sort_fixed)
   without triangles; the organisers quote ~84 % overall. Its planner tricks are in `aaltonomous/sim/oracle.py`
   (`_OraclePlanner`): reading them is encouraged, importing privileged perception into the policy is forbidden.
 - The left arm can pick objects as far right as y = −0.17 and still reach the left bin (and vice versa), with tilt.
+
+Organiser statements (challenge channel, Sat night)
+- Finals instructions: colour comes first; shape-based instructions may be tested if several teams handle colour;
+  no negation.
+- Real runner hand gains are kp 1.5 / kd 0.2, fixed for every team. Real pad friction is unmeasured and expected to
+  be lower than the sim's 1.2 / 1.0: prefer grasps that hold by geometry, not by friction alone.
+- Under training DR the organiser baseline sorts ~50 % of objects on our seeds (nominal: ~75 %).
 
 Real data
 - `zupermiez/g1_pick_cube` on Hugging Face (on the instance: `/data/drops/g1_pick_cube`): 20 teleop episodes of

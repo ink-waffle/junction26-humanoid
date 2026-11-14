@@ -20,6 +20,15 @@ class ObjectDetection:
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown
     confidence: float = 1.0     # probability that this is a real object with this colour and shape
     pixels: int = 0
+    visible: float = 1.0        # fraction of the top face the camera saw; low = centre and yaw rest on little evidence
+
+
+@dataclass(frozen=True, eq=False)
+class SceneLayout:
+    """Where the fixed scene parts are this episode (pelvis frame, m); scene-file values until perception knows better."""
+    counter_z: float                    # counter height under the middle of the object band
+    bins: Mapping[str, np.ndarray]      # "left" | "center" | "right" -> centre xy of the bin footprint
+    source: str                         # "scene": the file's values (camera anchored to them or nothing better) | "hands": as seen
 
 
 class Detector(Protocol):
@@ -27,8 +36,17 @@ class Detector(Protocol):
 
     def detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]: ...
 
+    def layout(self) -> SceneLayout: ...
 
-DETECTORS: dict[str, str] = {"baseline": "halal.perception.detectors.baseline:BaselineDetector"}
+
+DETECTORS: dict[str, str] = {"baseline": "halal.perception.detectors.baseline:BaselineDetector",
+                             "topface": "halal.perception.detectors.topface:TopFaceDetector"}
+
+
+def scene_layout(scene: Any) -> SceneLayout:
+    """The layout exactly as the scene file has it."""
+    bins = {name: scene.mat_to_pelvis([*centre, 0.0])[:2] for name, centre in scene.cfg["bins"]["centers"].items()}
+    return SceneLayout(scene.counter_z, bins, "scene")
 
 
 def make_detector(name: str) -> Detector:
