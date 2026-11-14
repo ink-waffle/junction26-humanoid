@@ -1002,7 +1002,7 @@ object centre within 3 cm of a non-target box's outer footprint during lift or c
 - Over all 300 changed plans: +0.31 s mean, median +0.07, p90 +0.83, max +2.9 (object at |y| 0.16 bound for the far
   side box: the corridor pose is cramped, joint arc 2-3 rad against 0.7-1.0). The 9 plans per set with a 3-4 cm gap
   are routed too; none with a gap ≥ 4 cm changed.
-- Corridor min gap to another box 4.5-6.3 cm (today down to 5.4 cm INSIDE one). The realsim case (lying prism, y
+- Smallest gap to another box along a changed plan: 4.0-10.8 cm with the corridor, −5.4 (inside) to +4.0 cm today. The realsim case (lying prism, y
   −0.105, left box, soft): centre 3.0-3.6 cm inside the centre box today → 4.7 cm outside, +0.5-1.1 s.
 - Corner spikes of the joint path (second difference of the commanded arm in the carry): median / max 17 / 51 rad/s²
   today → 20 / 35 (+0 stiff), same elsewhere: no harder than today's carry→lower corner.
