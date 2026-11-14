@@ -1,11 +1,9 @@
-"""Object colour from its most saturated pixels: hue against the scene's reference colours, white-balanced on the mat."""
+"""Object colour from its most saturated pixels: hue basins around the three object colours, white-balanced on the counter."""
 from __future__ import annotations
 
 from typing import Any, Mapping
 
 import numpy as np
-
-from aaltonomous.scene.scene import Scene
 
 SQRT3 = np.sqrt(3.0)
 
@@ -17,23 +15,26 @@ def hue_chroma(rgb: np.ndarray) -> tuple[float, float]:
     return float(hue), float((max(r, g, b) - min(r, g, b)) / max(r, g, b, 1e-6))
 
 
-def hue_gap(a: float, b: float) -> float:
-    return abs((a - b + 180.0) % 360.0 - 180.0)
+def outside(hue: float, basin: tuple[float, float]) -> float:
+    """Degrees by which a hue lies outside the basin running from basin[0] up to basin[1] (0 inside)."""
+    lo, hi = basin
+    if (hue - lo) % 360.0 <= (hi - lo) % 360.0:
+        return 0.0
+    return float(min((lo - hue) % 360.0, (hue - hi) % 360.0))
 
 
 class ColorClassifier:
-    """Names a colour sample by the nearest reference hue and says how sure that is."""
+    """Names a colour sample by the hue basin it falls into; hues between basins are nobody's and get no confidence."""
 
-    def __init__(self, scene: Scene, cfg: Mapping[str, Any]) -> None:
+    def __init__(self, cfg: Mapping[str, Any]) -> None:
         self.cfg = cfg
-        self.hues = {name: hue_chroma(np.asarray(rgb, float))[0] for name, rgb in scene.colors.items()}
 
     @staticmethod
-    def white_balance(mat_rgb: np.ndarray) -> np.ndarray:
-        """Per-channel gains that make the (grey) mat neutral; ones when there are no mat pixels."""
-        if not len(mat_rgb):
+    def white_balance(counter_rgb: np.ndarray) -> np.ndarray:
+        """Per-channel gains that make the counter neutral; ones when there are no counter pixels."""
+        if not len(counter_rgb):
             return np.ones(3)
-        grey = np.median(mat_rgb, axis=0).astype(float) + 1e-6
+        grey = np.median(counter_rgb, axis=0).astype(float) + 1e-6
         return grey.mean() / grey
 
     def classify(self, samples: np.ndarray, gains: np.ndarray) -> tuple[str, float]:
@@ -42,10 +43,7 @@ class ColorClassifier:
         spread = (balanced.max(axis=1) - balanced.min(axis=1)) / np.maximum(balanced.max(axis=1), 1.0)
         vivid = balanced[spread >= np.quantile(spread, 1.0 - self.cfg["vivid_fraction"])]
         hue, chroma = hue_chroma(np.median(vivid, axis=0))
-        gaps = sorted((hue_gap(hue, ref), name) for name, ref in self.hues.items())
-        (nearest, name), (second, _) = gaps[0], gaps[1]
-        sure, boundary = self.cfg["hue_sure_deg"], (nearest + second) / 2
-        by_hue = np.clip((boundary - nearest) / max(boundary - sure, 1e-6), 0.0, 1.0)
+        miss, name = min((outside(hue, basin), name) for name, basin in self.cfg["basins"].items())
         low, full = self.cfg["chroma_range"]
         by_chroma = np.clip((chroma - low) / (full - low), 0.0, 1.0)
-        return name, float(by_hue * by_chroma)
+        return name, float(np.clip(1.0 - miss / self.cfg["taper_deg"], 0.0, 1.0) * by_chroma)

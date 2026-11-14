@@ -5,15 +5,16 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 
 perception:
   detector: topface           # key of halal.perception.DETECTORS
-  calibration:                # self-calibration of the head camera per episode (halal.perception.calibration)
-    max_turn_deg: 3.0         # a larger correction than this (per stage) is not believed: nominal pose kept
+  calibration:                # head camera pose per episode (halal.perception.calibration)
+    agree_within: 0.010       # scene-anchored and hand-given pose this close at the object band: the scene file is believed
+    max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
       pixel_step: 4
       x_range: [0.16, 0.38]
       y_half: 0.42
-      search: 0.03            # points this close to the nominal counter height enter the fit
-      tolerances: [0.010, 0.004, 0.003]   # inlier bands of the successive refits
+      search: 0.06            # points this close to the nominal counter height enter the fit
+      tolerances: [0.020, 0.008, 0.004, 0.003]   # inlier bands of the successive refits
       min_points: 1500
       max_rms: 0.004
     wall:                     # front faces of the bin row -> yaw, x (line) and y (segment ends)
@@ -29,11 +30,43 @@ perception:
       depth_tolerance: 0.006
       min_profile: 150        # observed millimetres of wall line (wall or gap) needed for the y fit
       min_agreement: 0.8      # fraction of the observed profile the best shift must explain
+    hands:                    # own forearms and hands against their kinematic model -> camera pose in the arm frame
+      gates: [0.04, 0.03, 0.02, 0.012, 0.008, 0.008]   # match distance of the successive iterations
+      min_points: 300
+      min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible
+      cell_px: 6              # image cell in which only the nearest model points are kept (self-occlusion)
+      cell_depth: 0.006
+      border_px: 25           # model points this close to the image edge may have their true match outside it
+      pad_px: 50
+      pixel_step: 2
+      floor_clearance: 0.015  # depth points this close to the counter plane are not hand
+      prior_turn_deg: 3.0     # how far the camera may plausibly be from the pose it starts at
+      prior_shift: 0.02
+      noise: 0.003            # point-to-surface error of one match ...
+      independent_points: 50  # ... of which this many are worth as independent (model errors are systematic)
+      max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted
+      max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band
+  bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
+    x_range: [0.33, 0.75]     # where a front wall may stand
+    cell: 0.005               # step of the search along x and of the lane cells along y
+    lane_half: 0.08           # half width of the strip around a bin's scene y in which its front wall is looked for
+    heights: [0.020, 0.030, 0.040]   # above the counter: where a wall is probed
+    depth_tolerance: 0.008
+    min_visible: 6            # lane cells that must be seen (wall or past it) to judge an x
+    min_fill: 0.7             # share of the seen lane a wall must fill (an object fills a third)
+    row_tolerance: 0.10       # a front wall this far from the row's median x is another wall (e.g. a far wall)
+    span_reach: 0.20          # how far to either side of the lane centre the wall ends are looked for
+    span_step: 0.002
+    width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
   topface:                    # halal.perception.detectors.topface
     depth_median: 3           # median filter on the depth image before anything else, px
+    workspace_x: [0.12, 0.75] # objects are looked for on the counter inside this pelvis-frame box ...
+    workspace_y_half: 0.50    # ... and outside the bin footprints
     bin_margin: 0.008         # points this close to a bin footprint are not objects on the counter
     min_separation: 0.03      # two fits closer than this are one object
     min_support_px: 40        # object pixels needed to name a colour
+    overhang_band: [0.008, 0.035]   # above the object top: where a bin rim or a wall would stand, a hovering thumb does not
+    max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
     min_confidence: 0.05      # detections below this are dropped
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
@@ -55,7 +88,11 @@ perception:
       body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
       body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
-      hue_sure_deg: 15        # a hue this close to its reference is fully trusted; confidence falls to 0 at the class boundary
+      basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, in which a colour is trusted
+        red: [335, 15]
+        yellow: [42, 90]
+        blue: [195, 250]
+      taper_deg: 6            # confidence falls to 0 this far outside a basin: orange (18..36) is nobody's
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
