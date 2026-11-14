@@ -2,6 +2,8 @@
 
     python -m halal.eval.perception_bench --detector baseline --frames runs/frames/dr_train [--split heldout]
     python -m halal.eval.perception_bench --armless 10      rendered scenes without arms: the hand fit must not be believed
+    --stale   every episode's detector first sees a frame of another episode (a stale first frame must not stick)
+    --looks 2 every frame is shown twice, 0.2 s apart (a robot standing still)
 """
 from __future__ import annotations
 
@@ -30,6 +32,7 @@ CAMERA = "head"
 SYMMETRY = {"cube": np.pi / 2, "triangle": 2 * np.pi / 3}
 APEX_OFFSET = {"cube": 0.0, "triangle": np.pi / 2}
 SPLITS = ("all", "dev", "heldout")
+LOOK_INTERVAL = 0.2
 Row = dict[str, Any]
 
 
@@ -206,7 +209,7 @@ def outcome(frame: Frame, truth: Truth, det: ObjectDetection | None, used: Pinho
     return {"matched": True, "color_ok": det.color == truth.color, "confidence": float(det.confidence),
             "xy_mm": 1e3 * float(np.linalg.norm(error[:2])), "z_mm": 1e3 * float(abs(error[2])),
             "own_xy_mm": 1e3 * float(np.linalg.norm(own[:2])),
-            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape,
+            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape, "visible": float(det.visible),
             "yaw_deg": float(np.degrees(yaw_error(truth.shape, det.yaw, truth.yaw))) if has_yaw else None}
 
 
@@ -231,14 +234,22 @@ class Run:
     believed_absent_arms: int     # frames without arms in the image whose layout nevertheless came from the hands
 
 
-def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float) -> Run:
-    """One detector per seed (= one episode), its frames in recording order, as the policy would look."""
+def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float, looks: int = 1, stale: bool = False) -> Run:
+    """One detector per seed (= one episode), its frames in recording order, as the policy would look; the last look counts."""
     out = Run([], [], [], [], 0)
     detectors: dict[int, Detector] = {}
-    for frame in sorted(frames, key=lambda f: (f.seed, f.tick)):
-        detector = detectors.setdefault(frame.seed, make_detector(detector_name))
-        start = time.perf_counter()
-        dets = detector.detect(frame.obs)
+    ordered = sorted(frames, key=lambda f: (f.seed, f.tick))
+    first = {f.seed: f for f in reversed(ordered)}
+    seeds = sorted(first)
+    for frame in ordered:
+        if frame.seed not in detectors:
+            detectors[frame.seed] = make_detector(detector_name)
+            if stale:
+                detectors[frame.seed].detect(first[seeds[seeds.index(frame.seed) - 1]].obs)
+        detector = detectors[frame.seed]
+        for look in range(looks):
+            start = time.perf_counter()
+            dets = detector.detect({**frame.obs, "t": frame.obs["t"] + LOOK_INTERVAL * look})
         out.runtimes.append(1e3 * (time.perf_counter() - start))
         used = Pinhole(nominal.K, getattr(detector, "extrinsics", nominal.T))
         rows, phantoms = score_frame(frame, dets, nominal, used, radius)
@@ -375,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
     source.add_argument("--frames", type=Path)
     source.add_argument("--armless", type=int, metavar="LAYOUTS")
     ap.add_argument("--split", choices=SPLITS, default="all")
+    ap.add_argument("--looks", type=int, default=1, help="show every frame this many times, 0.2 s apart (a robot standing still)")
+    ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
@@ -385,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     frames = armless_frames(scene, nominal, args.armless, cfg) if args.armless else [
         load_frame(p, scene, nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
-    passed = run(args.detector, frames, nominal, cfg["match_radius"])
+    passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
     result = report(passed, cfg)
     print(render(f"{args.detector} on {label} [{args.split}]", result))
     args.out.mkdir(parents=True, exist_ok=True)
