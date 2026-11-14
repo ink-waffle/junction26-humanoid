@@ -1,4 +1,4 @@
-"""Tables from grasp bench runs: success and failure modes per variant, shape and condition; finger error held vs empty.
+"""Tables from grasp bench runs: success and failure modes per variant, shape and condition; finger error held vs empty; where failures leave the object.
 
     python -m halal.eval.grasp_report runs/grasp/first [runs/grasp/second ...] [--by pos_noise yaw_noise_deg]
 """
@@ -15,6 +15,7 @@ import numpy as np
 
 JOINTS = ("thumb_0", "thumb_1", "thumb_2", "finger_0", "finger_1")
 HELD_MARKS = ("lift", "carry")
+TOPPLED_DEG = 45.0
 
 
 def by_role(error: list[float]) -> list[float]:
@@ -63,6 +64,25 @@ def finger_table(picks: list[dict[str, Any]]) -> None:
                       f"largest joint: min {values.max(1).min():.3f}  max {values.max(1).max():.3f}")
 
 
+def aftermath_table(picks: list[dict[str, Any]]) -> None:
+    """Where failed picks leave the object: displacement from its start (pelvis x, outward y), toppled, still on the counter."""
+    groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    for pick in picks:
+        if pick["present"] and pick["failure"] not in ("ok", "no_plan") and "final_pos" in pick:
+            groups[(pick["variant"], pick["shape"])].append(pick)
+    print("\nafter a failed pick: n, median shift (mm), largest shift, mean dx / outward dy (mm), toppled, left the counter")
+    for key, group in sorted(groups.items()):
+        outward = np.array([1.0 if p["side"] == "left" else -1.0 for p in group])
+        shift = 1000 * (np.array([p["final_pos"][:2] for p in group]) - np.array([p["true_pos"][:2] for p in group]))
+        shift[:, 1] *= outward
+        distance = np.linalg.norm(shift, axis=1)
+        tilts = [p["final_tilt_deg"] for p in group if "final_tilt_deg" in p]
+        toppled = f"{sum(t > TOPPLED_DEG for t in tilts)}/{len(tilts)}"
+        gone = sum(p["outcome"] == "off" for p in group)
+        print(f"{key[0]:<16} {key[1]:<9} {len(group):2d}  {np.median(distance):5.0f} {distance.max():5.0f}   "
+              f"{shift[:, 0].mean():+5.0f} / {shift[:, 1].mean():+5.0f}   toppled {toppled}  off {gone}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("runs", type=Path, nargs="+")
@@ -71,6 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     picks = load(args.runs)
     success_table(picks, args.by)
     finger_table(picks)
+    aftermath_table(picks)
     return 0
 
 
