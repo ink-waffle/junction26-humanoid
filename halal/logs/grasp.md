@@ -173,3 +173,46 @@ The unknown-shape depth 0.75 is confirmed as a fallback: cylinder 16/18 and tria
 
 Where failed picks leave the object (sweeps 1–3, objects that never left the counter): organiser pinch median shift
 17–24 mm, on average 11–26 mm towards the robot; cage with too shallow a thumb 3–9 mm with no preferred direction.
+
+## Objects that stay in the hand at release (policy episodes: 3 in 16), and the staggered release
+
+Observation from the policy's full episodes with the cage grasp: a triangle at 0.80 (twice) and a cube at the
+unknown-shape depth 0.75 were "released" and stayed in the hand; one later fell into the wrong bin.
+
+Mechanism (traces of sweeps 3–4): the object ends between the two distal finger links (31 mm apart), tilted ~95–107°,
+and rides up with them when both fingers straighten. A triangle's apex is a 30° half-angle wedge (self-locking for
+µ > 0.58, so on rubber too); a cube corner 45°; a cylinder's side enters 6 mm. Held objects tilt 15–50° because the
+thumb presses 10 mm below their centre and the fingers above it, which walks the apex or corner from the 40 mm tip
+gap up into the 31 mm link gap during lift and carry. The fingers read nothing after opening.
+
+Sweep 10a, hypothesis: if one finger opens before the other the two links no longer face each other and the object
+drops. Worst case of sweep 4 (cage at squeeze 1.0, hard DR, exact pose, n = 24), thumb and one finger open first, the
+other finger after it (here fully sequential with a 0.25 s pause):
+
+| release | cube | cylinder | wedged in the hand |
+|---|---|---|---|
+| together (sweep 4) | 2/12 | 6/12 | 16/24 |
+| staggered | 12/12 | 11/12 (1 lost in the carry) | 0/24 |
+
+All 23 landed inside the bin: x 0.438–0.571 (release point 0.453, inner walls 0.403–0.607), |y| 0.194–0.264 (release
+0.228, walls 0.158–0.362); 15 of 24 came to rest on their side. Verdict: it ejects. The fully sequential version costs
+0.95 s per release; `motion.release_stagger_s` is now the START delay of the second finger (overlapping ramps, one
+hold), measured in the next sweeps.
+
+## Soft hand (kp 1.5): what can and cannot be measured, and the estimate
+
+- The sim's hand gains (stiffness 100, damping 10, armature 0.1, effort 300; printed in the sim's start-up table)
+  cannot be changed from a client, the command line, Kit arguments, a DR yaml or the scene service. The dev-only
+  launcher `halal/ops/soft_hand_sim.py` (`HAND_GAINS="kp,kd[,armature]" sims.sh start <tag>`) patches the upstream
+  robot config in memory, as the organisers' own `aalto_sim_main.py` does for its fixes.
+- Gains to use: `HAND_GAINS="1.5,0.27,0.012"`. kp is the runner's. The real free step response (50 % at ~140 ms, 90 %
+  at 300–380 ms) is a critically damped second-order system at ~11 rad/s, i.e. inertia 0.012 kg m² and damping 0.27
+  at kp 1.5: 0.2 is the controller's kd, 0.07 stands in for joint friction, the armature is fitted, not measured.
+  Still no dead zone, backlash or stiction: "much closer than stiffness 100", not the real finger.
+- Static estimate (thumb tip 259 N/m, two fingers 490 N/m, in series 170 N per metre of commanded overlap; the thumb
+  advances 41 mm per rad of squeeze): thumb-only closure gives cube 3.1 + 7.0 s N, cylinder 0.7 + 7.0 s, triangle
+  7.0 (s − 0.6): at the stiff-hand depths 5.1 / 3.8 / 1.4 N, and the triangle cannot exceed 2.8 N (thumb limit).
+  Needed for our fastest motion (8 rad/s² ≈ 3.2 m/s², 50 g, µ 0.5): 0.67 N (cube), 0.44 N (cylinder, triangle).
+- Hence `candidate_grasps(..., hand="soft")`: same depths, but the fingers close too (`squeeze_axis` finger_0 −0.5 per
+  rad, fingertips 47 mm/rad): ~7.5 N on every shape by the same model. Soft motion profile for the policy: arm
+  acceleration 4 rad/s² for lift and carry (gravity is 3/4 of the load, so slowing down buys at most 26 %).
