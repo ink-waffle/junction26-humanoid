@@ -130,10 +130,10 @@ class PickChooser:
                   for side in arms}
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
 
-    def _in_turn(self, grasps: list[Grasp], turns: int) -> list[Grasp]:
-        """The candidates starting `turns` places later; last-resort strategies stay behind all the others."""
-        last = self.settings["last_resort_grasps"]
-        return _rotated([grasp for grasp in grasps if grasp.name not in last], turns) + [grasp for grasp in grasps if grasp.name in last]
+    @staticmethod
+    def _in_turn(grasps: list[Grasp], turns: int) -> list[Grasp]:
+        """The candidates starting `turns` places later; motion's last resorts stay behind all the others."""
+        return _rotated([grasp for grasp in grasps if not grasp.last_resort], turns) + [grasp for grasp in grasps if grasp.last_resort]
 
     def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, start: PlanStart, obstacles: Obstacles) -> Plan:
         """One planner call; an exception inside the planner counts as no plan."""

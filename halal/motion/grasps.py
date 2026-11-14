@@ -24,6 +24,7 @@ class Grasp:
     squeeze_axis: tuple[float, ...] = ()                       # LEFT-order joint weights of a deeper squeeze; () = config default
     squeeze: float = 0.0                                       # default depth (rad along the squeeze axis past `closed`)
     carry_acc: float | None = None                             # arm acceleration (rad/s^2) for lift and carry; None = the planner's
+    last_resort: bool = False                                  # worth a try only when no other candidate has a plan
 
 
 def right_hand(left: np.ndarray) -> np.ndarray:
@@ -77,7 +78,8 @@ def _grasp(name: str, params: Mapping[str, Any], shape: str | None, finger_yaw: 
                  point_in_palm=_optional_tuple(params.get("point_in_palm")),
                  postures={k: tuple(params[k]) for k in POSTURES if k in params},
                  height_frac=params.get("height_frac"), squeeze_axis=tuple(params.get("squeeze_axis", ())),
-                 squeeze=_depth(params.get("squeeze", 0.0), shape), carry_acc=params.get("carry_acc"))
+                 squeeze=_depth(params.get("squeeze", 0.0), shape), carry_acc=params.get("carry_acc"),
+                 last_resort=bool(params.get("last_resort", False)))
 
 
 def _depth(squeeze: float | Mapping[str, float], shape: str | None) -> float:

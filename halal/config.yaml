@@ -208,7 +208,7 @@ motion:
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), inward_headings_deg (fixed finger headings
   # in the pelvis frame, positive = turned inward, tried in this order), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
-  # carry_acc, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
+  # carry_acc, last_resort, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
   # Unset keys keep the organiser pinch.
   grasps:
     # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
@@ -225,6 +225,7 @@ motion:
     cage_side:                # fingers 90 deg sideways (inward, then outward): the only plan for an object 3-5 cm before a bin's near wall
       base: cage
       inward_headings_deg: [90, -90]
+      last_resort: true       # never the grasp a retry starts with: it runs only when no other candidate has a plan
       height_frac: 0.6        # the hand is tilted 22-36 deg there: 4.5 mm higher keeps the closed fingertips off the counter
     cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold
       base: cage
@@ -259,7 +260,6 @@ policy:
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
   retry_offsets: [[0.0, 0.0], [0.005, 0.0], [-0.005, 0.0], [0.0, 0.005], [0.0, -0.005]]   # pelvis xy added to the grasp point on the n-th pick of an object
-  last_resort_grasps: [cage_side]   # motion strategies a retry never starts with: they run only when no other candidate has a plan
   blob_attempts: 3            # the same for a toppled object: a prism lying on a side, or a coloured blob whose outline no shape fits (`visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   detect_deadline_s: 5.0      # a detector call (0.03-0.1 s; a whole look 0.8 s under three sims) left behind after this long; doubles with every miss
