@@ -9,6 +9,9 @@ motion:
   finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
 
 policy:
+  look_pose: home             # arm pose the head image is taken from, where picks start and end: `home` or a key of `poses`
+  band_margin: 0.05           # a detection further than this outside the layout band is not an object
+  bin_clearance: 0.03         # nor is one this close to a bin footprint (washed-out bin rims look like yellow objects)
   time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
   chunk_ticks: 10             # ticks per reply while a trajectory runs
@@ -22,3 +25,5 @@ policy:
   relocate: true              # cross-body fallback: put the object where an arm that reaches the bin can take it
   background_nice: 10         # niceness of the planning thread (Linux)
   gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often
+
+poses: {}                     # named arm poses for `policy.look_pose`: 14 joint angles, left arm then right arm
