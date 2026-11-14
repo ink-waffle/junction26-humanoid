@@ -2,6 +2,7 @@
 
     python -m halal.eval.proxy --evaluator halal.eval.real_eval ...     (words and rule: halal/ops/real_sim.yaml)
     --record-video NAME                                                 films every episode to runs/videos/NAME
+    --start-pose EPISODE.npz                                            arms start where a recorded robot episode started
 """
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import yaml
@@ -17,6 +18,8 @@ import yaml
 from aaltonomous.deploy import runner
 from aaltonomous.interface import env as env_module
 from aaltonomous.interface import tasks
+
+from aaltonomous.sim import evaluate
 
 from . import paraphrases, sim_eval
 
@@ -50,14 +53,34 @@ def real_instructions(make: Callable[[str, np.random.Generator], Instruction], c
     return sample
 
 
+def homing_to(path: str, home_arms: Callable[..., float], speed: float) -> Callable[..., float]:
+    """The evaluator's homing followed by a move to a recorded episode's first joints, past the safety filter like the real start."""
+    log = np.load(path)
+    arm, hand = log["arm_q"][0].astype(float), log["hand_q"][0].astype(float)
+
+    def home(env: Any, *args: Any, **kwargs: Any) -> float:
+        error = home_arms(env, *args, **kwargs)
+        arm0, _, hand0 = env.backend.joints()
+        steps = int(np.ceil(max(np.abs(arm - arm0).max(), np.abs(hand - hand0).max()) / (speed * env.dt)))
+        for share in np.linspace(0.0, 1.0, steps + 1)[1:]:
+            env.backend.command(arm0 + share * (arm - arm0), hand0 + share * (hand - hand0))
+            env._wait_tick()
+            env.backend.advance(env.dt)
+        return error
+    return home
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False)
     ap.add_argument("--record-video", metavar="NAME")
+    ap.add_argument("--start-pose", metavar="EPISODE.npz")
     args, rest = ap.parse_known_args(argv)
     if args.record_video:
         from .video import VideoRecorder  # needs a running sim
         runner.run_episode = VideoRecorder(args.record_video).episode
     cfg = yaml.safe_load(CONFIG.read_text())
+    if args.start_pose:
+        evaluate.home_arms = homing_to(args.start_pose, evaluate.home_arms, cfg["start_pose_speed"])
     render = paraphrases.render
     tasks.make_instruction = env_module.make_instruction = real_instructions(tasks.make_instruction, cfg)
     paraphrases.render = lambda *args: (lambda text, mapping: (reword(text, cfg["words"]), mapping))(*render(*args))
