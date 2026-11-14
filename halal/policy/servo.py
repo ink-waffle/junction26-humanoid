@@ -160,10 +160,11 @@ class GraspServo:
             return
         held = "held" if released else "empty"
         self.tally.update({f"{'corrected' if state.applied else 'open_loop'}_{held}": 1})
-        shown = state.correction if state.applied else state.measured if state.measured is not None else np.full(3, np.nan)
-        log.info("servo outcome: %s, %s arm, camera %s, correction (%+.1f,%+.1f,%+.1f) mm %s after %d looks, lowest grip score %.3f: %s",
-                 pick.target, pick.side, state.source, *(1e3 * shown), "applied" if state.applied else f"not applied ({state.failed})",
-                 state.looks, score, "released in the bin" if released else "hand empty")
+        shown = state.correction if state.applied else state.measured
+        size = "n/a" if shown is None else "({:+.1f},{:+.1f},{:+.1f}) mm".format(*(1e3 * shown))
+        log.info("servo outcome: %s, %s arm, camera %s, correction %s %s after %d looks, lowest grip score %.3f: %s", pick.target, pick.side,
+                 state.source, size, "applied" if state.applied else f"not applied ({state.failed})", state.looks, score,
+                 "released in the bin" if released else "hand empty")
 
     def _collect(self, t: float, stream: CommandStream, jobs: Background) -> Next:
         """The background look has finished: its pick, or the move to the next hover."""
