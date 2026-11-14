@@ -634,10 +634,30 @@ directions x 8.
   the real 39 mm ridge.
 
 Verdict: `candidates.stiff.lying: [ridge_opposed, ridge_pinch, cage_lying]` (18/23 and 15/21 against 5/19 for the old
-fallback); `cage_lying` is marked `last_resort`. The soft list waits for sweep 23h (a thumb stalled at −0.26).
+fallback); `cage_lying` is marked `last_resort`. The soft list: sweep 23h below.
 
 ## Sweep 27b: the sideways cage on the soft-hand sim
 
 `cage_side` with the soft closure, DR as it comes: 3.5–4 cm before a bin wall 14/16 (cube 7/8, one not lifted;
 cylinder 7/8, one lost in the lift), middle of the table 8/8; all 22 carried objects out of the hand within the open
 phase; grip signal 0.16–0.24 held, ≤ 0.014 empty. Verdict: `cage_side` stays the last soft candidate (stock: 24/24).
+
+## Sweep 23h: lying prisms on the soft-hand sim with a thumb that stalls at `thumb_0` −0.26
+
+Question: the soft list runs on the real hand, whose `thumb_0` stalled at about −0.26 in one organiser recording.
+What is left of the opposed pinch then, and does anything without the swing hold? Lying and planned picks, 2 push
+directions x 8 per grasp, DR as it comes.
+
+| grasp (soft closure: the finger closes too, lift and carry at 4 rad/s²) | held |
+|---|---|
+| opposed pinch, full swing (−0.63), squeeze 0.60 | 11/12 |
+| the same grasp with the thumb held at −0.26 in preshape and closure (the stall), 0.45 | 9/16 |
+| thumb at −0.26 and the object midway between thumb and finger (palm z 20.5 mm), 0.45 / 0.65 | 8/12, 7/14 |
+| cage across the ridge, 0.90 (`thumb_0` 0) | 0/10 |
+
+With 23g the full swing reads 9/14, 11/15, 11/12 at 0.30, 0.45, 0.60: the soft hand gains with depth. A stalled thumb
+costs a third of the picks (9/16) and moving the grasp point to suit it does not help (15/26 over both depths);
+nothing without the swing holds on the soft hand (0/10 here, 0/14 and 4/16 for the pinches in 23g).
+
+Verdict: `candidates.soft.lying: [ridge_opposed, cage_lying]` with the soft squeeze at 0.60. One grasp serves both
+cases: 11/12 when the thumb follows, 9/16 when it stalls at −0.26.
