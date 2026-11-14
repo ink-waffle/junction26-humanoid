@@ -6,6 +6,24 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 19:10
+- **Hand-in candidate: v18** (`ghcr.io/ink-waffle/halal-policy@sha256:b99fd5dd4a9fcc5af25322c2a551a9b2ef9ea55c9742f71d77bbf0fce10947be`,
+  arm64 + amd64 as `:v18-multi`): stock proxy +21.38 of 21.38 (87/87), gate PASS 24/24, soft-hand sim 31/31; equal to
+  v16 on every leg and carries the real-robot fixes (measured layout never replaced by the scene file, bin row for
+  sideways boxes and narrow gaps, rim height, 70 mm walls, sideways grasp near a wall).
+- **Real-look sim, v18 with soft hands and real words:** boxes at the scene-file place 28/31 (only lying prisms lost);
+  boxes 6 cm farther 23/31: 5 centre-box objects never planned. Cause: `reaches_bin` tested the inset left by the
+  previous plan (fixed on main; v19).
+- **On the robot (18:50):** v18 deployed through Wendy onto the robot's Jetson (arm64, agent not enrolled,
+  `--skip-cloud-registration`, 0.9 GB in 8 s over the cable); the organisers' pre-check against it over the network:
+  100 calls, 0 errors, p50 37 ms. No episode yet: the runner (DDS to the robot, camera server) has to run on a
+  machine of the organisers.
+- **Organisers, 17:20:** final submission on the Junction platform (demo, source, video ≤ 2 min, team info,
+  description); deadline Sunday 10:00. Draft materials in `team/submission/` (private).
+- v19 (= v18 + reach fix, `release_rise`, `agree_within` 12 mm, black objects, lying-prism lists, arm by ridge):
+  fixed leg 31/31, every look anchored to the scene; other legs running. Reach physics: risen releases 84/84 binned
+  with boxes +6 / +8 cm.
+
 ### Sat 14.11, 17:50
 - **Hand-in candidate unchanged: v16** (`sha256:ae811fa2…`). v16 on fresh seeds 1008–1015: 91/91, gate PASS 24/24
   (178/178 over both seed sets). **Robot slot offered by the organisers** (videos sent, Wendy deployment

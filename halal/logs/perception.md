@@ -196,7 +196,7 @@ object pushed to x < ~0.20 is gone for the head camera; the head cannot tilt.
 - Object mostly under a hand: centre up to 2.5 cm off, flagged by `visible` < 0.3 or 0 (blob). `lowhands` seed 2407
   (yellow triangle, blob, 22.7 mm); `dr_train` seeds 2017, 2005, 2009 (8–16 % visible, within 5 mm there).
 - Toppled object: colour and a rough centre only (`motion` seed 2206, yellow triangle; ~1 cm).
-- Cylinder cut by the lower image border: shape None; one case in 1891 decided shapes still wrong (`motion` seed 2202).
+- Cylinder cut by the lower image border: shape None (the one wrong case of `motion` seed 2202 went with H10).
 - Hue rotated by ±30° or more: wrong colours at high confidence (stress test only).
 - Object pushed towards the robot beyond x ≈ 0.20: outside the head image, not detected.
 - A hand fit taken while fingers move would be biased by up to 15 mm; prevented by the stillness rule, which needs two looks.
@@ -686,6 +686,61 @@ measured on the true table up to typical depth and the smallest displacement tri
 `motion` and the table as recorded under typical depth: identical. Cost: at bad depth on the true table 4 of 90 looks now go by
 the hands (camera part p95 4.1 -> 5.4, max 6.2 -> 16.9). In sim 6 mm of the disagreement is the principal point; on the real
 robot a displacement under about 1 cm in the direction the hands cannot tell still goes by the scene file.
+
+**H10. No shape for an outline that is partly seen as not top face** (`topface.max_seen_empty`). First finding of the real-look
+sim frames (`realsim_looks`, seed 1001): a yellow cylinder knocked onto its side lay against a cube for 38 recorded frames and
+came back as an upright `triangle`, `visible` 0.7, centre within 5 mm. The strip of its back that lies within the depth
+tolerance of the top plane is 26 x 45 mm, and the triangle outline is what fits a strip best. What tells it from a flat top:
+the outline cells not seen as top face are SEEN (the back curving away), not hidden. Share of the outline seen as not top,
+detections with a right shape: at most 0.076 over `dr_train`, `motion`, `lowhands`, `lookpose`, `realsim_looks`, clean to
+typical depth (1900 shapes; bad depth: p95 0.19, max 0.26); the 38 lying-cylinder frames: 0.22 to 0.34; the one wrong shape
+left in `motion` (a cylinder cut by the image border, called a triangle): 0.38. Above 0.15 the shape (and yaw) is now None.
+`realsim_looks` (3 seeds so far): shape right of decided 0.925 -> 1.000. `motion`: the one wrong shape is gone (464 cylinders
+right, 1 -> 0 wrong), everything else of every clean set identical. Cost: at bad depth about one decided shape in eight
+(held-out, real, bad: decided 0.552 -> 0.524), none up to typical. A lying cylinder is thus an object of unknown shape with a
+good centre; it is not named as lying.
+
+**H11. On the nominal pose the layout is what that camera sees, not the scene file's.** When neither the scene anchor nor the
+hands fix the camera (every first look on a displaced table, and every look if the hand fit fails), bins used to be taken from
+the scene file. On a displaced table that left the far part of the real boxes outside the excluded footprints, and their
+cardboard insides (the yellow family) came back as `yellow` blobs at full colour confidence: `realsim_looks`, first looks,
+typical depth: 2 per look at x 0.68. Bins, counter height and rim are now found by geometry whenever the source is not
+"scene"; objects and bins then share the nominal camera's error instead of differing by the table's displacement.
+First looks, `dr_train` dev, `--shift real`: precision clean 0.989 -> 1.000, typical 0.887 -> 1.000 (44 phantoms -> 0; `left7`
+typical 0.958 -> 1.000); bins 67.9 mm (98 to 119 with the lateral offset) -> 11.7 / 21.4 / 30.1 (the nominal camera's own 11 mm
+included), counter 15.0 -> 6.6 (max 18); `rim_z` reported there too: +12.7 median, -4.0 to +33 (so on the nominal pose it can
+be a few mm low). Recall, xy and every clean set: unchanged. A look anchored to the scene file still gets the file's layout.
+
+### The real-look sim, whole episodes (`realsim_looks`)
+
+Recorded by the realsim workstream: policy v18, `sort_fixed`, seeds 1000 to 1007, `REAL_SIM=all` (bins +6 cm, counter +1 cm,
+walls 7 cm, real colours, bare table, half of the prisms lying), soft hands, every 10th tick: 2582 frames, 1326 of them still
+looks. On the instance under `/data/wt/infra/runs/frames/realsim_looks/`; the bench reads the placement from `scene.json`
+({"offsets": {"counter": [0, 0, 0.01], "bins": [0.06, 0]}, "boxes": {"wall_height": 0.07}}). Detector as of H11, one per episode.
+
+| | all frames, sim depth | typical | bad | still looks, sim depth | typical | bad |
+|---|---|---|---|---|---|---|
+| recall / precision | 0.917 / 1.000 | 0.838 / 1.000 | 0.811 / 0.997 | 1.000 / 1.000 | 0.941 / 1.000 | 0.929 / 0.997 |
+| xy mm, median / p95 | 2.2 / 3.6 | 3.2 / 12.4 | 5.7 / 14.3 | 2.5 / 3.5 | 3.3 / 15.0 | 6.3 / 15.8 |
+| camera part, median / p95 | 2.2 / 3.6 | 2.5 / 4.0 | 4.7 / 8.0 | 1.9 / 3.6 | 2.4 / 4.5 | 5.8 / 8.0 |
+| shape decided / right | 0.863 / 1.000 | 0.714 / 0.999 | 0.420 / 0.986 | 0.894 / 1.000 | 0.694 / 1.000 | 0.411 / 0.996 |
+| lying prisms seen as such | 0.897 of 1063 | 0.739 | 0.454 | 1.000 of 600 | 0.820 | 0.493 |
+| ridge direction deg, centre mm (medians) | 0.7, 1.5 | 0.9, 2.6 | 1.7, 4.1 | 0.8, 1.8 | 0.9, 2.5 | 1.7, 4.6 |
+| called lying without being one | 0 | 0 | 0 | 0 | 0 | 0 |
+| bins by hands mm, median / p95 / max | 3.3 / 6.1 / 9.4 | 3.2 / 6.7 / 13.5 | 5.7 / 11.4 / 109.4 | 3.3 / 5.8 / 6.9 | 2.9 / 6.4 / 10.9 | 6.4 / 11.4 / 16.5 |
+| counter mm, median | 2.9 | 3.3 | 3.5 | 2.8 | 3.0 | 1.3 |
+| rim mm, signed: median (lowest, highest) | +9.2 (+7.5, +10.6) | +10.5 (+6.8, +14.6) | +14.5 (+5.1, +26.6) | +9.2 (+7.8, +11.6) | +10.6 (+6.8, +14.4) | +13.4 (+5.3, +25.4) |
+
+- Layout source: nominal at the first frame of each episode (8 frames), hands at all 2574 others, at every depth level; no
+  other change in any episode. The policy's own log of that run agrees: 181 looks "layout from hands", none from scene, the
+  hand fit "trusted" with rms 1.7 to 1.8 mm, covered 0.85 to 0.92.
+- The xy tail under noisy depth (p95 12 to 15 mm) is lying prisms that fall back to blobs (seen as lying 1.000 -> 0.82 at
+  typical on still looks) and objects under a hand; upright, clear objects stay as in `dr_train`.
+- Wrong shapes at typical: 4 of 2702 decided (two cylinders as cubes, a cube and a cylinder as triangles).
+- At bad depth 4 of 2574 moving frames have a bin more than 3 cm off (one 109 mm), no still look.
+- Runtime per look in this hands mode: 60 ms median, 87 p95, 166 max on the Mac.
+This set gave H10 (lying cylinder called a triangle) and H11 (cardboard insides as yellow blobs on the nominal pose).
+Not yet run: the control set without offsets (`realsim_looks_nooff`, announced for later).
 
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 

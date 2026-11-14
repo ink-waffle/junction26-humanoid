@@ -634,10 +634,51 @@ directions x 8.
   the real 39 mm ridge.
 
 Verdict: `candidates.stiff.lying: [ridge_opposed, ridge_pinch, cage_lying]` (18/23 and 15/21 against 5/19 for the old
-fallback); `cage_lying` is marked `last_resort`. The soft list waits for sweep 23h (a thumb stalled at −0.26).
+fallback); `cage_lying` is marked `last_resort`. The soft list: sweep 23h below.
 
 ## Sweep 27b: the sideways cage on the soft-hand sim
 
 `cage_side` with the soft closure, DR as it comes: 3.5–4 cm before a bin wall 14/16 (cube 7/8, one not lifted;
 cylinder 7/8, one lost in the lift), middle of the table 8/8; all 22 carried objects out of the hand within the open
 phase; grip signal 0.16–0.24 held, ≤ 0.014 empty. Verdict: `cage_side` stays the last soft candidate (stock: 24/24).
+
+## Sweep 23h: lying prisms on the soft-hand sim with a thumb that stalls at `thumb_0` −0.26
+
+Question: the soft list runs on the real hand, whose `thumb_0` stalled at about −0.26 in one organiser recording.
+What is left of the opposed pinch then, and does anything without the swing hold? Lying and planned picks, 2 push
+directions x 8 per grasp, DR as it comes.
+
+| grasp (soft closure: the finger closes too, lift and carry at 4 rad/s²) | held |
+|---|---|
+| opposed pinch, full swing (−0.63), squeeze 0.60 | 11/12 |
+| the same grasp with the thumb held at −0.26 in preshape and closure (the stall), 0.45 | 9/16 |
+| thumb at −0.26 and the object midway between thumb and finger (palm z 20.5 mm), 0.45 / 0.65 | 8/12, 7/14 |
+| cage across the ridge, 0.90 (`thumb_0` 0) | 0/10 |
+
+With 23g the full swing reads 9/14, 11/15, 11/12 at 0.30, 0.45, 0.60: the soft hand gains with depth. A stalled thumb
+costs a third of the picks (9/16) and moving the grasp point to suit it does not help (15/26 over both depths);
+nothing without the swing holds on the soft hand (0/10 here, 0/14 and 4/16 for the pinches in 23g).
+
+Verdict: `candidates.soft.lying: [ridge_opposed, cage_lying]` with the soft squeeze at 0.60. One grasp serves both
+cases: 11/12 when the thumb follows, 9/16 when it stalls at −0.26.
+
+## Sweeps 25, 22, 20c (soft-hand sim): cube depth, a level thumb, position tolerance, the low sequence
+
+| cell | cube | cylinder | triangle |
+|---|---|---|---|
+| s25 (grippy-light corner): cube at 0.45 | 24/24, slip 8 mm | | |
+| s25: cube at 0.30 (the candidate) | 11/12, slip 11 mm | | |
+| s25: level thumb (closed thumb_1 −0.18, thumb_2 1.49; cube 0.26 / cylinder 0.40 / triangle 0.80) | 8/12 + 11/12 | 12/12 | 12/12 |
+| s22: soft candidates with x or y error ±10 mm or 15 mm in a random direction | 17/20 | 18/20 | 20/20 |
+| s22: cube at 0.45, exact | 12/12, slip 8 mm | | |
+| s20c (hard DR): soft candidates, organiser sequence | 9/12 | 12/12 | 12/12 |
+| s20c: the same under the low sequence (lift 0.08) | 12/12 | 11/12 | 11/12 |
+
+- Cube on the soft hand over all soft sweeps: 0.30 holds 65/75, 0.45 holds 55/56 (sweep 17 19/20, here 36/36) with
+  a third less slip. All 0.30 losses are the slide out of the hand at lift start or in the carry.
+- The level thumb does not help the cube (19/24) and is dropped.
+- Position errors of 10–15 mm cost the soft candidates nothing visible (55/60 against 59/66 exact in sweeps 12–20c).
+- The low sequence is no worse on the soft hand (34/36 against 33/36); it stays off (rim clearance on the real robot).
+
+Verdict: `cage_deep` (cube 0.45) is the FIRST soft cube candidate, `cage` (0.30) the second. Not measured: 0.45 with a
+position error, and the soft 0.45 closure on a stiff hand (the soft 0.30 closure held 12/12 there, sweep 14).
