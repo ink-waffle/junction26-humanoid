@@ -83,6 +83,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | +3.88 ± 0.78, 31/31 | skipped (v24 contains v23) | +7.00 ± 1.41, 28/28 | – | PASS on the 16 episodes run (0 clips, ≥ 29.98 Hz, rt ≥ 165) | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 | v24 | e4869cbc1500 | 3d413a3 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 118; soft sim 31/31) | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
 | v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | see below | stopped (sims to the servo engineer) | 3 episodes: 11/11, stopped | – | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
+| v26 | 010977be9f6f | 52330d1 (= main ed2be04 + 9787d0f) | waiting for a sim | | | | pre-check pass (p50 6.6 ms) | v25 + shape memory by colour, forgotten where a pick starts, lying prisms keep their shape + broken targets left alone after 3 looks + motion 7a3a729 (`_depth` falls back to `unknown`) and f42568f (`ridge_skew15`, soft lying list) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
