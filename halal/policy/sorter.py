@@ -21,7 +21,7 @@ from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
 from halal.policy.picking import Pick, Target, grasp_kind
-from halal.policy.transit import checked_move, lowest_clearance
+from halal.policy.transit import checked_move, lowest_clearance, resting_clearance
 
 log = logging.getLogger(__name__)
 HZ = 30.0
@@ -138,6 +138,19 @@ class SortPolicy:
             log.info("t=%.1f the episode outlasts the assumed %.0f s limit: sorting on", t, self.time_limit)
             self.time_limit, self.stage = math.inf, Stage.MOVING
 
+    def _leave_the_counter(self, t: float) -> None:
+        """An episode can start with the hands resting on the counter (the real robot's does): both arms go home before the first pick is planned."""
+        height = resting_clearance(self.planner, self.stream.arm_cmd, self.stream.hand_cmd)
+        if height >= self.settings["transit_clearance"]:
+            return
+        log.info("t=%.1f the hands start %.1f cm above the counter: going home before anything is planned", t, 100 * height)
+        detour = None if self._move_to(View.HOME) is not None else self._move_to(View.CLEAR)
+        if detour is not None:
+            log.info("t=%.1f no safe way straight home from here: by way of the clear-view pose", t)
+            self.stream.load(*detour)
+            self.view = View.CLEAR
+        self.next_view = View.HOME
+
     def _stop_grip_check(self) -> None:
         """Run the rest of the episode without calibration and without watching the grip."""
         self.grip_trusted = False
@@ -194,6 +207,7 @@ class SortPolicy:
             return
         if look.primer:
             self.primed, self.stage = True, Stage.MOVING   # the next reply looks again, from the same pose
+            self._leave_the_counter(t)
             return
         self._note_look(t, look)
         if look.pick is None and look.unclear:
