@@ -70,6 +70,11 @@ class HandFit:
     clear: int              # visible model points above the floor gate (their depth can be evidence): what coverage and known judge
     visible: int            # visible model points
 
+    @property
+    def settled(self) -> float:
+        """Share of the whole visible model with depth on it: low hands are under the floor gate, so other starts are still tried."""
+        return self.coverage * self.known * (self.clear / max(self.visible, 1))
+
 
 class HandReference:
     """Point-to-plane registration of the depth pixels near the posed hand surface: 6 DOF, held to the given pose by a prior."""
@@ -88,7 +93,7 @@ class HandReference:
             fit = self._register(depth, camera, np.r_[np.zeros(3), start], surface, floor, anchor)
             if fit is not None and (best is None or fit.points > best.points):
                 best = fit
-            if best is None or best.coverage * best.known >= self.cfg["settled_coverage"]:
+            if best is None or best.settled >= self.cfg["settled_coverage"]:
                 break
         return best
 
