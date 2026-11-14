@@ -50,16 +50,24 @@ class HandOutline:
     def _shifted(self, away: np.ndarray, uv: np.ndarray) -> Outline:
         """The outline as projected and at its best shift: a coarse search over the reach, then every pixel around the best."""
         reach, step = self.cfg["reach_px"], self.cfg["step_px"]
-        coarse = [(du, dv) for du in range(-reach, reach + 1, step) for dv in range(-reach, reach + 1, step)]
-        best = min(coarse, key=lambda shift: self._distances(away, uv, shift).mean())
-        fine = [(best[0] + du, best[1] + dv) for du in range(1 - step, step) for dv in range(1 - step, step)]
-        best = min(fine, key=lambda shift: self._distances(away, uv, shift).mean())
-        before, after = self._distances(away, uv, (0, 0)), self._distances(away, uv, best)
-        return Outline(len(uv), float(np.mean(before == 0)), float(before.mean()), best, float(np.mean(after == 0)), float(after.mean()))
+        best = self._best(away, uv, grid(range(-reach, reach + 1, step)))
+        best = self._best(away, uv, best + grid(range(1 - step, step)))
+        before, after = self._distances(away, uv, np.zeros((1, 2), int))[0], self._distances(away, uv, best[None])[0]
+        return Outline(len(uv), float(np.mean(before == 0)), float(before.mean()), (int(best[0]), int(best[1])),
+                       float(np.mean(after == 0)), float(after.mean()))
+
+    def _best(self, away: np.ndarray, uv: np.ndarray, shifts: np.ndarray) -> np.ndarray:
+        """The shift (u, v) among `shifts` (S, 2) that leaves the model points nearest to dark pixels on average."""
+        return shifts[int(np.argmin(self._distances(away, uv, shifts).mean(axis=1)))]
 
     @staticmethod
-    def _distances(away: np.ndarray, uv: np.ndarray, shift: tuple[int, int]) -> np.ndarray:
-        """Distance to the nearest dark pixel of every model point moved by `shift` (points leaving the image are held at its edge)."""
-        u = np.clip(uv[:, 0] + shift[0], 0, away.shape[1] - 1)
-        v = np.clip(uv[:, 1] + shift[1], 0, away.shape[0] - 1)
+    def _distances(away: np.ndarray, uv: np.ndarray, shifts: np.ndarray) -> np.ndarray:
+        """Distance to the nearest dark pixel of every model point (N) under every shift (S, 2): (S, N); points stay on the image."""
+        u = np.clip(uv[None, :, 0] + shifts[:, None, 0], 0, away.shape[1] - 1)
+        v = np.clip(uv[None, :, 1] + shifts[:, None, 1], 0, away.shape[0] - 1)
         return away[v, u]
+
+
+def grid(steps: range) -> np.ndarray:
+    """Every (u, v) pair of the given steps, (S, 2)."""
+    return np.stack(np.meshgrid(steps, steps, indexing="ij"), axis=-1).reshape(-1, 2)
