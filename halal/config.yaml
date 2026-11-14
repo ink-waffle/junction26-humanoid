@@ -2,7 +2,61 @@
 baseline_overrides: {}        # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
 
 perception:
-  detector: baseline          # key of halal.perception.DETECTORS
+  detector: topface           # key of halal.perception.DETECTORS
+  calibration:                # self-calibration of the head camera per episode (halal.perception.calibration)
+    max_turn_deg: 3.0         # a larger correction than this (per stage) is not believed: nominal pose kept
+    max_shift: 0.03
+    plane:                    # counter plane in front of the bins -> roll, pitch, height
+      pixel_step: 4
+      x_range: [0.16, 0.38]
+      y_half: 0.42
+      search: 0.03            # points this close to the nominal counter height enter the fit
+      tolerances: [0.010, 0.004, 0.003]   # inlier bands of the successive refits
+      min_points: 1500
+      max_rms: 0.004
+    wall:                     # front faces of the bin row -> yaw, x (line) and y (segment ends)
+      pixel_step: 2
+      height_band: [0.010, 0.040]   # above the counter: clear of bin floors, object tops and rims
+      search: 0.035
+      y_half: 0.42
+      tolerances: [0.010, 0.004, 0.003]
+      min_points: 600
+      max_rms: 0.004
+      profile_step: 0.001
+      profile_heights: [0.015, 0.025, 0.035]
+      depth_tolerance: 0.006
+      min_profile: 150        # observed millimetres of wall line (wall or gap) needed for the y fit
+      min_agreement: 0.8      # fraction of the observed profile the best shift must explain
+  topface:                    # halal.perception.detectors.topface
+    depth_median: 3           # median filter on the depth image before anything else, px
+    bin_margin: 0.008         # points this close to a bin footprint are not objects on the counter
+    min_separation: 0.03      # two fits closer than this are one object
+    min_support_px: 40        # object pixels needed to name a colour
+    min_confidence: 0.05      # detections below this are dropped
+    min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
+    min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
+    score_range: [0.0, 0.2]   # outline fit score (fraction of the outline seen minus contradicted) mapped to confidence 0..1
+    seed:
+      height_band: 0.006      # top-face pixels: this close to the object height above the counter
+      open_px: 3
+      min_px: 60
+    outline:
+      cell: 0.001             # top-plane grid pitch
+      view_cells: 112         # evidence grid side (even)
+      outline_cells: 70       # outline mask side (even): covers the cube diagonal
+      depth_tolerance: 0.004  # along the ray: nearer than this to the top plane counts as top face
+      coarse_yaw_deg: 6       # yaw step of the half-resolution search, refined to 1 deg
+      refine_cells: 3
+      support_coverage: 0.99  # outline mask value above which a seen top-face cell counts as support
+    color:
+      window_px: 80           # half side of the image window searched for an object's pixels
+      body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
+      body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
+      vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
+      hue_sure_deg: 15        # a hue this close to its reference is fully trusted; confidence falls to 0 at the class boundary
+      chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
+      mat_band: 0.004         # mat pixels: this close to the counter plane
+      mat_x_range: [0.18, 0.38]
   bench:                      # halal.eval.perception_bench
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
     heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
