@@ -33,7 +33,7 @@ def success_table(picks: list[dict[str, Any]], by: list[str]) -> None:
     groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
     for pick in picks:
         if pick["present"]:
-            groups[(pick["variant"], pick["shape"], *(pick[key] for key in by))].append(pick)
+            groups[(pick["variant"], pick["shape"], *(str(pick[key]) for key in by))].append(pick)
     print(f"{'variant':<16} {'shape':<9} {' '.join(by):<22} ok/n   spin  tilt  slip   failures")
     for key, group in sorted(groups.items(), key=lambda kv: tuple(map(str, kv[0]))):
         good = sum(p["failure"] == "ok" for p in group)
