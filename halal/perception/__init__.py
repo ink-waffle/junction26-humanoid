@@ -31,6 +31,7 @@ class SceneLayout:
     counter_z: float                    # counter height under the middle of the object band
     bins: Mapping[str, np.ndarray]      # "left" | "center" | "right" -> centre xy of the bin footprint
     source: str                         # "scene": the file's, camera anchored to them | "hands": as seen | "nominal": the file's, unchecked
+    rim_z: float | None = None          # highest bin rim seen (pelvis z); None = not measured, counter_z + wall height
 
 
 class Detector(Protocol):
