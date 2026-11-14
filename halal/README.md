@@ -27,8 +27,18 @@ Interface and timing
 - The safety filter caps the change of the command: 1 rad/s arms, 3 rad/s hands, per tick, plus joint limits and
   the workspace / counter keep-out boxes for wrist and palm frames. Plans are dry-run through `SafetyFilter`
   before execution (baseline `Planner.dry_run_safety`); a plan with a clip is never sent.
-- Hand joints are position controlled with kp 1.5, kd 0.2 (set by the runner, also on the real robot). Grip force
-  is therefore `kp × (target − measured)`: a deeper `closed` target squeezes harder.
+- REAL hand joints are position controlled with kp 1.5, kd 0.2 (fixed by the runner): grip torque is
+  `1.5 × (target − measured)`, so holding needs a closure commanded 0.15–0.4 rad past contact (what the teleop
+  operator does). The SIM ignores those gains: its hand actuators are implicit PD with stiffness 100, damping 10
+  (`third_party/unitree_sim_isaaclab/robots/unitree.py`), ~67× stiffer. In sim a 0.05 rad error is already ~50 N,
+  friction and mass barely matter for holding and failures are geometric (spin, squirt, wedge). A grasp must be
+  judged for both regimes.
+- In sim the right hand's DDS slots 3,4 drive the MIDDLE finger and 5,6 the INDEX finger, the opposite of
+  `INTERFACE.md` and the real robot. Keep index and middle commands identical, and never read contact from one
+  finger only.
+- The real fingers lag: 90 % of a step after 300–380 ms (thumb_0 ~450 ms); free fingers carry a 0.02–0.04 rad
+  bias. Contact test that works on real data: `Σ_joints max(0, s·(e − e0)) > 0.3`, read ≥ 0.4 s after the hand
+  command settled, with e0 from closing the empty hand once per episode.
 
 Sim
 - `evaluate.py` homes the arms to `ARM_HOME`, calls `randomize(seed)`, resets the layout, runs the episode on the
@@ -42,6 +52,9 @@ Sim
 Scene and view (head camera, 640×480, pitched 48° down)
 - Objects lie in pelvis x 0.26–0.33, y ±0.17; the near ones are at the very bottom edge of the head image and can be
   cut off. At `ARM_HOME` both hands are inside the head image and can hide objects near y ±0.17.
+- The counter height relative to the pelvis varied by 1–5 cm between real recording sessions: the planner takes it
+  from the detection (`det.top[2]` minus the object height, `motion.counter_from_detection`), so perception's top
+  z must be good to ~5 mm.
 - Bins: near edge x 0.40, centres (0.505, +0.26 / 0 / −0.26), 6 cm walls. The baseline releases 5 cm inside the near wall.
 - The mat has a printed 5 cm grid (`scene/assets/mat_texture.png`, same print on the real counter).
 - The sim head camera does not render with `calibration.yaml`'s principal point (325.0, 250.9): Omniverse ignores
