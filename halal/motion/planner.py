@@ -7,8 +7,11 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from aaltonomous.baselines.classical.config import mirror_left_to_right
+from aaltonomous.baselines.classical.config import hand_postures, home_arm, mirror_left_to_right
+from aaltonomous.baselines.classical.kinematics import ArmKinematics
 from aaltonomous.baselines.classical.planner import Plan, Planner
+from aaltonomous.interface.safety import JointSpec, SafetyConfig
+from aaltonomous.scene.scene import Scene
 
 from halal import config
 from halal.motion.grasps import Grasp
@@ -17,6 +20,12 @@ MIRROR_Y = np.array([1.0, -1.0, 1.0])
 
 
 class PickPlanner(Planner):
+    @classmethod
+    def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
+        """Planner on the organiser config with our overrides (or `cfg`), the scene file and the sim home pose."""
+        cfg, spec = cfg or config.baseline_config(), JointSpec()
+        return cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray) -> Plan:
         """Full pick -> bin -> home plan for one arm with one grasp; `Plan.ok` is False with a reason on failure."""
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
