@@ -63,16 +63,21 @@ perception:
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
-    lane_half: 0.08           # half width of the strip around a bin's scene y in which its front wall is looked for
     heights: [0.020, 0.030, 0.040]   # above the counter: where a wall is probed
     depth_tolerance: 0.008
-    min_visible: 6            # cells of the three lanes together that must be seen (wall or past it) to judge an x for the row
-    min_fill: 0.7             # share of the seen cells a wall must fill (an object fills a third of a lane)
-    row_window: 0.03          # a bin's own front wall is looked for this close to the row's (a row turned 3 deg: 0.014) ...
-    min_lane_visible: 3       # ... and needs this many seen cells of its lane
-    span_reach: 0.20          # how far to either side of the lane centre the wall ends are looked for
-    span_step: 0.002
-    width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
+    min_visible: 12           # cells of the row's width that must be seen (wall or past it) to judge an x for the row
+    row_fill: 0.5             # share of them a wall must fill: three boxes fill 0.75 to 0.9 of the row, a line of objects a third
+    row_window: 0.03          # a box's own front wall is looked for this close to the row's (a row turned 3 deg: 0.014) ...
+    lane_half: 0.08           # ... over this far to either side of the box's centre ...
+    min_lane_visible: 3       # ... and needs this many seen cells ...
+    min_fill: 0.7             # ... of which this share is wall
+    row_half: 0.55            # the boxes are laid along the row's front wall over this far to either side
+    span_step: 0.002          # cell of that search, and step of the row's slide and of the gap
+    fine_step: 0.0005         # step of the last search, one cell around the best row
+    side_reach: 0.15          # how far the row may stand to either side of the scene file's
+    gap_range: [0.0, 0.07]    # gap between neighbouring boxes (scene 0.05, recordings about 0.022)
+    prior: 0.5                # cells a row loses per metre it is slid or its pitch differs from the scene's: only splits ties
+    min_agreement: 0.6        # share of the seen cells (wall or seen past) the best row must explain
     rim:                      # how tall the walls are: the heights of the points over the bin footprints stop at the rim
       pixel_step: 2
       margin: 0.010           # around a footprint
@@ -175,14 +180,21 @@ perception:
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`
     sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
     shifts:                   # --shift: where the table stands against the scene file (real: drops 1 and 2, realdata.md B7)
-      near: {bins_x: 0.05, counter_z: 0.020, pitch_deg: 1.5}   # bins further (m), counter higher (m), far edge up (deg)
-      real: {bins_x: 0.07, counter_z: 0.015, pitch_deg: 7.0}
-      far: {bins_x: 0.14, counter_z: 0.0, pitch_deg: 9.0}
+      # bins further and to the left (m), gap between boxes (m; scene 0.05, recordings about 0.022), counter higher (m), far edge up (deg)
+      near: {bins_x: 0.05, bins_y: 0.0, gap: 0.05, counter_z: 0.020, pitch_deg: 1.5}
+      real: {bins_x: 0.07, bins_y: 0.0, gap: 0.05, counter_z: 0.015, pitch_deg: 7.0}
+      far: {bins_x: 0.14, bins_y: 0.0, gap: 0.05, counter_z: 0.0, pitch_deg: 9.0}
+      narrow: {bins_x: 0.07, bins_y: 0.0, gap: 0.022, counter_z: 0.015, pitch_deg: 7.0}
+      left3: {bins_x: 0.07, bins_y: 0.03, gap: 0.022, counter_z: 0.015, pitch_deg: 7.0}
+      right3: {bins_x: 0.07, bins_y: -0.03, gap: 0.022, counter_z: 0.015, pitch_deg: 7.0}
+      left7: {bins_x: 0.07, bins_y: 0.07, gap: 0.022, counter_z: 0.015, pitch_deg: 7.0}
+      right7: {bins_x: 0.07, bins_y: -0.07, gap: 0.022, counter_z: 0.015, pitch_deg: 7.0}
     shift:                    # how a frame is taken apart for the re-rendering (halal.eval.scene_shift)
       arm_reach: 0.010        # depth this close to the arm model is arm: it stays where it is
       arm_height: 0.068       # so does everything this far above the counter (bin walls end at 0.060)
       below: 0.02             # table points lie no further than this under the counter surface
-      bin_margin: 0.004       # points this close to a bin footprint move with the bins
+      bin_margin: 0.012       # points this close to a bin footprint are bin: dropped, the boxes are drawn anew where they stand
+      box_step: 0.0005        # spacing of the points a box is drawn from (under a pixel at 0.5 m)
     d435:                     # --depth: RealSense D435i model (halal.eval.depth_sensor); px are those of the aligned 640x480 image
       depth_focal: 425.0      # px of the IR imagers at 848x480 (HFOV about 90 deg)
       baseline: 0.050         # m between the IR imagers

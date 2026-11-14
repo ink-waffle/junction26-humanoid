@@ -19,30 +19,62 @@ FAR = 1e9
 
 @dataclass(frozen=True)
 class Displacement:
-    """Rigid motion of the table with everything on it (4x4, pelvis frame) and the further slide of the bin row along its x."""
+    """Rigid motion of the table with everything on it (4x4, pelvis frame) and each bin's further slide on the table (xy)."""
     table: np.ndarray
-    bins_x: float
+    bins: Mapping[str, np.ndarray]
 
     @classmethod
     def from_config(cls, scene: Scene, c: Mapping[str, float]) -> Displacement:
-        """Pitch about the pelvis y axis through the middle of the object band (far edge up), then a lift."""
+        """Pitch about the pelvis y axis through the middle of the object band (far edge up), a lift, and the row slid and closed up."""
         region = scene.layout_kwargs()["region"]
         pivot = scene.mat_to_pelvis([np.mean(region[0]), np.mean(region[1]), 0.0])
         T = np.eye(4)
         T[:3, :3] = Rotation.from_euler("y", -c["pitch_deg"], degrees=True).as_matrix()
         T[:3, 3] = pivot - T[:3, :3] @ pivot + [0.0, 0.0, c["counter_z"]]
-        return cls(T, float(c["bins_x"]))
+        centres = bin_centres(scene)
+        pitch = float(np.ptp([xy[1] for xy in centres.values()])) / (len(centres) - 1)
+        closer = pitch - scene.cfg["bins"]["outer_size"][0] - c["gap"]
+        return cls(T, {name: np.array([c["bins_x"], c["bins_y"] - closer * round(xy[1] / pitch)]) for name, xy in centres.items()})
 
-    def moved(self, points: np.ndarray, bins: bool = False) -> np.ndarray:
-        """Points (N, 3) of the table, or of the bin row, where the displaced scene has them."""
-        return (points + [self.bins_x if bins else 0.0, 0.0, 0.0]) @ self.table[:3, :3].T + self.table[:3, 3]
+    def moved(self, points: np.ndarray, bin_name: str | None = None) -> np.ndarray:
+        """Points (N, 3) of the table, or of one bin, where the displaced scene has them."""
+        slide = np.r_[self.bins[bin_name], 0.0] if bin_name else np.zeros(3)
+        return (points + slide) @ self.table[:3, :3].T + self.table[:3, 3]
 
 
-def bin_footprints(scene: Scene, points: np.ndarray, margin: float) -> np.ndarray:
-    """True for points (N, 3) over the outer footprint of a bin."""
+def bin_centres(scene: Scene) -> dict[str, np.ndarray]:
+    """Scene-file centre xy of every bin, pelvis frame."""
+    return {name: scene.mat_to_pelvis([*c, 0.0])[:2] for name, c in scene.cfg["bins"]["centers"].items()}
+
+
+def over_bin(scene: Scene, points: np.ndarray, margin: float) -> dict[str, np.ndarray]:
+    """Per bin: True for points (N, 3) over its outer footprint."""
     half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2 + margin
-    centres = [scene.mat_to_pelvis([*c, 0.0])[:2] for c in scene.cfg["bins"]["centers"].values()]
-    return np.any([np.all(np.abs(points[:, :2] - c) < half, axis=1) for c in centres], axis=0)
+    return {name: np.all(np.abs(points[:, :2] - c) < half, axis=1) for name, c in bin_centres(scene).items()}
+
+
+def sheet(corner: np.ndarray, side_a: np.ndarray, side_b: np.ndarray, step: float) -> np.ndarray:
+    """Points (N, 3) every `step` over the parallelogram at `corner` spanned by two sides."""
+    a, b = (np.arange(0.0, 1.0 + 1e-9, step / np.linalg.norm(side)) for side in (side_a, side_b))
+    return corner + np.add.outer(a, np.zeros(len(b))).reshape(-1, 1) * side_a + np.add.outer(np.zeros(len(a)), b).reshape(-1, 1) * side_b
+
+
+def box_surface(scene: Scene, centre: np.ndarray, step: float) -> np.ndarray:
+    """Points (N, 3) over every face of a bin standing on the counter at its scene-file place: walls inside, outside, on top; floor."""
+    c = scene.cfg["bins"]
+    (width, depth), tall, thick = c["outer_size"], c["wall_height"], c["wall_thickness"]
+    low = np.array([centre[0] - depth / 2, centre[1] - width / 2, scene.counter_z])
+    x, y, z = np.eye(3)
+    sheets = [sheet(low + [0.0, 0.0, c["floor_thickness"]], depth * x, width * y, step)]
+    for inset in (0.0, thick):
+        size_x, size_y = depth - 2 * inset, width - 2 * inset
+        corner = low + [inset, inset, 0.0]
+        sheets += [sheet(corner, size_y * y, tall * z, step), sheet(corner + size_x * x, size_y * y, tall * z, step),
+                   sheet(corner, size_x * x, tall * z, step), sheet(corner + size_y * y, size_x * x, tall * z, step)]
+    top = low + [0.0, 0.0, tall]
+    sheets += [sheet(top, thick * x, width * y, step), sheet(top + (depth - thick) * x, thick * x, width * y, step),
+               sheet(top, depth * x, thick * y, step), sheet(top + (width - thick) * y, depth * x, thick * y, step)]
+    return np.concatenate(sheets)
 
 
 def on_table(scene: Scene, points: np.ndarray) -> np.ndarray:
@@ -86,7 +118,7 @@ def bare_counter(scene: Scene, camera: Any, move: Displacement, shape: tuple[int
 
 def displaced(obs: Mapping[str, Any], camera: Any, scene: Scene, move: Displacement, arms: ArmPixels,
               c: Mapping[str, float]) -> tuple[np.ndarray, np.ndarray]:
-    """Head RGB and depth with table and bins displaced; arms, background and invalid pixels stay, uncovered counter is drawn bare."""
+    """Head RGB and depth with the table displaced; arms, background and invalid pixels stay, bins and uncovered counter are drawn anew."""
     holes, rgb = obs["head_depth"] == 0, obs["head_rgb"]
     depth_mm = np.where(holes, cv2.medianBlur(obs["head_depth"], 5), obs["head_depth"])
     v, u = np.nonzero(depth_mm > 0)
@@ -94,12 +126,15 @@ def displaced(obs: Mapping[str, Any], camera: Any, scene: Scene, move: Displacem
     height = points[:, 2] - scene.counter_z
     arm = arms.mask(depth_mm, camera, obs["arm_q"], obs["hand_q"], PARTS, c["arm_reach"])[v, u] | (height > c["arm_height"])
     table = ~arm & (height > -c["below"]) & on_table(scene, points)
-    bins = table & bin_footprints(scene, points, c["bin_margin"])
+    bins = table & np.any(list(over_bin(scene, points, c["bin_margin"]).values()), axis=0)
     mat = table & ~bins & (np.abs(height) < c["below"])
     out_depth, out_rgb = np.full(depth_mm.shape, FAR), np.zeros_like(rgb)
-    for part, is_bin in ((table & ~bins, False), (bins, True)):
-        splat((out_depth, out_rgb), camera.project(move.moved(points[part], is_bin)), rgb[v[part], u[part]])
+    splat((out_depth, out_rgb), camera.project(move.moved(points[table & ~bins])), rgb[v[table & ~bins], u[table & ~bins]])
     close_cracks(out_depth, out_rgb)
+    paint = np.median(rgb[v[bins], u[bins]], axis=0).astype(np.uint8)
+    for name, centre in bin_centres(scene).items():
+        box = camera.project(move.moved(box_surface(scene, centre, c["box_step"]), name))
+        splat((out_depth, out_rgb), box, np.broadcast_to(paint, (len(box), 3)))
     counter = bare_counter(scene, camera, move, depth_mm.shape)
     bare = (out_depth >= FAR) & (counter < FAR)
     out_depth[bare], out_rgb[bare] = counter[bare], np.median(rgb[v[mat], u[mat]], axis=0)

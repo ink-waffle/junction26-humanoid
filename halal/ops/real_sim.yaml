@@ -1,0 +1,30 @@
+# Dev-only real-look sim (halal/ops/real_sim.py). Features are switched by REAL_SIM=<comma list | all> at sim start:
+#   lying, colours, boxes, table, offsets.   Another file with the same keys: REAL_SIM_CONFIG=<path>.
+# The words of the real robot are an evaluator matter: python -m halal.eval.proxy --evaluator halal.eval.real_eval.
+
+lying:
+  fraction: 0.5                    # share of the triangular prisms spawned on a rectangular side, ridge yaw random
+
+# Albedos are fitted so that the RENDERED head image (nominal light) matches the hue / S / V measured on drop 2;
+# the sim's tone mapping turns warm albedos about 15 deg towards yellow and washes saturation out.
+colours:                           # object albedo (0-255) under the canonical family names (scoring keeps the names)
+  red: [220, 45, 10]               # orange foam: renders at hue 25 deg, S 0.70, V 0.82 (real 25, 0.70, 0.85)
+  yellow: [242, 229, 85]           # pale yellow foam: renders at 55 deg, S 0.27-0.36, V 0.78-0.87 (real 55, 0.33, 0.85)
+  blue: [10, 35, 175]              # purple foam as the head camera sees it: renders at 219 deg, S 0.61, V 0.79 (real 220, 0.59, 0.82)
+
+boxes:
+  wall_height: 0.07                # measured on drop 2 (scene file: 0.06)
+  tape_rgb: [60, 13, 7]            # orange tape on the outside: renders at 10 deg, S 0.70, V 0.48 (real 10, 0.66, 0.45)
+  cardboard_rgb: [150, 125, 80]    # bare cardboard on the inside: renders at 44 deg, S 0.18 (real 38 to 68, low chroma)
+  liner_thickness: 0.0005          # cardboard panels laid against the inner faces of the taped walls and floor
+
+table:                             # bare glossy table instead of the printed grid mat
+  rgb: [165, 160, 155]
+  roughness: 0.3
+
+offsets:                           # pelvis frame, metres, added to the scene file's placement
+  counter: [0.0, 0.0, 0.01]        # counter, mat, objects and boxes together (real: z +0.00 to +0.02)
+  bins: [0.06, 0.0]                # the box row on top of that (real: 5 to 10 cm farther)
+
+words: {red: orange, blue: purple} # canonical family -> the word the real instructions use
+fixed_mapping: {yellow: left, blue: center, red: right}   # the real sort_fixed rule, canonical families

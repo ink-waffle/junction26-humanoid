@@ -26,9 +26,9 @@ from halal.perception.geometry import Camera, PlaneFit, fit_plane
 Row = dict[str, Any]
 
 
-def truly(frame: Frame, points: np.ndarray, bins: bool = False) -> np.ndarray:
-    """Scene-file points (N, 3) where this frame really has them."""
-    return points if frame.move is None else frame.move.moved(points, bins)
+def truly(frame: Frame, points: np.ndarray, bin_name: str | None = None) -> np.ndarray:
+    """Scene-file points (N, 3) of the table, or of one bin, where this frame really has them."""
+    return points if frame.move is None else frame.move.moved(points, bin_name)
 
 
 def offset_mm(frame: Frame, used: Camera, points: np.ndarray) -> np.ndarray:
@@ -63,12 +63,13 @@ def layout_row(frame: Frame, calibration: SelfCalibration, finder: BinFinder, ca
     depth, file = frame.obs["head_depth"], scene_layout(scene)
     counter = calibration.counter(depth, camera)
     found = finder.find(depth, camera, counter)
-    true = {name: truly(frame, np.r_[xy, scene.counter_z][None], bins=True)[0] for name, xy in file.bins.items()}
+    true = {name: truly(frame, np.r_[xy, scene.counter_z][None], name)[0] for name, xy in file.bins.items()}
     half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2
-    rims = np.array([[*(xy + half * signs), scene.counter_z + scene.cfg["bins"]["wall_height"]] for xy in file.bins.values()
-                     for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))])
+    rims = [truly(frame, np.r_[xy + half * signs, scene.counter_z + scene.cfg["bins"]["wall_height"]][None], name)[0, 2]
+            for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
     rim = finder.rim_z(depth, camera, counter, found)
-    return {"rim_mm": None if rim is None else 1e3 * float(rim - truly(frame, rims, bins=True)[:, 2].max()), "bins_mm": [1e3 * float(np.linalg.norm(found[name] - true[name][:2])) for name in file.bins],
+    return {"rim_mm": None if rim is None else 1e3 * float(rim - max(rims)), "bins_y_mm": [1e3 * float(found[name][1] - true[name][1]) for name in file.bins],
+            "bins_mm": [1e3 * float(np.linalg.norm(found[name] - true[name][:2])) for name in file.bins],
             "bins_x_mm": [1e3 * float(found[name][0] - true[name][0]) for name in file.bins],
             "counter_mm": 1e3 * float(counter.z_at(surface[-1, :2]) - truly(frame, surface[-1:])[0, 2])}
 
@@ -123,7 +124,8 @@ def render(title: str, rows: Sequence[Row]) -> str:
         f"   believed only {stats([r for r in fitted if r['hands_ok']], 'hands_mm')}",
         "  checks passed: " + ", ".join(f"{k[6:]} {rate(fitted, k)}" for k in checks)
         + f"   rms mm {stats(fitted, 'hands_rms_mm')}   coverage {share(fitted, 'hands_coverage')}   known {share(fitted, 'hands_known')}   inliers {share(fitted, 'hands_inliers')}",
-        f"bins through the hand camera, centre mm {stats(rows, 'bins_mm')}   x only, signed {stats(rows, 'bins_x_mm', False)}",
+        f"bins through the hand camera, centre mm {stats(rows, 'bins_mm')}   x only, signed {stats(rows, 'bins_x_mm', False)}"
+        f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}",
         f"counter height under the band through the hand camera, mm {stats(rows, 'counter_mm')}",
         f"highest bin rim through the hand camera, mm, signed {stats(rows, 'rim_mm', False)}   worst low {min((r['rim_mm'] for r in rows if r.get('rim_mm') is not None), default=float('nan')):.1f}",
         f"pose a look with both references would use: {sources}   band mm {stats(rows, 'chosen_mm')}"])

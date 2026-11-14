@@ -543,10 +543,67 @@ error against the true highest rim, dev, median / p95 / max (lowest): clean +9.3
 +18.8 / +27.7 (+5.5). Never low. Through the true camera the same frame reads +2.5 mm (the upper edge of the height bin): the
 other 7 mm are the sim principal point again (hand camera 3.6 mm high and pitched 0.6 deg, which lifts the far corners).
 
-### Clean depth after H1 to H3
+**H4. Bins laid along the row, not looked for in lanes.** The recordings have the row 3 to 7 cm sideways with gaps of about
+2.2 cm (scene: 5 cm). `--shift narrow | left3 | right3 | left7 | right7` add that to `real` (`bins_y`, `gap`); since then the
+displaced boxes are drawn anew from their geometry (moved pixels left torn walls where an arm had hidden them), so the bin
+figures of the table above (boxes as moved pixels) are not comparable to the digit. With lanes fixed at the scene y (H2), bin
+centre error, dev, clean depth, median / p95 / max mm: narrow 4.2 / 28.2 / 28.2, +-3 cm 3.5 / 5.8 / 5.8 and 3.1 / 5.8 / 58.0,
++-7 cm 42.1 / 98.0 / 98.0 (every frame more than 3 cm off); with mild to bad depth 58 mm at +-3 cm in every frame.
+First try, not kept: cut the row's front wall into boxes at the seen gaps. Clean: 3.5 / 5.8 / 7.6 at every offset, but with
+typical depth 1 to 2 frames of 90 were 3 to 6 cm off: a 2 cm gap lies in the IR shadow of the box edge and is hidden, not seen
+past, and the outer ends of the side boxes are behind the arms.
+Shipped: (1) the row's front wall is the nearest x where wall fills half of what is seen over the row's whole width
+(`row_fill`); (2) along it, three boxes of the scene file's width with one common gap are laid where they best explain the
+cells (+1 wall, -1 seen past, hidden cells say nothing): slide +-15 cm and gap 0 to 7 cm in 2 mm steps, then 0.5 mm steps
+around the best, a weak prior to the scene file for ties; (3) each box's x from its own front wall within 3 cm of the row.
+
+| bins through the hand camera, dev, median / p95 / max mm (frames of 90 with a bin > 3 cm off) | clean | typical | bad |
+|---|---|---|---|
+| table as recorded, lanes (H2) | 3.0 / 5.0 / 7.0 | 1.0 / 5.0 / 10.6 | 5.0 / 10.9 / 43.1 (3) |
+| table as recorded, now | 2.9 / 5.4 / 6.1 | 2.3 / 5.7 / 7.3 | 5.3 / 11.6 / 220.0 (1) |
+| `real`, lanes | 2.9 / 5.8 / 5.8 | 2.9 / 4.2 / 13.4 | 2.9 / 9.9 / 61.1 (1) |
+| `real`, now | 4.1 / 6.2 / 6.3 | 3.7 / 6.7 / 7.7 | 4.1 / 11.0 / 22.3 (0) |
+| `left7`, lanes | 42.1 / 98.0 / 98.0 (90) | 42.1 / 98.0 / 98.0 (90) | 42.1 / 98.0 / 99.6 (90) |
+| `left7`, now | 3.2 / 6.3 / 6.3 | 3.5 / 6.2 / 7.8 | 4.5 / 11.6 / 238.4 (2) |
+
+narrow, left3, right3, right7 with the 2 mm search alone: clean 6.7 max, typical 8.5 to 12.3 max, no frame over 3 cm; bad 2 to 3
+frames of 90 (a row with no gap seen fits one box pitch aside, or the smeared front wall never fills half of one x cell and
+the far wall is taken). Held-out, 30 frames: `real` / `left7` / `right7`, typical: 3.8 / 6.8 / 7.7, 3.5 / 6.6 / 7.8, 4.1 / 7.3 / 9.2;
+bad: 16.2, 11.2, 13.7 at most. Cost against the lanes: about 1 mm in the median on a table with the scene's own spacing.
+Assumptions left: the three boxes have the scene file's width and one common gap (boxes placed by hand with unequal gaps
+are off by half the difference), and the row is not turned by more than the 3 cm window allows.
+Detector end to end, dev, `real` / `narrow` / `left7` / `right7`, two looks: clean recall 0.978, precision 1.000, xy 1.7 / 2.7 /
+26.0 in all four; typical 0.958, 1.000, 2.3 / 4.5 / 17.1 in all four. `lowhands --shift real --depth typical`: precision 0.926
+-> 1.000 (the phantoms were torn pieces of moved bins).
+
+**H5. A roof face must still be sloped after its refit** (`roof.py`, one line). Cause of the upright prisms called `lying`:
+`sloped_face` picks the best trial plane among those tilted 45 to 75 deg, then refits it to its points and never looked at the
+tilt again. The front face of an upright prism under a thumb (its top hidden or in IR shadow) is caught by a 74 deg trial plane
+and refits to 84 to 86 deg: a wall, reported as a lying prism 17 mm from the object with `visible` 0.95.
+
+| | before | after |
+|---|---|---|
+| `dr_train` dev, called lying without being one: clean / mild / typical / bad (of 358) | 0 / 4 / 5 / 7 | 0 / 0 / 0 / 1 |
+| `motion` clean: called lying without being one, lying prisms seen as such | 6, 0.781 | 0, 0.814 |
+| `motion` clean: shape right of decided, xy p95 / max | 0.997, 5.6 / 29.2 | 1.000, 5.4 / 27.4 |
+| `motion` mild: false lying, seen as such, shape right | 8, 0.717, 0.997 | 0, 0.776, 1.000 |
+| `motion` typical | 7, 0.688, 0.997 | 1, 0.743, 0.999 |
+| `motion` bad | 8, 0.447, 0.991 | 0, 0.443, 0.996 |
+
+So the six "called lying without being one" of the lying-prism section above were this bug, not something next to a cube.
+More true lying prisms are seen because a wall-like second face no longer displaces the ridge. Ridge under typical depth
+(`motion`): direction 1.1 / 4.5 / 8.5 deg, centre 2.7 median / 18.9 max mm (clean 0.3 / 2.7 / 3.7, 2.4 / 13.0). Recall, precision and
+colour of `motion` and all other sets unchanged. What is left of the objects under a thumb with noisy depth: they come back as
+fallback blobs (`visible` 0, centre about 2 cm off, on the front face) instead of top-face fits with `visible` 0.1; neither is
+graspable from that view, both need the look with the arm away.
+
+`motion` under depth noise, whole set (recall / precision / xy median / p95): clean 0.906 / 1.000 / 1.9 / 5.4, mild 0.855 / 1.000 /
+1.6 / 5.4, typical 0.853 / 0.998 / 1.4 / 6.2, bad 0.849 / 0.991 / 2.6 / 11.7.
+
+### Clean depth after H1 to H5
 
 Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-out, `lookpose`, `lowhands`, `closedhands`,
-`movinghands`, `armless`, `--stale`, `--looks 2`); `motion` not rerun yet.
+`movinghands`, `armless`, `--stale`, `--looks 2`); `motion`: recall 0.906, precision 1.000, colour 1.000 as before, the rest as in H5.
 
 ## Next
 
