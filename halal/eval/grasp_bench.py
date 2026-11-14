@@ -44,6 +44,7 @@ SIDES = ("left", "right")
 BIN_COLOR = {bin_name: color for color, bin_name in FIXED_MAPPING.items()}
 MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
 GRIP_JOINTS = [1, 3, 5]
+STUCK_ABOVE = 0.15
 
 
 @dataclass(frozen=True)
@@ -329,7 +330,7 @@ class Bench:
             return "lost_in_lift" if record["max_height"] > 0.02 else "not_lifted"
         if not held["carry"] or not held["open"] and record["height"]["open"] < 0.02:
             return "lost_in_carry"
-        if held["retreat"]:
+        if held["retreat"] or record["final_pos"][2] > STUCK_ABOVE:
             return "stuck_in_hand"
         return "off_counter" if record["outcome"] == "off" else "missed_bin"
 
