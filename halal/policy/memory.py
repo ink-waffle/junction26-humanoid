@@ -1,4 +1,4 @@
-"""Episode memory: picks tried, planning failures and the clearest view of each object, with objects matched by position."""
+"""Episode memory: picks tried, planning failures and the clearest view of each object, matched by position."""
 from __future__ import annotations
 
 import numpy as np

@@ -33,11 +33,11 @@ class HandResponse:
 
 def calibration_close(hand_q: np.ndarray, opened: np.ndarray, closed: np.ndarray, still_ticks: int, hand_vel: float,
                       dt: float) -> tuple[np.ndarray, int, int]:
-    """Hand trajectory (T, 14): open if needed, close on nothing, keep still, reopen; and the first closing and last sampled tick."""
+    """Hand trajectory (T, 14): open if needed, close on nothing, hold, reopen; with its first closing and last sampled tick."""
     start = hand_q if np.abs(closed - hand_q).sum() >= np.abs(closed - opened).sum() else opened
     opening = ramp(hand_q, start, hand_vel, dt)
     closing = ramp(start, closed, hand_vel, dt)
-    still = np.repeat(closed[None], still_ticks + 2 * OBS_LAG_TICKS, 0)   # stays closed past the last sample: an observation may be newer than assumed
+    still = np.repeat(closed[None], still_ticks + 2 * OBS_LAG_TICKS, 0)   # closed past the last sample: observations can be newer
     trajectory = np.vstack([opening, closing, still, ramp(closed, opened, hand_vel, dt)])
     return trajectory, len(opening), len(opening) + len(closing) + still_ticks - 1
 

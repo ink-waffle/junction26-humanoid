@@ -1,4 +1,4 @@
-"""Sequential sorter: look (calibrating the hands meanwhile, once) -> plan one pick -> execute and verify -> home -> look again; arms out of view when a look needs it."""
+"""Sequential sorter: look -> plan one pick -> execute and verify -> home -> look again, until nothing is left."""
 from __future__ import annotations
 
 import enum
@@ -54,7 +54,7 @@ class Look:
 
 @dataclass(frozen=True)
 class Situation:
-    """What a look plans from: the pose the pick will start in, the view, the episode's mapping and memory, release counts, layout choice."""
+    """What a look plans from: the pose the pick starts in, the view, and the episode's mapping, memory and layout choice."""
     arm_q: np.ndarray
     hand_q: np.ndarray
     clear_view: bool
@@ -116,7 +116,7 @@ class SortPolicy:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
-            self._settle(self.settings["start_settle_s"])   # the first frames can predate the reset: another scene, another camera pose
+            self._settle(self.settings["start_settle_s"])   # the first frames can predate the reset and its camera pose
         try:
             self._observe(obs)
         except Exception:
@@ -174,7 +174,7 @@ class SortPolicy:
         self._pause(self.settings["replan_pause_s"])
 
     def _load_view_move(self) -> None:
-        """Queue the move of both arms to the pose of the next view with open hands, then a settle; hands only if the arm move is not safe."""
+        """Queue the move of both arms to the next view's pose with open hands, then a settle; hands only if it is not safe."""
         stream, planner = self.stream, self.planner
         move = self._move_to(self.next_view)
         if move is None and self.layout_source != self.file_layout.source:
@@ -237,7 +237,7 @@ class SortPolicy:
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
-        """Confident detections, each with its clearest-seen shape, that the instruction sends to a bin and that have picks left."""
+        """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
         targets = []
         for seen in detections:
             det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
@@ -298,9 +298,9 @@ class SortPolicy:
         self.stage = Stage.MOVING
         self.start_looks += self.view is View.START
         if self.view is View.START and not look.detections and self.start_looks < self.settings["start_looks"]:
-            self._settle()   # an empty counter at the very start is a late frame: look again before moving the arms out of view
+            self._settle()   # an empty counter at the very start is a late frame: look again before the arms move
         elif self.view is not View.CLEAR:
-            self.next_view = View.CLEAR   # an arm in the image can hide an object: only a clear look may say it is gone
+            self.next_view = View.CLEAR   # an arm can hide an object: only a clear look may say it is gone
         else:
             self._count_empty_look(t)
 

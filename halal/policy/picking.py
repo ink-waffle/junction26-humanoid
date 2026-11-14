@@ -1,4 +1,4 @@
-"""Pick selection: which object next, with which arm, grasp and release point; the first plan that passes the planner's checks wins."""
+"""Pick selection: which object next, with which arm, grasp and release point; the first plan that passes wins."""
 from __future__ import annotations
 
 import logging
@@ -48,7 +48,7 @@ class PickChooser:
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], squeeze: Mapping[str, float | None],
                arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
-        """The first plannable target, least tried and then nearest its bin first, and the targets before it without a plan."""
+        """The first plannable target (least tried, then nearest its bin) and the targets before it without a plan."""
         unplannable: list[Target] = []
         for target in sorted(targets, key=lambda target: (target.attempts, self._distance_to_bin(target))):
             pick = self._plan(target, released.get(target.bin_name, 0), squeeze, arm_q, hand_q, cancelled)
@@ -71,7 +71,7 @@ class PickChooser:
         return None
 
     def _options(self, target: Target, released: int) -> list[tuple[str, Grasp, Shift]]:
-        """Arm, grasp and release slot in the order to try: the next free slot first; a retry forgets the detected shape, the one after turns to the next arm and grasp."""
+        """Arm, grasp and slot in the order to try; a retry forgets the detected shape, the one after takes the next arm and grasp."""
         det, turns = target.detection, target.attempts // 2
         shape = det.shape if target.attempts % 2 == 0 else None
         shifts = self.slots.candidates(target.bin_name, released)
