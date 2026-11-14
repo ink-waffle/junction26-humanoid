@@ -7,7 +7,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 ## Status
 
 ### Sat 14.11, 21:45
-- **Hand-in candidate still v19.** Built and pre-checked since: **v22** (`:v22-multi` `sha256:e4cf710e…`; amd64
+- **Hand-in candidate: v22** (`sha256:cb81d93c…`, `:v22-multi` `sha256:e4cf710e…`): stock 87/87, gate 24/24, soft 31/31. Built and pre-checked since: **v22** (`:v22-multi` `sha256:e4cf710e…`; amd64
   `sha256:cb81d93c…`) = v21 + hands resting on the counter leave it first (by way of the clear-view pose if needed),
   no white balance on a non-grey table (orange on wood was "yellow"), hand-fit coverage judged on the arm clear of the
   table, consensus preferring the clearest fits, far-box landing rule, rim release for cylinders and triangles;
