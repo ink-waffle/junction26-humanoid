@@ -11,8 +11,8 @@ from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
 from halal import config
-from halal.motion import PickPlanner
 from halal.perception import make_detector
+from halal.policy.release import ShiftedReleasePlanner
 from halal.policy.sorter import HZ, SortPolicy
 
 
@@ -25,12 +25,12 @@ def look_pose(cfg: dict[str, Any], spec: JointSpec) -> np.ndarray:
     return home_arm(cfg, spec)
 
 
-def make_planner() -> PickPlanner:
+def make_planner() -> ShiftedReleasePlanner:
     """The pick planner on the organiser config (sim profile plus our overrides); its picks start and end at the look pose."""
     cfg = config.baseline_config()
     spec = JointSpec()
-    return PickPlanner(cfg, Scene.load(), hand_postures(cfg, spec), look_pose(cfg, spec), ArmKinematics(cfg, spec),
-                       SafetyConfig(dt=1.0 / HZ), spec)
+    return ShiftedReleasePlanner(cfg, Scene.load(), hand_postures(cfg, spec), look_pose(cfg, spec),
+                                 ArmKinematics(cfg, spec), SafetyConfig(dt=1.0 / HZ), spec)
 
 
 def make_policy(time_limit: float | None = None) -> SortPolicy:

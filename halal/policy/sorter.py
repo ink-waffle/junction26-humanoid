@@ -12,13 +12,13 @@ import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan
 
-from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection
 from halal.policy.area import ObjectArea
 from halal.policy.background import Background, Cancelled
 from halal.policy.commands import Action, CommandStream
 from halal.policy.memory import Attempts
 from halal.policy.picking import Pick, PickChooser, Target
+from halal.policy.release import ReleaseSlots, ShiftedReleasePlanner
 
 log = logging.getLogger(__name__)
 HZ = 30.0
@@ -47,12 +47,12 @@ def leave_everything(color: str, shape: str | None) -> None:
 
 
 class SortPolicy:
-    def __init__(self, detector: Detector, planner: PickPlanner, look_pose: np.ndarray, settings: Mapping[str, Any],
-                 time_limit: float) -> None:
+    def __init__(self, detector: Detector, planner: ShiftedReleasePlanner, look_pose: np.ndarray,
+                 settings: Mapping[str, Any], time_limit: float) -> None:
         self.detector, self.planner, self.look_pose, self.settings = detector, planner, look_pose, settings
         self.episode_s = time_limit
         self.area = ObjectArea(planner.scene, settings["band_margin"], settings["bin_clearance"])
-        self.chooser = PickChooser(planner, settings["relocate"])
+        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["relocate"])
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.reset(leave_everything)
@@ -66,6 +66,7 @@ class SortPolicy:
         self.time_limit = self.episode_s
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
         self.attempts = Attempts(s["same_object_radius"], s["max_attempts"])
+        self.released: Counter[str] = Counter()
         self.stage = Stage.MOVING
         self.at_look_pose = False
         self.empty_looks = 0
@@ -109,12 +110,12 @@ class SortPolicy:
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         arm_q, hand_q = self.stream.arm_cmd.copy(), self.stream.hand_cmd.copy()
-        bin_for, attempts = self.bin_for, self.attempts
-        self.jobs.submit(lambda cancelled: self._look(obs, arm_q, hand_q, bin_for, attempts, cancelled))
+        bin_for, attempts, released = self.bin_for, self.attempts, dict(self.released)
+        self.jobs.submit(lambda cancelled: self._look(obs, arm_q, hand_q, bin_for, attempts, released, cancelled))
         self.stage = Stage.LOOKING
 
     def _look(self, obs: Mapping[str, Any], arm_q: np.ndarray, hand_q: np.ndarray, bin_for: BinFor,
-              attempts: Attempts, cancelled: Cancelled) -> Look | None:
+              attempts: Attempts, released: Mapping[str, int], cancelled: Cancelled) -> Look | None:
         """Background job: detect, keep what is sortable, plan the next pick; None when the head frame is blank."""
         if not np.any(obs["head_rgb"]):
             return None
@@ -122,7 +123,7 @@ class SortPolicy:
         inside = [det for det in detections if self.area.contains(det.top[:2])]
         outside = [det for det in detections if not self.area.contains(det.top[:2])]
         targets = self._targets(inside, bin_for, attempts)
-        pick, unplannable = self.chooser.choose(targets, inside, arm_q, hand_q, cancelled)
+        pick, unplannable = self.chooser.choose(targets, inside, released, arm_q, hand_q, cancelled)
         return Look(detections, outside, pick, unplannable)
 
     def _targets(self, detections: list[ObjectDetection], bin_for: BinFor, attempts: Attempts) -> list[Target]:
@@ -177,10 +178,12 @@ class SortPolicy:
         self.empty_looks = 0
         self.attempts.record(pick.target.xy)
         self.tally.update(picks=1, relocations=int(pick.relocation))
+        self.released[pick.plan.target_bin] += 1
         self.stream.load(pick.plan.arm, pick.plan.hand)
         self.stage, self.at_look_pose = Stage.MOVING, False
-        log.info("t=%.1f pick %s: %s arm, grasp %s, %.1f s%s", t, pick.target, pick.side,
-                 pick.grasp.name if pick.grasp else "default", pick.plan.duration,
+        drop = pick.plan.waypoints["drop"]
+        log.info("t=%.1f pick %s: %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s%s", t, pick.target, pick.side,
+                 pick.grasp.name if pick.grasp else "default", drop[0], drop[1], pick.plan.duration,
                  " (relocation)" if pick.relocation else "")
 
     def _log_tally(self) -> None:
