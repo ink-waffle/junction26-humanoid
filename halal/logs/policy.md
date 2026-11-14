@@ -73,7 +73,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v13 | 3063629595a9 | d3a28be | +3.75 ± 0.66, 30/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.00** | PASS (through the image, 0 clips, 29.99 Hz, rt ≥ 186) | v12 + main 7cfd3f1 (obstacle-aware plans, colour families orange → red and purple → blue, real colour words) + other detections passed as obstacles, a blocked target waits for its neighbour + free-standing objects first + soft grasps for a hand without a completed calibration + calibration at home when the start pose has no room + release slots 30 / 40 mm apart; lost: a cube stacked on its twin (slots), a triangle picked with plain `cage` after a neighbour ruled out `cage_apex`; soft sim 29/31, both lost objects stacked; not published |
 | v14 | e061f54d6437 | 7e94c20 | +3.75 ± 0.66, 30/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.25** | PASS (through the image, 0 clips, 29.99 Hz, rt ≥ 192) | v13 + v12's release slots + a target whose plan would touch a neighbour waits, the last resort plans as if alone + detector deadline 5 s + one target's failure no longer fails the look; lost: the same stacked cube as v13 (pick order); soft sim 30/31: a cube slipped out in the carry and lay 3 cm in front of a bin where no plan reaches |
 | v15 | 455b3c06f0f1 | 7d017e4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 153) | v14 + main 0a9cc58 (orange / yellow boundary from the hue gap of the look, measured object size, lying prisms) + v12's pick order + most room for the fingers when no target is clear + `done` after 10 s of empty looks + lying prisms grasped as unknown objects; 87 of 87 objects, no empty pick; soft sim 31/31, all picks held at the first try |
-| v16 | ae811fa244d1 | f58d8a4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 149) | v15 + main 99e1976: grasps keyed as motion keys them (`lying` passed through, strategy `cage_lying` = the unknown-shape hold for now); no change of behaviour intended: a repeat of v15's result, 87 of 87, no empty pick; soft sim V16_SOFT |
+| v16 | ae811fa244d1 | f58d8a4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 149) | v15 + main 99e1976: grasps keyed as motion keys them (`lying` passed through, strategy `cage_lying` = the unknown-shape hold for now); no change of behaviour intended: a repeat of v15's result, 87 of 87, no empty pick; soft sim 31/31, all picks held at the first try |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -123,10 +123,11 @@ v16 per leg (through the image, 14.11, 13:07–13:50 UTC; seeds 1000–1007):
 | fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 180 | PASS | stiff 16 | 0 | 3 / 1 | 5/5 |
 | known | c | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 149 | PASS | stiff 16 | 0 | 6 / 2 | 3/3 at the first try |
 | unseen | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 182 | PASS | stiff 16 | 0 | 6 / 2 | 3/3 at the first try |
-V16_SOFT_LEG
+| fixed, soft-hand sim | c | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 189 | PASS | soft 16 (bias 0.0055) | 0 | 2 / 1 | 5/5 |
 
-Pre-check: pass, p50 5.3 ms. Same-bin pairs on the stock legs: 16, smallest gap 49 mm, all flat. No detector
-deadline, no error line, no lying detection. v15 and v16 together: 174 of 174 objects on the stock legs.
+Pre-check: pass, p50 5.3 ms. Same-bin pairs on the stock legs: 16, smallest gap 49 mm, all flat; soft leg: 7,
+smallest gap 51 mm, all flat; soft lift scores 0.310–0.567. No detector deadline, no error line, no lying
+detection. v15 and v16 together: 174 of 174 objects on the stock legs, 62 of 62 on the soft-hand sim.
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
