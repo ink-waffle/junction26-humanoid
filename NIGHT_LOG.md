@@ -24,10 +24,10 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 |---|---|---|---|---|---|
 | classical baseline (image) | nominal | 1000–1001 | 6/8 | +3.00 | pass |
 | oracle (privileged poses) | nominal | 1000–1002 | 12/12 | +4.00 | pass |
-| classical baseline (server) | DR train | 1000–1002 (run in progress) | 6/12 | +2.00 | pass |
+| **classical baseline (server)** | **DR train** | **1000–1007** | **13/31 (42 %)** | **+1.62 ± 0.86** | **pass** |
 
-Under DR the baseline loses a third of what it sorted in the nominal scene on the same seeds (2/3, 2/5, 2/4
-versus 3/3, 3/5). It never reads the instruction, so on `sort_language` it scores about −1 per object whenever the
+Per seed under DR: 2/3, 2/5, 2/4, 3/3, 0/5, 2/4, 1/4, 1/3 (the first two without DR: 3/3, 3/5). 100–200 s of sim
+time per episode. It never reads the instruction, so on `sort_language` it scores about −1 per object whenever the
 mapping differs from the fixed one.
 
 ## Ideas
@@ -41,11 +41,13 @@ mapping differs from the fixed one.
 
 | Split | Colour-only paraphrases | All categories | Wrong with confidence ≥ 0.5 |
 |---|---|---|---|
-| dev (2781 cases) | 99.1 % exact | 95.0 % | 3.0 % |
-| test (2853 cases) | 100 % | 93.5 % | 4.0 % |
+| dev (2781 cases), v1 → v2 | 99.1 → 100 % exact | 95.0 → 98.7 % | 3.0 → 1.3 % |
+| test (2853 cases), v1 → v2 | 100 → 100 % | 93.5 → 93.5 % | 4.0 → 1.5 % |
 
-- First version; misses are bin synonyms (ordinals from a stated side), some "respectively" forms, noisy text and
-  colour+shape mixtures. Still being improved. Sim effect: measured with the first proxy run of our policy.
+- v2 (03:55): a stated counting side governs ordinals, rules are resolved over the nine object types by
+  specificity, explicit pairs beat enumerations. Remaining test misses: ad-hoc bin labels ("call the bins A, B,
+  C"), a list ordered by direction of travel, self-corrections, one colour+shape form, elimination puzzles.
+  Still being improved. Sim effect: measured with the first proxy run of our policy.
 
 ### 2. Perception that survives randomisation (`topface` detector), 03:35
 - **What:** depth-only self-calibration of the head camera per episode (counter plane → roll, pitch, height; front
@@ -74,7 +76,8 @@ mapping differs from the fixed one.
 - **Why:** `perf` showed 81 % of a sim's CPU in OpenMP spin-waits: torch on CPU opens a 30-thread pool for
   single-environment tensors.
 - **Effect:** real-time factor of a third sim under load 0.29 → 0.44, CPU per sim 5.5 → 2.4 cores; an oracle
-  episode on the tuned sim behaves normally (3/3, gate pass). All three sims with the setting: not measured yet.
+  episode on the tuned sim behaves normally (3/3, gate pass). All three sims restarted with it at 04:05 and
+  running jobs: 0.40 + 0.36 + 0.49 = 1.25 sim-seconds per second, against 0.54 with two untuned sims.
 - **Failed:** dropping the wrist cameras from the sim crashes the task.
 
 ### 4. Motion planning, 03:25
