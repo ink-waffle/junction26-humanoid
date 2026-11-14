@@ -16,6 +16,7 @@ from halal.perception.bins import BinFinder
 from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
+from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
 
@@ -81,7 +82,7 @@ class TopFaceDetector:
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
         drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains) for face in faces]
-        drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
+        drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
         found = [d for d in map(self._named, drafts) if d.confidence >= self.cfg["min_confidence"]]
@@ -173,8 +174,8 @@ class TopFaceDetector:
         return replace(draft.detection, color=color, confidence=confidence)
 
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
-                    rgb: np.ndarray, gains: np.ndarray) -> list[Draft]:
-        """Coloured blobs standing on the counter that no top-face fit explains (toppled objects): colour and a rough centre."""
+                    rgb: np.ndarray, gains: np.ndarray, counter: PlaneFit) -> list[Draft]:
+        """Coloured blobs on the counter that no top-face fit explains: a prism lying on a side, else colour and a rough centre."""
         c = self.cfg["straggler"]
         mask = ((height > c["heights"][0]) & (height < c["heights"][1]) & free).astype(np.uint8)
         for face in faces:
@@ -192,8 +193,15 @@ class TopFaceDetector:
                 continue
             blob = ObjectDetection(color="red", top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=0.0,
                                    pixels=int(stats[i, cv2.CC_STAT_AREA]), visible=0.0)
-            found.append(Draft(blob, self.colors.sample(rgb[labels == i], gains)))
+            roof = fit_roof(points, height[labels == i], counter.normal, counter.offset, self.cfg["roof"])
+            found.append(Draft(blob if roof is None else self._lying(roof, blob.pixels), self.colors.sample(rgb[labels == i], gains)))
         return found
+
+    @staticmethod
+    def _lying(roof: Roof, pixels: int) -> ObjectDetection:
+        """A prism lying on a side, still to be coloured: ridge centre, ridge direction and the ridge height as measured."""
+        return ObjectDetection(color="red", top=roof.centre, shape="triangle", yaw=roof.yaw, confidence=0.0, pixels=pixels,
+                               visible=roof.support, size=roof.height, lying=True)
 
     def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
         """Rough centres of the blobs left in the top-height mask, each on the top plane of an object as tall as the blob lies."""
