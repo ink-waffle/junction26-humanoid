@@ -281,7 +281,7 @@ motion:
   drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
     near: [0.06, 0.05, 0.04, 0.03, 0.02]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal); 0.02 only passes the landing rule at the reach limit
     side: 0.085               # from the side walls
-    rim: {shapes: [], near: [0.01, 0.0]}   # upright shapes that roll or slide in over the near wall get these insets when neither arm reaches a `near` one ([] = off)
+    rim: {shapes: [cylinder, triangle], near: [0.01, 0.0]}   # upright shapes that roll or slide in over the near wall get these insets when neither arm reaches a `near` one ([] = off; cubes 0/13 at inset 0: reach log r3-r8)
   release_rise: [0.0, 0.03, 0.06, 0.09, 0.12]   # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
   min_retreat_up: 0.02        # a raised release shortens the retreat after it by the rise, down to this
   landing:                    # where released objects come to rest around the release point (forward, outward of the arm; m); a release whose box crosses an inner wall is refused
