@@ -771,8 +771,93 @@ is 1.9 times the threshold (0.80: 3.4 times). Not changed here: proposed to the 
 as one map on `cage.soft` (cube 0.45, cylinder 0.45, triangle 0.60, unknown 0.75) and `cage_deep` removed, because a
 soft squeeze map on `cage` overrides `cage_deep`'s cube depth.
 
-## Sweep 30: cylinders lying on their side, perceived as an object of unknown shape (in progress)
+## Sweep 30: cylinders lying on their side, perceived as an object of unknown shape
 
-The scripted push tips a cylinder only about one time in three (the rest slide and stay upright). Soft-hand sim,
-first run: 5 of 16 lying, all 5 binned with the unknown-shape cage at 0.75 (grip signal 0.26–0.41); the 11 upright
-ones binned 11/11 as cylinders. A second soft run (s30b, 32 picks) and the stock run (s30, 32 picks) were queued.
+A cylinder tipped over by the scripted push (`topple_deg` 90 / 135, two spots near a side bin) reaches the policy as
+an object of unknown shape and is picked with the `unknown` candidates (`cage` 0.75, then `cage_side`). DR as it
+comes. The push tips a cylinder in 29 % of the soft runs and 50 % of the stock run; the rest stay upright and are
+picked as cylinders.
+
+| run | hand | lying after the push | planned | binned | grasp on the binned | upright binned | off the counter |
+|---|---|---|---|---|---|---|---|
+| s30 + s30b (48 picks) | soft-hand sim | 14 | 14 | 13 (1 not lifted, left on the counter) | `cage` 13 | 34/34 | 0 |
+| s30 (32 picks) | stock | 16 | 16 | 16 | `cage` 15, `cage_side` 1 (3.5 cm before the bin wall) | 16/16 | 0 |
+
+- Lying: 29/30 binned. The one miss rolled in the closing hand (spin −54°, slip 147 mm) and came to rest 3.5 cm
+  further forward, still on the counter.
+- Contact sum (thumb_1 + both finger_0 joints) at the lift, held: soft 0.72–1.14 (threshold 0.15), stock 0.13–0.42
+  (0.02). Spin −54…+53° (one −171° on `cage_side`), slip ≤ 19 mm on the binned picks.
+- Nothing was knocked off the counter in 80 picks (lowest final object z 0.0325 m, on the counter or in a bin).
+
+Verdict: the `unknown` path holds lying cylinders on both hands; no lying-cylinder grasp of its own is needed.
+
+## Real robot, run 2 (14.11): the hand sits lower than commanded at the bottom of the descent (offline, FK)
+
+FK of commanded against measured right-arm joints (`runs/robot/export_1957`, run 2) at the bottom of each pick; lowest
+hand point in pelvis z.
+
+| pick | arm still moving (\|dq\| ≤ 0.06 rad/s): lowest point commanded / measured, palm z error | settled (\|dq\| ≤ 0.02): lowest point, palm z error | joint error then (measured past commanded) |
+|---|---|---|---|
+| 1 | +2.8 / −5.3 mm, −12.7 mm | +3.4 / −6.4 mm, −8.3 mm | shoulder pitch 0.023, elbow 0.017 rad |
+| 2 | +4.6 / −5.3 mm, −10.8 mm | +5.1 / −5.4 mm, −7.2 mm | elbow 0.026, wrist roll 0.011 rad |
+| 3 | +4.0 / +0.5 mm, −4.2 mm | +4.5 / −2.7 mm, −4.5 mm | palm also 16 mm off in x and y, 0.05 rad on three shoulder joints: contact, not counted |
+
+Lag accounts for 3–4 mm and the rest is static: the palm stays 7–8 mm low, the lowest point ~10 mm. A settle before the
+close would not remove it. No change: a raise tied to the soft hand class would stand in for the arm, which the soft-hand
+sim does not have. The clean version (later, if time remains): FK of the measured arm at the bottom of the descent,
+correct the target until the palm is at its planned height; a no-op on a stiff arm.
+
+## Planner: releases on the near rim for shapes that go in over it (offline; sweeps r3, r4, r7, r8 in `reach.md`)
+
+`motion.drop_inset.rim: {shapes, near}`: for an upright object whose shape is listed, into a bin where NEITHER arm
+reaches a `near` inset, the planner tries the rim insets (1 cm, 0) instead. Per arm would be wrong: the cross-body arm
+never reaches a side bin's `near` insets, so it would have got rim releases at nominal boxes. Lying objects and
+unclassified shapes never get them. The landing rule needs no exception: the first reachable rim inset is the
+largest in reach, so it is judged with the `limit` box (forward +6..+117 mm), which fits inside every bin at +10 and
++12 for insets 2, 1 and 0 cm; `risen` and `nominal` refuse them. The policy's arm filter passes the detection to
+`reaches_bin`.
+
+Offline, 4 `plan_bench` layouts × object × bin × both arms × stiff / soft hand, look pose → retreat (228 plans per
+offset), sha256 of every plan:
+
+| bins | `shapes: []` vs the tree before | `[cylinder, triangle]` vs the tree before | plans with `[cylinder, triangle]` (cube / cylinder / triangle) | insets used |
+|---|---|---|---|---|
+| +0, +3 cm | identical | identical | 152/228 (56/84, 64/96, 32/48) | 6 cm |
+| +6, +8 cm | identical | identical | 152/228 | 5–6, 3–4 cm |
+| +10 cm | | | 138/228 (42/84, 64/96, 32/48) | 2 cm side bins, 1 cm centre bin (rim) |
+| +12 cm | | | 48/228 (0/84, 32/96, 16/48) | 0 (rim), side bins with their own arm |
+
+Default `shapes: []` (90c4eb7). The soft-hand rim sweep r8 (side +12, inset 0) binned cylinders 3/8, triangles 7/8,
+cubes 0/5, nothing off the counter; the orchestrator turns it on for `[cylinder, triangle]` (commit on ws/reach).
+
+## Design note (not built): correct the measured palm height before the close
+
+Why: on the real arm the hand settles 7–8 mm (palm) and about 10 mm (fingertips) under its command at the bottom of
+the descent (section above); the fingertips close at table level. Neither the stiff sim arm nor the soft-hand sim
+sags, so the fix must act on a measured signal and do nothing where there is no sag.
+
+Motion side (planner, config `motion.palm_check: {apply, tolerance, contact_xy, max_lift, settle_s}`):
+- `palm_error(side, measured_arm_q, planned_arm_q) -> (dz, dxy)`: FK of the grasp point for both, measured minus planned.
+- `sag_corrected(plan, side, measured_arm_q, tick) -> Plan`: from `tick` on, hold the bottom of the descent for up to
+  `settle_s`, then run the close with the arm at the IK of the planned grasp point raised by −dz (z only, at most
+  `max_lift`), and fade that joint offset out over the lift; `dry_run_safety` from the current command, refused =
+  the plan unchanged. It follows the pattern of `resqueezed` / `aborted`: a plan transformed on a measured signal.
+- Correct only when the palm is LOWER than planned by more than `tolerance` (about 4 mm) and `dxy` < `contact_xy`
+  (about 8 mm). A hand that touches the table or the object top reads higher than planned and is never pushed down;
+  a large sideways error means contact (run 2, pick 3: 16 mm in x and y): skip and log.
+
+Policy hook (the policy engineer's part):
+- Load the pick with a stream cut at the last descend tick (`CommandStream.load(..., cuts=[...])`), so that an `act()`
+  call observes the bottom before the close is sent. Today the close follows the descent in the same chunk stream.
+- At the first `act()` with `observed_tick` ≥ that tick: `palm_error` on `obs["arm_q"]`. Over the tolerance:
+  `sag_corrected`, reload the stream with the new plan's remaining rows, and shift the active pick's tick indices
+  (grip window, release check tick) by the rows inserted and by the reload position, as `_load_with_release_check`
+  already does for its sub-trajectory. Measured at the cut, part of the error is still lag (run 2: 11–13 mm moving,
+  7–8 mm settled), so re-measure during the hold and correct with the settled value.
+- Under the tolerance: nothing changes and no time is spent (sim, stiff arm).
+
+Rollout: first `apply: false` (measure and log `dz`, `dxy` at the cut and after settling, every pick), which costs
+nothing and gives tomorrow's real runs the numbers; then `apply: true`. Checks: sim proxy leg = 0 corrections
+triggered (the sim arm's error at the cut must be measured first and stay under the tolerance); only the real robot can
+show the effect. Worst case of a wrong correction: the close runs up to `max_lift` higher on a 45 mm object, still
+on it; a lag-only trigger costs `settle_s` per pick.
