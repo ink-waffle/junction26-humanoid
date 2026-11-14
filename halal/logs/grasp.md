@@ -277,3 +277,25 @@ minus true object position along pelvis x (forward) and y (outward). 178 picks.
   so on a failed full plan too, not only on the reach check.
 - Reach with the cage grasp (its grasp point is 7 mm nearer the palm than the pinch's): every bin plans up to a near
   edge at x 0.46, the side bins up to 0.47.
+
+## Sweep 12: first measurements on the soft-hand sim
+
+Sim started with `HAND_GAINS="1.5,0.2,0.0075"` (kp and kd as the real runner, armature fitted): free step response of
+thumb_1 through AaltoEnv + safety filter 50 % at 0.17–0.20 s, 90 % at 0.33–0.37 s, no overshoot (real hand: ~0.14 s
+and 0.30–0.38 s); the first guess "1.5,0.27,0.012" was slower (0.23 / 0.47 s). Fingers sag 0.014–0.04 rad under their
+own weight with nothing held, the size of the real hand's bias. Hard DR, exact pose, staggered release.
+
+| closure on the soft hand | cube | cylinder | triangle |
+|---|---|---|---|
+| `hand="soft"`: stiff-hand depths, fingers closing too; arm 8 rad/s² | 8/12 (2 lost in lift, 2 in carry) | 12/12 | 12/12 |
+| the same at 4 rad/s² | 6/6 | 6/6 | 6/6 |
+| stiff-hand closure (thumb only) | 1/6 | 1/6 | 0/6 |
+| thumb only at squeeze 1.0 | 3/6 | 3/6 | 1/6 |
+
+- On a soft hand the fingers must close together with the thumb; the thumb alone does not hold anything reliably.
+- The cube is the weak shape there (two flat contacts; it slips 16 mm in the hand, the others 5–6 mm) and it is the
+  one that needs the gentler arm: all 4 losses at 8 rad/s², none at 4. `carry_acc: 4.0` is now part of the cage's
+  `soft` overrides and the planner re-times lift and carry with it.
+- Contact signal on the soft hand (largest of thumb_1, finger_0 error at lift and mid-carry): held 0.14–0.27 rad
+  (thumb_1 median 0.22), empty 0.006–0.056: a threshold of 0.10 separates them; the stiff-sim threshold 0.025 does not.
+- Every carried object was out of the hand within the open phase (50/50).
