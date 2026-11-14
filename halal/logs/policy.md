@@ -283,3 +283,21 @@ The limit is unknown (90–180 s) and the image assumes 120 s only to decide whe
 a pick that ends before 90 s over the first in order would matter in a 2 s window of episodes that reach 82 s
 with two targets of different length left: about one object in a hundred episodes. Not built. Order of picks is
 least tried, known shape, free-standing, nearest its bin; a pick cut off by the limit keeps the object in the hand.
+
+### Finals robustness in the mock (v13 tree; kinematic mock world with a finger contact signal and runner-like observation lag)
+
+| Case | Objects | End | Clips |
+|---|---|---|---|
+| start pose far from home, hands closed | 3/3 | done, 57 s | 0 |
+| blank head frames for the first 40 calls | 4/4 | done, 91 s | 0 |
+| no depth at all | 0/3, nothing moved | time limit | 0 |
+| detector raises on looks 1 and 3 | 5/5 | done | 0 |
+| planner raises on its 2nd call / on every call | 3/3 / 0/3 | done / time limit | 0 |
+| reset during a 1 s plan, next episode at once | 5/5 in the next episode | done | 0 |
+| assumed limit 20 s, real limit 60 s | 3/3 | time limit at 60 s | 0 |
+| no room for the calibration close at the start pose | 3/3, calibrated at home | done | 0 |
+| instruction for one colour/shape ("Put the purple cube into the center box.") | 1 pick, the rest untouched | done, 31–34 s | 0 |
+| object stays in the hand for the first n openings (release check on) | n ≤ 3: 3/3, arm kept; n ≥ 4: arm retired | done / time limit | 0 |
+
+Worst `act()` 2–5 ms in every case. Not covered by the mock: physics of a failed grasp, real camera frames, a
+detector that never returns (the look would wait for it for the rest of the episode).
