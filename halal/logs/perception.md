@@ -549,7 +549,7 @@ displaced boxes are drawn anew from their geometry (moved pixels left torn walls
 figures of the table above (boxes as moved pixels) are not comparable to the digit. With lanes fixed at the scene y (H2), bin
 centre error, dev, clean depth, median / p95 / max mm: narrow 4.2 / 28.2 / 28.2, +-3 cm 3.5 / 5.8 / 5.8 and 3.1 / 5.8 / 58.0,
 +-7 cm 42.1 / 98.0 / 98.0 (every frame more than 3 cm off); with mild to bad depth 58 mm at +-3 cm in every frame.
-First try, kept one hour: cut the row's front wall into boxes at the seen gaps. Clean: 3.5 / 5.8 / 7.6 at every offset, but with
+First try, not kept: cut the row's front wall into boxes at the seen gaps. Clean: 3.5 / 5.8 / 7.6 at every offset, but with
 typical depth 1 to 2 frames of 90 were 3 to 6 cm off: a 2 cm gap lies in the IR shadow of the box edge and is hidden, not seen
 past, and the outer ends of the side boxes are behind the arms.
 Shipped: (1) the row's front wall is the nearest x where wall fills half of what is seen over the row's whole width
