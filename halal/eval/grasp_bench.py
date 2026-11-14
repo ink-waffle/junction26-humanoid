@@ -331,6 +331,9 @@ class Bench:
             moved = np.subtract(final[pick.neighbour]["pos"], pick.neighbour_start)
             record["neighbour_shift_mm"] = round(1000 * float(np.linalg.norm(moved[:2])), 1)
             record["neighbour_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.neighbour]["quat_xyzw"]))), 1)
+            record["neighbour_outcome"] = outcomes.get(pick.neighbour)
+            top = pick.neighbour_start + [0.0, 0.0, self.scene.object_height() / 2]
+            record["neighbour_gap_mm"] = round(1000 * self.planners[pick.case.variant].digit_gap(pick.plan, pick.case.side, top), 1)
         record["failure"] = self._failure(record)
         return record
 
