@@ -14,7 +14,7 @@ from halal.perception import ObjectDetection, SceneLayout, scene_layout
 from halal.perception.bins import BinFinder
 from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier
-from halal.perception.geometry import Camera, PlaneFit
+from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
 from halal.perception.shapes import OutlineFitter, TopFace
 
 
@@ -70,7 +70,7 @@ class TopFaceDetector:
         height = counter.height(cloud)
         free = self._on_counter(cloud)
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
-        faces = self._faces(depth, camera, cloud, height, free, counter, rgb, gains)
+        faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
         found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
         found += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
         found = [d for d in found if d.confidence >= self.cfg["min_confidence"]]
@@ -135,6 +135,19 @@ class TopFaceDetector:
         rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
         return self._distinct(faces + rest)
 
+    def _unanchored(self) -> bool:
+        """True when the scene did not fix the camera: bin footprints are then guesses and walls can reach the candidates."""
+        return self.pose.source != "scene"
+
+    def _level(self, face: TopFace, cloud: np.ndarray, counter: PlaneFit) -> bool:
+        """False for a fit whose top cells form no level patch (a wall face); only judged while the camera is unanchored."""
+        if not self._unanchored():
+            return True
+        inside = np.all((face.pixels >= 0) & (face.pixels < cloud.shape[1::-1]), axis=1)
+        points = cloud[face.pixels[inside, 1], face.pixels[inside, 0]]
+        points = points[np.isfinite(points).all(axis=1)]
+        return len(points) >= 3 and levelness(points, counter.normal) >= self.cfg["wall_guard"]["min_level"]
+
     def _window(self, face: TopFace, camera: Camera) -> tuple[slice, slice]:
         """Image rows and columns that contain everything of the object at the fitted centre."""
         reach = self.cfg["window_px"]
@@ -156,6 +169,8 @@ class TopFaceDetector:
         for i in range(1, count):
             points = cloud[labels == i]
             if stats[i, cv2.CC_STAT_AREA] < c["min_px"] or np.ptp(points[:, :2], axis=0).max() > c["max_extent"]:
+                continue
+            if self._unanchored() and plan_depth(points) < self.cfg["wall_guard"]["min_depth"]:
                 continue
             color, confidence = self.colors.classify(rgb[labels == i], gains)
             found.append(ObjectDetection(color=color, top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=confidence,

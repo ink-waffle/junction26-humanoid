@@ -94,6 +94,9 @@ perception:
       claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
       min_px: 300
       max_extent: 0.09        # a longer blob is no single object (a wall, an arm)
+    wall_guard:               # while the scene has not anchored the camera: bin footprints are guesses, walls reach the candidates
+      min_level: 0.7          # |cos| of a fit's top cells against the counter normal: wall faces <= 0.61, 99.5 % of top faces >= 0.8
+      min_depth: 0.004        # thickness (std) in plan view a straggler needs: wall slivers 0.001 median, toppled objects 0.0077
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
     seed:
       height_band: 0.006      # top-face pixels: this close to the object height above the counter
@@ -115,11 +118,11 @@ perception:
       body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
       body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
-      basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, in which a colour is trusted
-        red: [335, 15]
-        yellow: [40, 90]
-        blue: [195, 250]
-      taper_deg: 6            # confidence falls to 0 this far outside a basin: orange (21..34) is nobody's
+      basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, of the three colour families
+        red: [335, 33]        # sim red -14..+20 and real orange foam 19..31 (the box tape, 1..28, and sim bins, 24, are in here too)
+        yellow: [39, 110]     # sim yellow 44..60; real yellow foam 41 (shaded) .. 98 (washed-out top)
+        blue: [195, 280]      # sim blue 200..234; real purple foam 217..225 lit, to 266 on shaded faces
+      taper_deg: 6            # confidence falls to 0 this far outside a basin: 36 deg is half red, half yellow
       min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
