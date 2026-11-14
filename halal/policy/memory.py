@@ -5,8 +5,8 @@ import numpy as np
 
 
 class Attempts:
-    def __init__(self, radius: float, max_picks: int) -> None:
-        self.radius, self.max_picks = radius, max_picks
+    def __init__(self, radius: float) -> None:
+        self.radius = radius
         self._picked: list[np.ndarray] = []
         self._unplanned: list[np.ndarray] = []
 
@@ -18,13 +18,13 @@ class Attempts:
         """No plan was found for the object at `xy` in one look."""
         self._unplanned.append(np.array(xy, float))
 
+    def picks(self, xy: np.ndarray) -> int:
+        """Picks started so far on the object at `xy`."""
+        return self._near(self._picked, xy)
+
     def count(self, xy: np.ndarray) -> int:
         """Picks started and planning failures so far for the object at `xy`: the more, the later it is tried again."""
-        return self._near(self._picked, xy) + self._near(self._unplanned, xy)
-
-    def exhausted(self, xy: np.ndarray) -> bool:
-        """Whether the object at `xy` has used up its picks."""
-        return self._near(self._picked, xy) >= self.max_picks
+        return self.picks(xy) + self._near(self._unplanned, xy)
 
     def _near(self, spots: list[np.ndarray], xy: np.ndarray) -> int:
         return sum(float(np.linalg.norm(spot - xy)) < self.radius for spot in spots)

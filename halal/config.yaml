@@ -209,6 +209,7 @@ policy:
   start_settle_s: 0.5         # hold before the first look: frames rendered before the episode's reset must have gone by
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
+  blob_attempts: 1            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
@@ -216,7 +217,7 @@ policy:
   empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
   min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
   clear_view_pose: look_arm_q # key of `motion`: arm pose with nothing between the head camera and the counter
-  min_detection_confidence: 0.3   # correct detections of the topface detector come back as low as 0.34
+  min_detection_confidence: 0.5   # colour certainty: 1.0 inside a hue basin, 0 from 6 degrees outside
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
     left: [[0.0, 0.0], [0.0, 0.07]]

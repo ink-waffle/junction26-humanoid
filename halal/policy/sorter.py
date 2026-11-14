@@ -50,6 +50,7 @@ class Look:
     unclear: int                # sortable objects seen too poorly to grasp from this view
     layout_source: str
     layout_rejected: bool       # the perceived layout allowed no plan at all and the scene file's was used instead
+    primer: bool                # nothing was planned: the frame only went to the detector
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class Situation:
     released: Mapping[str, int]
     file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
+    primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
 
 
 @dataclass
@@ -102,14 +104,14 @@ class SortPolicy:
         self.bin_for = bin_for
         self.time_limit = self.episode_s
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
-        self.attempts = Attempts(s["same_object_radius"], s["max_attempts"])
+        self.attempts = Attempts(s["same_object_radius"])
         self.shapes = Shapes(s["same_object_radius"])
         self.layout_source, self.use_file_layout = self.file_layout.source, False
         self.released: Counter[str] = Counter()
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
-        self.view, self.next_view = View.START, None
+        self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
 
     def act(self, obs: Mapping[str, Any]) -> Action:
@@ -199,10 +201,11 @@ class SortPolicy:
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         """Look at this frame; if the hands are not calibrated yet they close on nothing while it is processed."""
-        stream, calibrate = self.stream, self.calibrator.due(self.stream.arm_cmd)
+        stream, primer = self.stream, self.view is View.START and not self.primed
+        calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
-                              self.shapes, dict(self.released), self.use_file_layout, calibrate)
+                              self.shapes, dict(self.released), self.use_file_layout, calibrate, primer)
         self.jobs.submit(lambda cancelled: self._look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -213,6 +216,8 @@ class SortPolicy:
         if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
             return None
         detections = self.detector.detect(obs)
+        if situation.primer:
+            return Look(detections, [], None, [], 0, self.detector.layout().source, False, True)
         if situation.hands_pending:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
         seen = self.file_layout if situation.file_layout else self.detector.layout()
@@ -234,7 +239,7 @@ class SortPolicy:
         squeeze = {side: self.settings["squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
         pick, unplannable = self.chooser.choose(clear, situation.released, squeeze, situation.arm_q, situation.hand_q,
                                                 cancelled)
-        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False)
+        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
         """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
@@ -243,7 +248,8 @@ class SortPolicy:
             det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
             sure = det.confidence >= self.settings["min_detection_confidence"]
             bin_name = situation.bin_for(det.color, det.shape) if sure else None
-            if bin_name is not None and not situation.attempts.exhausted(det.top[:2]):
+            limit = self.settings["max_attempts"] if det.visible > 0 else self.settings["blob_attempts"]
+            if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
                 targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
         return targets
 
@@ -254,6 +260,9 @@ class SortPolicy:
         look: Look | None = job.value
         if look is None:
             self._look_again(t, job.error)
+            return
+        if look.primer:
+            self.primed, self.stage = True, Stage.MOVING   # the next reply looks again, from the same pose
             return
         self._note_look(t, look)
         if look.pick is None and look.unclear:
