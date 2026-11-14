@@ -63,7 +63,7 @@ class PickPlanner(Planner):
         return [name == "low" for name in names]
 
     def _staggered_release(self, plan: Plan, side: str) -> Plan:
-        """The plan with its release rebuilt so that one finger opens after the other; unchanged when the stagger is 0."""
+        """The plan with its release rebuilt so that one finger starts opening after the rest of the hand; unchanged when the stagger is 0."""
         if not plan.ok or not self.motion["release_stagger_s"]:
             return plan
         cols = ArmKinematics.sl(side)
@@ -74,16 +74,12 @@ class PickPlanner(Planner):
         return self._assembled(plan, parts)
 
     def _opening(self, closed: np.ndarray, release: np.ndarray) -> np.ndarray:
-        """One hand's rows (7 joints) from closed to release and the hold after; with a stagger one finger stays closed that much longer."""
-        speed, dt, stagger = self.cfg["motion"]["hand_max_vel"], self.dt, self.motion["release_stagger_s"]
-        one_finger = release.copy()
-        one_finger[LATE_FINGER] = closed[LATE_FINGER]
-        stages = [(one_finger, stagger)] * bool(stagger) + [(release, self.cfg["motion"]["open_hold_s"])]
-        rows, start = [], closed
-        for posture, hold in stages:
-            rows += [ramp(start, posture, speed, dt), np.repeat(posture[None], int(round(hold / dt)), 0)]
-            start = posture
-        return np.vstack(rows)
+        """One hand's rows (7 joints) from closed to release and the hold after; with a stagger one finger starts that much later."""
+        motion, delay = self.cfg["motion"], int(round(self.motion["release_stagger_s"] / self.dt))
+        together = ramp(closed, release, motion["hand_max_vel"], self.dt)
+        rows = np.vstack([together, np.repeat(release[None], delay + int(round(motion["open_hold_s"] / self.dt)), 0)])
+        rows[:delay + len(together), LATE_FINGER] = np.vstack([np.repeat(closed[None], delay, 0), together])[:, LATE_FINGER]
+        return rows
 
     def _plan_with(self, grasp: Grasp, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
                    place_xy: tuple[float, float] | None) -> Plan:
