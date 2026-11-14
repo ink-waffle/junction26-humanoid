@@ -102,7 +102,7 @@ perception:
     min_support_px: 40        # object pixels needed to name a colour
     overhang_band: [0.008, 0.035]   # above the object top: where a bin rim or a wall would stand, a hovering thumb does not
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
-    min_confidence: 0.05      # detections below this are dropped
+    min_confidence: 0.05      # below this the colour is not named: the detection has `color` None
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
     min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
     size_range: [0.045, 0.055]   # object heights (= edge lengths) looked for; real foam cubes measure 0.046 in drop 2
@@ -170,6 +170,7 @@ perception:
     held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
     confidence_edges: [0.2, 0.34, 0.5, 0.8]
     repaint_deg: {red: 25, yellow: 4, blue: -7}   # --repaint: hue turns that take sim red, yellow, blue (0, 51, 227) to real orange, yellow, purple (25, 55, 220)
+    black_gain: 0.15          # --blacken: grey value of the painted objects as a share of their own (sim tops 200 -> 30, sides darker)
     decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
     armless_seed: 7
     armless_depth_noise_mm: 1.0

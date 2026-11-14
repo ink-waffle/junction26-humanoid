@@ -85,7 +85,7 @@ class TopFaceDetector:
         drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
-        found = [d for d in map(self._named, drafts) if d.confidence >= self.cfg["min_confidence"]]
+        found = [self._named(draft) for draft in drafts if draft.colour is not None]
         if found:
             self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
         return found
@@ -169,11 +169,9 @@ class TopFaceDetector:
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
 
     def _named(self, draft: Draft) -> ObjectDetection:
-        """The draft with its colour family and confidence, by the episode's red / yellow boundary where one was seen."""
-        if draft.colour is None:
-            return draft.detection
+        """The draft with its colour family and confidence, by the episode's boundary; no family (None) where the colour says none."""
         color, confidence = self.colors.name(draft.colour, self.split)
-        return replace(draft.detection, color=color, confidence=confidence)
+        return replace(draft.detection, color=color if confidence >= self.cfg["min_confidence"] else None, confidence=confidence)
 
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
                     rgb: np.ndarray, gains: np.ndarray, counter: PlaneFit) -> list[Draft]:

@@ -639,6 +639,17 @@ so it is the frame, not the noise. `motion --still --shift real`: clean and typi
 Tried and dropped: left arm and right arm fitted separately as a cross-check. At `ARM_HOME` the right arm shows 211 model
 points (300 are needed for a fit), so there is nothing to compare.
 
+**H7. Objects of no colour family are reported, with `color` None.** A photo of the venue table shows black cubes, cylinders
+and prisms next to the foam. `perception_bench --blacken blue` paints one colour's objects black (grey value x 0.15). Before:
+0 of 158 (`dr_train`) and 0 of 65 (`lookpose`) black objects detected, clean or typical depth: the top-face fit found them
+and the colour confidence of 0 dropped them, so the policy could not even avoid them. Now every geometry-accepted object
+comes back; its `color` is None and its `confidence` below `min_confidence` when no family fits (black, grey, a hue between
+families). Black objects: `dr_train` recall 1.000 clean, 0.962 typical (the misses are under a thumb), xy 1.7 / 2.5 and 1.3 / 2.9,
+shape right 1.000 of 0.87 and 0.79 decided; `lookpose` 1.000 / 1.000, clean and typical. The red and yellow objects of the same
+frames: unchanged. All unpainted sets including `motion`: identical line by line, so no hand, wall or shadow has become a
+colourless object in 1401 sim frames. Not found: a black prism lying on its side (the fallback blob starts from coloured pixels).
+Not verified: black foam in real depth (if it returns as little as the black hand, it has no top face and stays unseen).
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

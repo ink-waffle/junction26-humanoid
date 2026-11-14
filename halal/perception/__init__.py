@@ -14,7 +14,7 @@ SHAPES = ("cube", "cylinder", "triangle")
 @dataclass(frozen=True, eq=False)
 class ObjectDetection:
     """One object on the counter; `top` is the centre of its top face in the pelvis frame (m)."""
-    color: str
+    color: str | None           # None = an object of no colour family (black, grey, a hue between families): an obstacle, never a target
     top: np.ndarray
     shape: str | None = None    # None = not classified
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown

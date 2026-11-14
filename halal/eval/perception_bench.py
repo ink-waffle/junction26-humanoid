@@ -221,6 +221,17 @@ def repainted(frame: Frame, scene: Scene, turns: Mapping[str, float]) -> Frame:
     return replace(frame, obs={**frame.obs, "head_rgb": rgb})
 
 
+def blackened(frame: Frame, scene: Scene, colour: str, gain: float) -> Frame:
+    """The frame with every lying object of one colour painted black (grey value times `gain`); their true colour is then `black`."""
+    rgb = frame.obs["head_rgb"].copy()
+    for truth in frame.truths:
+        if truth.color == colour:
+            mask = silhouette(scene, truth, frame.camera, rgb.shape[:2])
+            rgb[mask] = np.round(gain * rgb[mask].mean(axis=1, keepdims=True)).astype(np.uint8)
+    truths = [replace(t, color="black") if t.color == colour else t for t in frame.truths]
+    return replace(frame, obs={**frame.obs, "head_rgb": rgb}, truths=truths)
+
+
 def rotated(frame: Frame, degrees: float) -> Frame:
     """The frame with the hue of the whole image turned: a colour cast the counter's white balance does not remove."""
     return replace(frame, obs={**frame.obs, "head_rgb": turned(frame.obs["head_rgb"], degrees)})
@@ -540,6 +551,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--looks", type=int, default=1, help="show every frame this many times, 0.2 s apart (a robot standing still)")
     ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
     ap.add_argument("--repaint", action="store_true", help="turn the objects' hues to the real foam palette (bench.repaint_deg)")
+    ap.add_argument("--blacken", choices=("red", "yellow", "blue"), help="paint the objects of this colour black (bench.black_gain)")
     ap.add_argument("--rotate", type=float, default=0.0, metavar="DEG", help="then turn the hue of the whole image by this much")
     ap.add_argument("--depth", choices=LEVELS, help="deliver the depth image as a RealSense D435i would, at this severity")
     ap.add_argument("--depth-seed", type=int, default=0)
@@ -558,6 +570,7 @@ def main(argv: list[str] | None = None) -> int:
         load_frame(p, there, nominal, cfg, move) for p in sorted(args.frames.glob("seed_*.npz"))
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
     frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
+    frames = [blackened(frame, scene, args.blacken, cfg["black_gain"]) for frame in frames] if args.blacken else frames
     frames = [rotated(frame, args.rotate) for frame in frames] if args.rotate else frames
     frames = still(frames, cfg["still_tolerance"]) if args.still else frames
     frames = conditioned(frames, scene, cfg, args.shift, args.depth, args.depth_seed)
