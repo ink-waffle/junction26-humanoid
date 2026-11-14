@@ -600,3 +600,44 @@ default-hint triangles), 2.1 s faster per pick. It is NOT switched on here: nomi
 70 mm rim is 14–17 mm before arm sag and tilt, fine in sim (0 touches in 36) but thinner than the head calibration
 error on the real robot, and it has never run on the soft-hand sim (queued: s20c). To use it:
 `sequences: [low, organiser]`, `lift_height: 0.08`.
+
+## Sweeps 23d, 23f, 23g: lying prisms, the decision (stock 23d + 23f, soft-hand sim 23g; DR as it comes)
+
+Counted: picks where the prism was lying after the push AND the grasp planned (the push leaves a third of them within
+6 cm of a bin wall or under the shoulder, where nothing plans). Both arms mixed; 23f / 23g: 6 grasps x 2 push
+directions x 8.
+
+| grasp (fingers along the ridge unless noted, grasp point at 0.4 of the ridge height) | stock | soft |
+|---|---|---|
+| thumb swung opposite one finger (`thumb_0` −0.63), squeeze 0.30 | 18/23 (23b 4/5, 23d 4/5, 23f 10/12) | 9/14 |
+| the same, squeeze 0.45 | 6/9 | 11/15 |
+| the same at mid height, 0.30 | 6/10 | |
+| thumb at half swing (−0.315), object midway between thumb and finger (palm z 22 mm), 0.20 / 0.40 | 9/12, 4/10 | 4/14, 6/15 |
+| thumb at half swing, object under the finger (a thumb that stalls halfway), 0.30 | 4/7 | |
+| organiser pinch (`thumb_0` 0), no squeeze | 15/21 (23d 4/7, 23f 11/14) | 0/14 |
+| organiser pinch, squeeze 0.30 | 5/14 | 4/16 |
+| cage ACROSS the ridge, 0.60–0.80 | 12/24 | 0/2 (23a) |
+| unknown-shape cage, default hints (the old fallback) | 5/19 | |
+
+- Along the ridge the grip is two contacts on the vertical end faces; it holds by geometry like a cube pinch but the
+  faces are triangles, so the contacts must be low and opposite each other. Deeper squeezes push the prism out
+  sideways on the stiff hand; the soft hand needs the depth for force (grip signal 0.2–0.45 held).
+- Across the ridge every success is the prism re-seating in the hand (spin 40–170° between close and lift): the
+  sloped faces only hold by friction. The fallback cage succeeds only when its default heading happens to be across
+  the ridge (4/6 there, 0/9 along it: the fingertips straddle the end face, grip signal 0).
+- A thumb that only gets halfway loses about half on the stiff hand and two thirds on the soft one; without
+  `thumb_0` nothing holds on the soft hand. The real hand's `thumb_0` tracking at −0.63 is unverified (one organiser
+  recording stalled at −0.26 when commanded below −0.9): the policy should watch `thumb_0` when it preshapes.
+- Coverage (offline): an arm turns its fingers along the ridge for ridges within ±45° of its natural heading
+  (25° inward), about half at ±60°, almost never beyond: a third of the ridge directions per arm, a sixth with the
+  better arm of the two (ridge roughly along pelvis y), fall through to the cage. `height_frac` 0.4 also plans for
+  the real 39 mm ridge.
+
+Verdict: `candidates.stiff.lying: [ridge_opposed, ridge_pinch, cage_lying]` (18/23 and 15/21 against 5/19 for the old
+fallback); `cage_lying` is marked `last_resort`. The soft list waits for sweep 23h (a thumb stalled at −0.26).
+
+## Sweep 27b: the sideways cage on the soft-hand sim
+
+`cage_side` with the soft closure, DR as it comes: 3.5–4 cm before a bin wall 14/16 (cube 7/8, one not lifted;
+cylinder 7/8, one lost in the lift), middle of the table 8/8; all 22 carried objects out of the hand within the open
+phase; grip signal 0.16–0.24 held, ≤ 0.014 empty. Verdict: `cage_side` stays the last soft candidate (stock: 24/24).
