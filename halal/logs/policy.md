@@ -241,6 +241,7 @@ Caveat: gains fitted to the real finger's free step response; no friction, dead 
 |---|---|---|---|---|---|
 | v8 (2 episodes, stopped) | stiff 4/4: bias 0.0055 rad, lag 0.137–0.149 s | 6/19 | 0.166–0.287 / 0.004–0.005 (threshold 0.02) | 7/8 | pass, 0 clips |
 | v11 | soft 16/16: bias 0.0055, lag 0.126–0.139 | 31/31 (cube 9, cylinder 17, triangle 5) | 0.313–0.567 / – (threshold 0.15) | 31/31, +3.88 ± 0.78 | PASS, 0 clips |
+| v12 | soft 16/16: bias 0.0055, lag 0.130–0.141 | 31/32, the retry sorted the object | 0.314–0.563 / 0.012 (threshold 0.15) | 31/31, +3.88 ± 0.78 | PASS, 0 clips |
 | v11 tree, release check after every shape (4 seeds) | soft | 12/12 in three episodes, then see below | empty hand at the soft grasp posture 0.009–0.013 (13 reads), no positive | 13/15 | pass, 0 clips |
 
 What broke, by cost:
