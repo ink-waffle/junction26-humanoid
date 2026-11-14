@@ -6,6 +6,17 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 10:00
+- **Outage:** the Mac lost its network from about 04:15 to 10:00; every agent stopped and the instance sat idle.
+  Nothing committed was lost; agents are resumed.
+- **Best version so far (fixed task only, 8 seeds, DR, gate PASS on every episode):** our state machine with the
+  `topface` detector: 27/31 objects (87 %), score +3.38 ± 0.70, against the organiser baseline's 13/31 (+1.62).
+  Language legs and the full proxy are running now on all three sims; no current hand-in image yet (the `v0`
+  image predates the detector).
+- **Now:** full three-leg proxy + image of that version (policy); grasp per shape for cylinders and triangles
+  (motion); hand-fit false-acceptance fix and look sequence (perception); fresh blind instruction set; Discord.
+- **Credits:** ~10 h of instance time used, about €173 of €200 left. Verda console state unknown since 02:30.
+
 ### Sat 14.11, 02:40
 - **Best version:** none of ours yet. Floor = organiser baseline (rung 1 only), numbers below.
 - **Now:** five workstreams in parallel, each in its own git worktree (`ws/*` branches) and on its own sim:
@@ -29,6 +40,19 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 Per seed under DR: 2/3, 2/5, 2/4, 3/3, 0/5, 2/4, 1/4, 1/3 (the first two without DR: 3/3, 3/5). 100–200 s of sim
 time per episode. It never reads the instruction, so on `sort_language` it scores about −1 per object whenever the
 mapping differs from the fixed one.
+
+## Sim results of our policy (fixed task, seeds 1000–1007, DR train)
+
+| Version | Objects | Score | Ends | Gate |
+|---|---|---|---|---|
+| organiser baseline (floor) | 13/31 (42 %) | +1.62 ± 0.86 | 8 done | pass |
+| v0: our state machine, organiser detector | 12/31 (39 %) | +1.50 ± 1.23 | 5 done, 3 time limit | pass |
+| v0 + `topface` detector | 27/31 (87 %) | +3.38 ± 0.70 | 8 done | pass |
+| v1: + grasp verification | 27/31 (87 %) | +3.38 ± 0.99 | 8 done | pass |
+| v1 + look pose | 24/31 (77 %) | +3.00 ± 1.12 | 8 done | pass |
+
+The detector is the jump: same policy, 39 % → 87 %. Verification is neutral on score here; the look-pose variant is
+3 objects lower, not yet explained (the sim varies by 1–2 objects run to run).
 
 ## Ideas
 
