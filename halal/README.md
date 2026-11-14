@@ -129,10 +129,15 @@ Instance (one RTX PRO 6000, `ssh` line in `team/SETUP.md`):
 - `bash halal/ops/push.sh` rsyncs the current checkout: `main` → `/data/halal`, branch `ws/<name>` → `/data/wt/<name>`.
 - On the instance: `source <tree>/halal/ops/env.sh <sim tag>` activates the `isaac` env, puts that tree on
   `PYTHONPATH` and points evaluator clients at sim `a`, `b` or `c`.
+- The instance is shared with the team's Spread bot (`/data/spread`, tmux session `spread`): never touch those,
+  never reboot or stop the instance.
 - Sims: `bash /data/halal/halal/ops/sims.sh status | start <tag> | stop <tag>` (DR `train` by default). Each
   workstream uses only the sim it was assigned; long jobs run in `tmux` (session `aalto`, one window per job).
 - Proxy score: `python -m halal.eval.proxy --name <version> --server "python -m halal.server" --trials 8 --sims a --port 81xx`
   (three legs, results under `runs/proxy/`). Single leg: `--legs fixed`. One leg of 8 seeds is 15–25 min.
+- Hand-in image: `bash halal/docker/build.sh <version>` on the instance builds `halal/policy:<version>`;
+  `bash halal/ops/publish.sh <version>` on the Mac copies it over and pushes it to the public package
+  `ghcr.io/<github user>/halal-policy`, printing the `@sha256:` reference for the hand-in form.
 - Frames with ground truth for perception work: `python -m halal.eval.collect_frames --name <set> --seeds 2000 2120`
   → `runs/frames/<set>/seed_*.npz` (`/data/halal/runs/frames/dr_train` holds the first 120).
 

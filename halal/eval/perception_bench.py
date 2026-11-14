@@ -1,6 +1,9 @@
 """Perception benchmark: one detector against privileged ground truth over a collected frame set.
 
     python -m halal.eval.perception_bench --detector baseline --frames runs/frames/dr_train [--split heldout]
+    python -m halal.eval.perception_bench --armless 10      rendered scenes without arms: the hand fit must not be believed
+    --stale   every episode's detector first sees a frame of another episode (a stale first frame must not stick)
+    --looks 2 every frame is shown twice, 0.2 s apart (a robot standing still)
 """
 from __future__ import annotations
 
@@ -8,14 +11,17 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation
 
+from aaltonomous.baselines.classical.mock_world import Renderer
+from aaltonomous.interface import tasks
 from aaltonomous.interface.calibration import Calibration
 from aaltonomous.scene.scene import Scene, shape_polygon
 
@@ -27,6 +33,7 @@ CAMERA = "head"
 SYMMETRY = {"cube": np.pi / 2, "triangle": 2 * np.pi / 3}
 APEX_OFFSET = {"cube": 0.0, "triangle": np.pi / 2}
 SPLITS = ("all", "dev", "heldout")
+LOOK_INTERVAL = 0.2
 Row = dict[str, Any]
 
 
@@ -63,10 +70,13 @@ class Truth:
 class Frame:
     """One recorded observation with its ground truth and the camera that really took it."""
     seed: int
+    tick: int
     obs: dict[str, Any]
     truths: list[Truth]
+    ignored: list[np.ndarray]   # xy of objects that are neither lying still on the counter nor clearly off it
     camera: Pinhole
     dr: dict[str, Any]
+    arms: bool = True           # False: the image shows no robot arm, whatever the joint angles say
 
 
 def sim_camera(nominal: Pinhole, camera_dr: Mapping[str, Any], cfg: Mapping[str, Any]) -> Pinhole:
@@ -108,11 +118,14 @@ def view_class(points: np.ndarray, camera: Pinhole, depth: np.ndarray, cfg: Mapp
     return "hidden" if blocked.mean() > cfg["max_blocked"] else "clear"
 
 
-def on_counter(scene: Scene, centre: np.ndarray, cfg: Mapping[str, float]) -> bool:
-    """True for an object resting on the counter outside every bin."""
-    mat = scene.pelvis_to_mat(centre)
-    resting = abs(mat[2] - scene.object_height() / 2) < cfg["resting_tolerance"]
-    return bool(resting and scene.on_counter(mat) and scene.bin_of(mat) is None)
+def presence(scene: Scene, obj: Mapping[str, Any], cfg: Mapping[str, float]) -> str:
+    """`lying` still on the counter outside every bin, `absent` (in a bin, held up, off the counter) or `unclear`."""
+    mat = scene.pelvis_to_mat(np.asarray(obj["pos"], float))
+    lift = mat[2] - scene.object_height() / 2
+    if not scene.on_counter(mat) or scene.bin_of(mat) is not None or lift > cfg["held_height"]:
+        return "absent"
+    still = obj.get("speed", 0.0) <= scene.cfg["success"]["at_rest_speed"]
+    return "lying" if still and abs(lift) < cfg["resting_tolerance"] else "unclear"
 
 
 def make_truth(obj: Mapping[str, Any], scene: Scene, camera: Pinhole, depth: np.ndarray, cfg: Mapping[str, float]) -> Truth:
@@ -128,12 +141,50 @@ def load_frame(path: Path, scene: Scene, nominal: Pinhole, cfg: Mapping[str, Any
     data = np.load(path)
     meta = json.loads(str(data["meta"]))
     obs = {k: data[k] for k in data.files if k != "meta"}
-    obs.update(arm_dq=np.zeros(14, np.float32), instruction=meta["instruction"], t=0.0)
+    obs.update(arm_dq=np.zeros(14, np.float32), instruction=meta["instruction"], t=float(meta.get("t", 0.0)))
     dr = meta["dr"] or {}
     camera = sim_camera(nominal, dr.get("camera", {}), cfg)
-    truths = [make_truth(o, scene, camera, obs["head_depth"], cfg) for o in meta["objects"]
-              if on_counter(scene, np.asarray(o["pos"], float), cfg)]
-    return Frame(int(meta["seed"]), obs, truths, camera, dr)
+    state = [presence(scene, o, cfg) for o in meta["objects"]]
+    truths = [make_truth(o, scene, camera, obs["head_depth"], cfg) for o, s in zip(meta["objects"], state) if s == "lying"]
+    ignored = [np.asarray(o["pos"][:2], float) for o, s in zip(meta["objects"], state) if s == "unclear"]
+    return Frame(int(meta["seed"]), int(meta.get("tick", 0)), obs, truths, ignored, camera, dr)
+
+
+def armless_frames(scene: Scene, nominal: Pinhole, layouts: int, cfg: Mapping[str, Any]) -> list[Frame]:
+    """Scenes rendered by the organisers' mock world (no arms drawn) under joint angles that put the hands in view."""
+    renderer, rng, frames = Renderer(scene, Calibration.load()), np.random.default_rng(cfg["armless_seed"]), []
+    for i in range(layouts):
+        layout = tasks.sample_layout(rng, shapes=("cube", "cylinder"), **scene.layout_kwargs())
+        objects = [{"name": f"obj_{o['color']}_{o['shape']}_{k}", "color": o["color"], "shape": o["shape"], "speed": 0.0,
+                    "pos": scene.mat_to_pelvis(scene.cube_spawn_mat(o)), "yaw": o["yaw"], "size": scene.size,
+                    "height": scene.object_height(), "quat_xyzw": Rotation.from_euler("z", o["yaw"]).as_quat()}
+                   for k, o in enumerate(layout)]
+        rgb, depth = renderer.render(objects, rng, cfg["armless_depth_noise_mm"])
+        for j, arm_q in enumerate(cfg["armless_arm_q"]):
+            obs = {"head_rgb": rgb, "head_depth": depth, "arm_q": np.asarray(arm_q, np.float32), "hand_q": np.zeros(14, np.float32),
+                   "arm_dq": np.zeros(14, np.float32), "instruction": "", "t": 0.0}
+            truths = [make_truth(o, scene, nominal, depth, cfg) for o in objects]
+            frames.append(Frame(len(cfg["armless_arm_q"]) * i + j, 0, obs, truths, [], nominal, {}, arms=False))
+    return frames
+
+
+def silhouette(scene: Scene, truth: Truth, camera: Pinhole, shape: tuple[int, int]) -> np.ndarray:
+    """Image mask of one lying object: the convex outline of its top and bottom faces through the camera that took the frame."""
+    turn = (truth.yaw or 0.0) - APEX_OFFSET.get(truth.shape, 0.0)
+    outline = truth.top[:2] + shape_polygon(truth.shape, scene.object_dims(truth.shape)["apothem"], turn)
+    corners = np.concatenate([np.c_[outline, np.full(len(outline), z)] for z in (truth.top[2], truth.top[2] - scene.object_height())])
+    hull = cv2.convexHull(np.round(camera.project(corners)[:, :2]).astype(np.int32))
+    return cv2.fillConvexPoly(np.zeros(shape, np.uint8), hull, 1) > 0
+
+
+def repainted(frame: Frame, scene: Scene, turns: Mapping[str, float]) -> Frame:
+    """The frame with every lying object's pixels turned in hue by its colour's angle (deg): the real foam palette in the sim's light."""
+    hsv = cv2.cvtColor(frame.obs["head_rgb"].astype(np.float32) / 255.0, cv2.COLOR_RGB2HSV)
+    for truth in frame.truths:
+        mask = silhouette(scene, truth, frame.camera, hsv.shape[:2])
+        hsv[mask, 0] = (hsv[mask, 0] + turns[truth.color]) % 360.0
+    rgb = np.round(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB) * 255.0).astype(np.uint8)
+    return replace(frame, obs={**frame.obs, "head_rgb": rgb})
 
 
 def in_split(seed: int, split: str, heldout_every: int) -> bool:
@@ -178,32 +229,56 @@ def outcome(frame: Frame, truth: Truth, det: ObjectDetection | None, used: Pinho
     return {"matched": True, "color_ok": det.color == truth.color, "confidence": float(det.confidence),
             "xy_mm": 1e3 * float(np.linalg.norm(error[:2])), "z_mm": 1e3 * float(abs(error[2])),
             "own_xy_mm": 1e3 * float(np.linalg.norm(own[:2])),
-            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape,
+            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape, "visible": float(det.visible),
+            "size_mm": None if det.size is None else 1e3 * float(det.size),
             "yaw_deg": float(np.degrees(yaw_error(truth.shape, det.yaw, truth.yaw))) if has_yaw else None}
 
 
 def score_frame(frame: Frame, dets: Sequence[ObjectDetection], nominal: Pinhole, used: Pinhole,
-                radius: float) -> tuple[list[Row], int]:
-    """One row per ground-truth object plus the number of detections that match none."""
+                radius: float) -> tuple[list[Row], list[float]]:
+    """One row per ground-truth object plus the confidences of the phantoms: detections of nothing that lies there."""
     pairs = match(dets, frame.truths, radius)
     rows = [{**factors(frame, t, nominal), **outcome(frame, t, dets[pairs[i]] if i in pairs else None, used)}
             for i, t in enumerate(frame.truths)]
-    return rows, len(dets) - len(pairs)
+    spare = [d for k, d in enumerate(dets) if k not in pairs.values()]
+    phantoms = [float(d.confidence) for d in spare if all(np.linalg.norm(d.top[:2] - xy) > radius for xy in frame.ignored)]
+    return rows, phantoms
 
 
-def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float) -> tuple[list[Row], int, list[float]]:
-    """Detect every frame with a fresh detector (one frame = one episode); rows, false positives, runtimes in ms."""
-    rows, false_positives, runtimes = [], 0, []
-    for frame in frames:
-        detector: Detector = make_detector(detector_name)
-        start = time.perf_counter()
-        dets = detector.detect(frame.obs)
-        runtimes.append(1e3 * (time.perf_counter() - start))
+@dataclass
+class Run:
+    """Everything one pass of a detector over a frame set produced."""
+    rows: list[Row]
+    phantoms: list[float]
+    runtimes: list[float]
+    sources: list[str]
+    believed_absent_arms: int     # frames without arms in the image whose layout nevertheless came from the hands
+
+
+def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float, looks: int = 1, stale: bool = False) -> Run:
+    """One detector per seed (= one episode), its frames in recording order, as the policy would look; the last look counts."""
+    out = Run([], [], [], [], 0)
+    detectors: dict[int, Detector] = {}
+    ordered = sorted(frames, key=lambda f: (f.seed, f.tick))
+    first = {f.seed: f for f in reversed(ordered)}
+    seeds = sorted(first)
+    for frame in ordered:
+        if frame.seed not in detectors:
+            detectors[frame.seed] = make_detector(detector_name)
+            if stale:
+                detectors[frame.seed].detect(first[seeds[seeds.index(frame.seed) - 1]].obs)
+        detector = detectors[frame.seed]
+        for look in range(looks):
+            start = time.perf_counter()
+            dets = detector.detect({**frame.obs, "t": frame.obs["t"] + LOOK_INTERVAL * look})
+        out.runtimes.append(1e3 * (time.perf_counter() - start))
         used = Pinhole(nominal.K, getattr(detector, "extrinsics", nominal.T))
-        frame_rows, extra = score_frame(frame, dets, nominal, used, radius)
-        rows += frame_rows
-        false_positives += extra
-    return rows, false_positives, runtimes
+        rows, phantoms = score_frame(frame, dets, nominal, used, radius)
+        out.rows += rows
+        out.phantoms += phantoms
+        out.sources.append(detector.layout().source)
+        out.believed_absent_arms += out.sources[-1] == "hands" and not frame.arms
+    return out
 
 
 def spread(values: Sequence[float]) -> dict[str, float]:
@@ -223,13 +298,15 @@ def summarise(rows: Sequence[Row]) -> Row:
     shaped = [r for r in hit if r["det_shape"] is not None]
     turned = [r["yaw_deg"] for r in hit if r["yaw_deg"] is not None]
     wanted = [r for r in hit if r["shape"] in SYMMETRY]
+    sized = [r["size_mm"] for r in hit if r["size_mm"] is not None]
     return {"objects": len(rows), "recall": ratio(len(hit), len(rows)),
             "color_acc": ratio(sum(r["color_ok"] for r in hit), len(hit)),
             "xy_mm": spread([r["xy_mm"] for r in hit]), "z_mm": spread([r["z_mm"] for r in hit]),
             "own_xy_mm": spread([r["own_xy_mm"] for r in hit]), "camera_mm": spread([r["camera_mm"] for r in hit]),
             "shape_decided": ratio(len(shaped), len(hit)),
             "shape_acc": ratio(sum(r["det_shape"] == r["shape"] for r in shaped), len(shaped)),
-            "yaw_decided": ratio(len(turned), len(wanted)), "yaw_deg": spread(turned)}
+            "yaw_decided": ratio(len(turned), len(wanted)), "yaw_deg": spread(turned),
+            "size_decided": ratio(len(sized), len(hit)), "size_mm": spread(sized)}
 
 
 def confusion(rows: Sequence[Row]) -> dict[str, dict[str, int]]:
@@ -268,13 +345,26 @@ def breakdowns(rows: Sequence[Row], cfg: Mapping[str, Any]) -> dict[str, dict[st
     return out
 
 
-def report(rows: Sequence[Row], false_positives: int, runtimes: Sequence[float], cfg: Mapping[str, Any]) -> Row:
-    overall = summarise(rows)
-    detections = sum(r["matched"] for r in rows) + false_positives
-    overall.update(frames=len(runtimes), detections=detections, false_positives=false_positives,
-                   precision=ratio(detections - false_positives, detections),
-                   nominal_camera_mm=spread([r["nominal_camera_mm"] for r in rows]), runtime_ms=spread(runtimes))
-    return {"overall": overall, "confusion": confusion(rows), "breakdowns": breakdowns(rows, cfg)}
+def confidence_table(rows: Sequence[Row], phantoms: Sequence[float], cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Confidence histograms of right-colour, wrong-colour and phantom detections, and what each threshold keeps."""
+    groups = {"right colour": [r["confidence"] for r in rows if r["matched"] and r["color_ok"]],
+              "wrong colour": [r["confidence"] for r in rows if r["matched"] and not r["color_ok"]], "phantom": list(phantoms)}
+    edges = [0.0, *cfg["confidence_edges"], 1.0 + 1e-9]
+    histogram = {g: np.histogram(v, edges)[0].tolist() for g, v in groups.items()}
+    kept = {str(t): {g: int(np.sum(np.asarray(v) >= t)) for g, v in groups.items()} for t in cfg["decision_thresholds"]}
+    return {"edges": edges[:-1], "histogram": histogram, "kept": kept, "totals": {g: len(v) for g, v in groups.items()}}
+
+
+def report(result: Run, cfg: Mapping[str, Any]) -> Row:
+    overall = summarise(result.rows)
+    detections = sum(r["matched"] for r in result.rows) + len(result.phantoms)
+    overall.update(frames=len(result.runtimes), detections=detections, false_positives=len(result.phantoms),
+                   precision=ratio(detections - len(result.phantoms), detections),
+                   nominal_camera_mm=spread([r["nominal_camera_mm"] for r in result.rows]), runtime_ms=spread(result.runtimes),
+                   sources={s: result.sources.count(s) for s in sorted(set(result.sources))},
+                   believed_absent_arms=result.believed_absent_arms)
+    return {"overall": overall, "confusion": confusion(result.rows), "breakdowns": breakdowns(result.rows, cfg),
+            "confidence": confidence_table(result.rows, result.phantoms, cfg)}
 
 
 def line(label: str, s: Row) -> str:
@@ -297,8 +387,16 @@ def render(title: str, result: Row) -> str:
         s = o[key]
         out.append(f"{unit:<30} mean {s['mean']:6.1f}  median {s['median']:6.1f}  p95 {s['p95']:6.1f}  max {s['max']:6.1f}")
     out.append(f"shape decided {o['shape_decided']:.3f}  correct of decided {o['shape_acc']:.3f}  yaw decided {o['yaw_decided']:.3f}")
+    out.append(f"size reported {o['size_decided']:.3f}  median {o['size_mm']['median']:.2f} mm  max {o['size_mm']['max']:.2f} mm")
     out.append("shape confusion (true -> detected): " + "; ".join(
         f"{t}: " + " ".join(f"{d} {n}" for d, n in row.items() if n) for t, row in result["confusion"].items()))
+    out.append("layout source per frame: " + ", ".join(f"{s} {n}" for s, n in o["sources"].items())
+               + f"; hand fit believed although no arm is in the image: {o['believed_absent_arms']}")
+    c = result["confidence"]
+    out.append("confidence from " + " ".join(f"{e:.1f}" for e in c["edges"]) + ": " + "; ".join(
+        f"{g} {h}" for g, h in c["histogram"].items()))
+    out += [f"  acting at confidence >= {t}: " + ", ".join(f"{g} {n}/{c['totals'][g]}" for g, n in k.items())
+            for t, k in c["kept"].items()]
     out += ["", head, line("all", o)]
     for name, groups in result["breakdowns"].items():
         out += [f"by {name}"] + [line("  " + g, s) for g, s in groups.items()]
@@ -308,22 +406,29 @@ def render(title: str, result: Row) -> str:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--detector", default=config.load()["perception"]["detector"])
-    ap.add_argument("--frames", type=Path, required=True)
+    source = ap.add_mutually_exclusive_group(required=True)
+    source.add_argument("--frames", type=Path)
+    source.add_argument("--armless", type=int, metavar="LAYOUTS")
     ap.add_argument("--split", choices=SPLITS, default="all")
+    ap.add_argument("--looks", type=int, default=1, help="show every frame this many times, 0.2 s apart (a robot standing still)")
+    ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
+    ap.add_argument("--repaint", action="store_true", help="turn the objects' hues to the real foam palette (bench.repaint_deg)")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
     cfg = config.load()["perception"]["bench"]
     head = Calibration.load().cams[CAMERA]
     nominal = Pinhole(head.K, head.T_pelvis_optical)
-    frames = [load_frame(p, Scene.load(), nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
-              if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
-    rows, false_positives, runtimes = run(args.detector, frames, nominal, cfg["match_radius"])
-    result = report(rows, false_positives, runtimes, cfg)
-    print(render(f"{args.detector} on {args.frames.name} [{args.split}]", result))
+    scene, label = Scene.load(), args.frames.name if args.frames else "armless"
+    frames = armless_frames(scene, nominal, args.armless, cfg) if args.armless else [
+        load_frame(p, scene, nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
+        if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
+    frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
+    passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
+    result = report(passed, cfg)
+    print(render(f"{args.detector} on {label} [{args.split}]", result))
     args.out.mkdir(parents=True, exist_ok=True)
-    name = f"{args.detector}_{args.frames.name}_{args.split}.json"
-    (args.out / name).write_text(json.dumps({**result, "rows": rows}, indent=1))
+    (args.out / f"{args.detector}_{label}_{args.split}.json").write_text(json.dumps({**result, "rows": passed.rows}, indent=1))
     return 0
 
 

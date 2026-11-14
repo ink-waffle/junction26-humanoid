@@ -1,4 +1,4 @@
-"""Instruction -> mapping: which objects (by colour, shape or both) go to which bin; parsers sit behind one interface."""
+"""Instruction -> mapping: which objects (by colour, shape or both) go to which bin; parsers share one interface."""
 from __future__ import annotations
 
 from dataclasses import dataclass

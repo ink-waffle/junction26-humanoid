@@ -8,6 +8,16 @@ SHAPES = ("cube", "cylinder", "triangle")
 BINS = ("left", "center", "right")
 DEFAULT_KEY = "default"
 
+# Perception tells three colour families apart; each lists its hues (sim red / real orange, sim blue / real purple).
+COLOUR_FAMILIES: dict[str, dict[str, str]] = {
+    "red": {"red": "red reds reddish crimson scarlet ruby maroon vermilion",
+            "orange": "orange oranges orangey orangish tangerine"},
+    "yellow": {"yellow": "yellow yellows yellowish golden gold lemon"},
+    "blue": {"blue": "blue blu blues bluish navy azure cobalt indigo",
+             "purple": "purple purples purplish violet lilac lavender mauve"},
+}
+HUES = {word: hue for hues in COLOUR_FAMILIES.values() for hue, words in hues.items() for word in words.split()}
+
 
 class Tag(Enum):
     """Role a token plays in a sorting instruction."""
@@ -24,11 +34,12 @@ class Tag(Enum):
     VOID = auto()            # "empty", "unused"
     RESPECTIVELY = auto()
     PRONOUN = auto()
-    ADD = auto()             # "too", "as well", "same for"
-    UNIVERSAL = auto()       # "regardless of colour", "whatever its shape"
+    ADD = auto()             # "too", "as well"; value "same" for "the same holds for ..." (covers its sentence)
+    UNIVERSAL = auto()       # "regardless of colour"; value "aside" for "whether it is a cube or a cylinder"
     SAME = auto()            # "the same bin", "the opposite side"; value: same | opposite
     COMPANION = auto()       # "blue goes with yellow", "red joins blue"
     CORRECTION = auto()      # "sorry, I meant", "actually", "make that"
+    EXCLUSIVE = auto()       # "each colour gets its own bin", "one colour per bin"
     ORDINAL = auto()         # value: rank counted along the row of bins
     BREAK = auto()           # sentence boundary
     COMMA = auto()
@@ -49,7 +60,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
     **_entries(Tag.FILL, {"": (
         "the a an of this that some both either several many few two three four five six my your its their our "
         "small little big large tiny coloured colored shaped sized light dark bright pale plain wooden plastic "
-        "printed correct proper appropriate corresponding respective matching designated own orange identical far "
+        "printed correct proper appropriate corresponding respective matching designated own identical far "
         "near outer extreme furthest farthest very most just only simply always now please kindly finally lastly "
         "next again robot table counter desk workspace scene mat view perspective row line number nr what who "
         "instead there here way exactly single whole entire together respect regardless irrespective "
@@ -85,19 +96,18 @@ WORDS: dict[str, tuple[Tag, str]] = {
         "sides receptacle receptacles tub tubs bowl bowls compartment compartments slot slots spot position "
         "location area zone pile")}),
     **_entries(Tag.COLOUR, {
-        "red": "red reds reddish crimson scarlet ruby maroon vermilion",
-        "yellow": "yellow yellows yellowish golden gold lemon",
-        "blue": "blue blu blues bluish navy azure cobalt indigo",
-        "": "green purple pink black white grey gray brown violet magenta cyan turquoise teal silver beige"}),
+        **{family: " ".join(hues.values()) for family, hues in COLOUR_FAMILIES.items()},
+        "": ("green pink black white grey gray brown magenta fuchsia amber peach coral salmon cyan turquoise teal "
+             "silver beige")}),
     **_entries(Tag.SHAPE, {
         "cube": "cube cubes cubic cubical cuboid cuboids square squares squared",
         "cylinder": ("cylinder cylinders cylindrical round rounded circular circle circles disc discs disk disks "
                      "cans tube tubes puck pucks"),
         "triangle": "triangle triangles triangular prism prisms wedge wedges pyramid pyramids"}),
     **_entries(Tag.BIN, {
-        "left": "left lef leftmost lefthand leftward lhs",
-        "center": "center centre central middle mid midmost centermost",
-        "right": "right rightmost righthand rightward rhs"}),
+        "left": "left lef leftmost lefthand lhs",
+        "center": "center centre central middle mid midmost centermost ahead",
+        "right": "right rightmost righthand rhs"}),
     **_entries(Tag.REST, {"": "rest remaining remainder other others leftover leftovers otherwise else"}),
     **_entries(Tag.ALL, {"": "everything anything all every each any whatever whichever everyone"}),
     **_entries(Tag.NOT, {
@@ -110,10 +120,11 @@ WORDS: dict[str, tuple[Tag, str]] = {
                     "omit neglect disregard"),
         "backward": "stay stays staying remain remains untouched unmoved unsorted"}),
     **_entries(Tag.VOID, {"": "empty unused vacant"}),
-    **_entries(Tag.RESPECTIVELY, {"": "respectively correspondingly"}),
+    **_entries(Tag.RESPECTIVELY, {"": "respectively correspondingly order ordering sequence successively"}),
     **_entries(Tag.PRONOUN, {"": "them they those these it which"}),
     **_entries(Tag.ADD, {"": "too also likewise ditto similarly"}),
     **_entries(Tag.SAME, {"same": "same", "opposite": "opposite"}),
+    **_entries(Tag.UNIVERSAL, {"aside": "whether"}),
     **_entries(Tag.COMPANION, {"": "with alongside join joins accompany accompanies where wherever"}),
     **_entries(Tag.ORDINAL, {"1": "first 1st", "2": "second 2nd", "3": "third 3rd last"}),
     **_entries(Tag.AND, {"": "and or nor plus then & / +"}),
@@ -150,16 +161,19 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("in", "the", "same", "order"): (Tag.RESPECTIVELY, ""),
     ("in", "order"): (Tag.RESPECTIVELY, ""),
     ("in", "turn"): (Tag.RESPECTIVELY, ""),
+    ("in", "order", "to"): (Tag.LINK, ""),
+    ("any", "order"): (Tag.FILL, ""),
+    ("particular", "order"): (Tag.FILL, ""),
     ("as", "well", "as"): (Tag.AND, ""),
     ("along", "with"): (Tag.AND, ""),
     ("together", "with"): (Tag.AND, ""),
     ("as", "well"): (Tag.ADD, ""),
     ("so", "do"): (Tag.ADD, ""),
     ("so", "does"): (Tag.ADD, ""),
-    ("same", "for"): (Tag.ADD, ""),
-    ("same", "goes", "for"): (Tag.ADD, ""),
-    ("same", "applies", "to"): (Tag.ADD, ""),
-    ("same", "with"): (Tag.ADD, ""),
+    **{phrase: (Tag.ADD, "same") for phrase in (
+        ("same", "for"), ("same", "goes", "for"), ("same", "applies", "to"), ("same", "with"), ("same", "holds", "for"),
+        ("same", "is", "true", "for"), ("same", "thing", "for"), ("same", "thing", "with"), ("likewise", "for"),
+        ("likewise", "with"), ("similarly", "for"), ("similarly", "with"))},
     ("followed", "by"): (Tag.AND, ""),
     ("after", "that"): (Tag.AND, ""),
     ("make", "that"): (Tag.CORRECTION, ""),
@@ -177,6 +191,10 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("rather", "than"): (Tag.EXCEPT, ""),
     ("anywhere", "but"): (Tag.EXCEPT, ""),
     ("everywhere", "but"): (Tag.EXCEPT, ""),
+    **{phrase: (Tag.BIN, "center") for phrase in (
+        ("straight", "ahead"), ("directly", "ahead"), ("right", "ahead"), ("dead", "ahead"), ("in", "front"),
+        ("directly", "in", "front"), ("right", "in", "front"), ("straight", "in", "front"), ("facing", "you"),
+        ("facing", "the", "robot"), ("in", "front", "of", "you"), ("in", "front", "of", "the", "robot"))},
     ("left", "most"): (Tag.BIN, "left"),
     ("left", "hand"): (Tag.BIN, "left"),
     ("right", "most"): (Tag.BIN, "right"),
@@ -184,8 +202,14 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("stay", "put"): (Tag.LEAVE, "backward"),
     ("stays", "put"): (Tag.LEAVE, "backward"),
     ("three", "sided"): (Tag.SHAPE, "triangle"),
+    **{(adjective, noun): (Tag.SHAPE, "triangle")
+       for adjective in ("triangular", "triangle") for noun in ("prism", "prisms")},
     ("point", "of", "view"): (Tag.FILL, ""),
     ("regardless", "of"): (Tag.UNIVERSAL, ""),
+    ("regardless", "of", "whether"): (Tag.UNIVERSAL, "aside"),
+    ("no", "matter", "whether"): (Tag.UNIVERSAL, "aside"),
+    ("no", "matter", "if"): (Tag.UNIVERSAL, "aside"),
+    ("be", "it"): (Tag.UNIVERSAL, "aside"),
     ("irrespective", "of"): (Tag.UNIVERSAL, ""),
     ("no", "matter"): (Tag.UNIVERSAL, ""),
     ("whatever", "its"): (Tag.UNIVERSAL, ""),
@@ -195,31 +219,57 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
        for preposition in ("of", "in") for quantifier in ("any", "every", "all", "whatever", "whichever")
        for noun in ("colour", "colours", "color", "colors", "shape", "shapes")},
     ("make", "sure"): (Tag.LINK, ""),
+    ("its", "own"): (Tag.EXCLUSIVE, ""),
+    ("their", "own"): (Tag.EXCLUSIVE, ""),
+    ("a", "different"): (Tag.EXCLUSIVE, ""),
+    ("different", "bins"): (Tag.EXCLUSIVE, ""),
+    ("separate", "bins"): (Tag.EXCLUSIVE, ""),
+    ("one", "colour", "per"): (Tag.EXCLUSIVE, ""),
+    ("one", "color", "per"): (Tag.EXCLUSIVE, ""),
+    ("nowhere", "but"): (Tag.LINK, ""),
+    ("nowhere", "except"): (Tag.LINK, ""),
+    ("nowhere", "else", "but"): (Tag.LINK, ""),
+    ("nowhere", "other", "than"): (Tag.LINK, ""),
+    ("nothing", "but"): (Tag.FILL, ""),
+    ("nothing", "except"): (Tag.FILL, ""),
+    ("nothing", "other", "than"): (Tag.FILL, ""),
 }
 MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 
 # Typo correction is limited to these words; common English words one edit away from them are never corrected.
-FUZZY_TARGETS = ("yellow", "blue", "cube", "cubes", "cylinder", "cylinders", "triangle", "triangles", "triangular",
-                 "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
+FUZZY_TARGETS = ("yellow", "blue", "orange", "purple", "cube", "cubes", "cylinder", "cylinders", "triangle",
+                 "triangles", "triangular", "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
 NOT_TYPOS = frozenset(
-    "lift loft heft deft weft cleft lefty lefts lent lest glue clue blur flue blued bluer cure cute lube "
-    "rube cubs cubed curb night light might sight tight fight eight bright fright wright rights righty bight "
-    "fellow mellow bellow yellowy enter centers centres centred centered canter renter meddle muddle riddle "
-    "fiddle middles strangle triangled tubes cures".split())
+    "aright bellow bight blued bluer blur calender canter censer centers centred centres cinder cleft clue "
+    "colander cuba cubed cubs cure cures cute deft diddle eight enter fellow fiddle fight flue fright glue "
+    "grange heft leftist lefts lefty lent lest loft lube meddle mellow middles muddle night piddle range renter "
+    "riddle rightist righto rights righty rube sight tangle tenter tight tingle triage triangled triangulate weft "
+    "wright yellowy".split())
 
 NUMBERS = {"1": 1, "2": 2, "3": 3, "one": 1, "two": 2, "three": 3}
+LETTER_BINS = {"l": "left", "m": "center", "c": "center", "r": "right"}
 RELATIVE_PRONOUNS = frozenset({"that", "which", "who"})
 WH_WORDS = frozenset({"what", "whatever", "that", "which", "whichever"})
 NOUN_FILLERS = frozenset({"the", "of", "a", "an", "coloured", "colored", "shaped", "sized"})
 SURFACES = frozenset({"table", "counter", "desk", "place", "workspace", "mat", "surface", "tabletop"})
 ROW_STARTERS = frozenset("start starting begin beginning counting going reading moving numbered ordered".split())
 ROW_JOINERS = frozenset({"to", "through", "till", "until", "→", ":"})
+EGOCENTRIC = frozenset({"ahead", "front", "facing"})        # words of the phrases that place the center bin by gaze
+CORRECT_NOUNS = frozenset("place places spot spots position positions location locations way order destination "
+                          "destinations target targets".split())
+ROW_HEADINGS = {"rightward": "left", "rightwards": "left", "leftward": "right", "leftwards": "right"}
+ROW_LEADS = frozenset({"first", "one", "1", "1st"})
+ROW_EQUATES = frozenset({"as", "is", "being", "means", "=", "number", "bin", "the"})
 TRAVEL_WORDS = frozenset("going moving walking travelling traveling proceeding heading working sweeping scanning "
                          "counting reading stepping running".split())
 NAMING_WORDS = frozenset("call called name named label labelled labeled denote denoted letter lettered".split())
 DEFINING_WORDS = frozenset({"=", ":", "is", "means", "denotes", "marks"})
 COLOUR_EMOJI = {"🔴": "red", "🟥": "red", "❤": "red", "🟡": "yellow", "🟨": "yellow", "💛": "yellow",
-                "🔵": "blue", "🟦": "blue", "💙": "blue"}
+                "🔵": "blue", "🟦": "blue", "💙": "blue", "🟠": "orange", "🟧": "orange", "🧡": "orange",
+                "🟣": "purple", "🟪": "purple", "💜": "purple"}
+BIN_COVERINGS = frozenset("tape taped duct cardboard wrapping".split())       # what a bin's colour is said of
+INDEFINITE = frozenset({"a", "an", "each", "every", "any", "one"})
+PLACING = frozenset({"on", "to", "at", "in"})                   # open a position after a noun: "the box on the left"
 STAY_WORDS = frozenset({"alone", "untouched", "behind", "out", "unsorted", "unmoved", "there", "where", "as"})
 INTENSIFIED = frozenset({"away", "now", "here", "after", "before"})
 PRONOUN_QUANTIFIERS = frozenset({"everything", "anything", "all", "everyone", "whatever"})

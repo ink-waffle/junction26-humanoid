@@ -6,7 +6,8 @@ from enum import Enum, auto
 from typing import Iterable, Union
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (DEFAULT_KEY, NOUN_FILLERS, PRONOUN_QUANTIFIERS, RELATIVE_PRONOUNS, Tag)
+from halal.language.grammar.lexicon import (DEFAULT_KEY, HUES, NOUN_FILLERS, PRONOUN_QUANTIFIERS, RELATIVE_PRONOUNS,
+                                            Tag)
 from halal.language.grammar.tokens import Issue, Token
 
 _NOUN_TAGS = frozenset({Tag.ALL, Tag.REST, Tag.COLOUR, Tag.SHAPE, Tag.OBJECT})
@@ -38,13 +39,15 @@ class ObjectMention:
     end: int
     colour: str | None = None
     shape: str | None = None
+    hue: str = ""                   # the colour as worded: "orange" is a hue of the red family, "purple" of the blue
     scope: Scope = Scope.PLAIN
     negated: Negation = Negation.NONE
-    known: bool = True              # False for a colour the scene does not have
+    known: bool = True              # False for a colour the scene lacks, or a group named in passing ("whether ...")
     headless: bool = False          # bare colour adjective that may share a later noun: "red and blue cubes"
     pronoun: str = ""               # the pronoun text while it still awaits its antecedent
     leave: bool = False             # the instruction says not to move these
     add: bool = False               # an additive cue stands next to it: "blue too", "same for blue"
+    same: bool = False              # "the same holds for ..." opens its sentence: "yellow and the center bin" is a pair
     universal: bool = False         # "regardless of colour", "whatever its shape" stands next to it
     corrects: bool = False          # follows "sorry, I meant" / "actually": replaces what was said before
     sentence: int = 0
@@ -115,6 +118,7 @@ def gap_between(tokens: list[Token], left: Mention, right: Mention) -> Gap:
 def find_mentions(tokens: list[Token]) -> list[Mention]:
     """Object and bin mentions in text order, with pronouns resolved and operator scopes applied."""
     mentions = _chunk(tokens)
+    _soften_generic_right(mentions, tokens)
     _retag_punctuation(mentions, tokens)
     _share_heads(mentions, tokens)
     mentions = _resolve_pronouns(mentions, tokens)
@@ -123,7 +127,7 @@ def find_mentions(tokens: list[Token]) -> list[Mention]:
             _OPERATORS[token.tag](mentions, tokens, position)
     _mark_cues(mentions, tokens)
     _mark_sentences(mentions, tokens)
-    _read_cubes_as_objects(mentions)
+    _read_cubes_as_objects(mentions, tokens)
     return mentions
 
 
@@ -158,15 +162,36 @@ def _bin_noun_end(tokens: list[Token], position: int) -> int:
     return position
 
 
+def _soften_generic_right(mentions: list[Mention], tokens: list[Token]) -> None:
+    """'Put the objects in the right bin: ...' names no objects of its own, so 'right' may just mean 'correct'."""
+    described = {index for mention in mentions if isinstance(mention, ObjectMention)
+                 for index in range(mention.start, mention.end)}
+    for mention in mentions:
+        if isinstance(mention, BinMention) and tokens[mention.start].text == "right":
+            start = mention.start
+            while start > 0 and tokens[start - 1].tag not in (Tag.BREAK, Tag.COMMA, Tag.ARROW, Tag.CLAUSE):
+                start -= 1
+            clause = range(start, mention.start)
+            nouns = [index for index in clause if tokens[index].tag is Tag.OBJECT]
+            placed = nouns and any(tokens[index].value == "directional" for index in range(nouns[-1], mention.start))
+            mention.optional = mention.optional or bool(placed and described.isdisjoint(clause))
+
+
 def _retag_punctuation(mentions: list[Mention], tokens: list[Token]) -> None:
-    """':' and '?' right after a mention pair it with what follows; elsewhere they end an introduction."""
-    inside = {index for mention in mentions for index in range(mention.start, mention.end)}
+    """':' and '?' after a mention pair it with what follows, elsewhere they end an introduction; 'red/left' pairs."""
+    owner = {index: mention for mention in mentions for index in range(mention.start, mention.end)}
     for index, token in enumerate(tokens):
         if token.text in (":", "?"):
             before = index - 1
             while before >= 0 and tokens[before].tag is Tag.COMMA:
                 before -= 1
-            token.tag = Tag.ARROW if before in inside else Tag.BREAK
+            token.tag = Tag.ARROW if before in owner else Tag.BREAK
+        elif token.text == "/":
+            after = index + 1
+            while after < len(tokens) and tokens[after].tag is Tag.FILL:
+                after += 1
+            if index - 1 in owner and after in owner and not _same_kind(owner[index - 1], owner[after]):
+                token.tag = Tag.ARROW
 
 
 def _issues(tokens: list[Token]) -> tuple[Issue, ...]:
@@ -225,8 +250,8 @@ def _noun_phrase(tokens: list[Token], start: int, end: int) -> list[Mention]:
         return _quantifier_phrase(tokens, start, end, scope)
     headless = not shapes and all(token.tag is not Tag.OBJECT for token in span)
     return [ObjectMention(start, end, colour.value or None if colour else None, shape.value if shape else None,
-                          scope, _negated_property(span), known=colour is None or bool(colour.value),
-                          headless=headless, issues=_issues(span))
+                          HUES.get(colour.text, "") if colour else "", scope, _negated_property(span),
+                          known=colour is None or bool(colour.value), headless=headless, issues=_issues(span))
             for colour in colours or [None] for shape in shapes or [None]]
 
 
@@ -423,7 +448,7 @@ def _apply_except(mentions: list[Mention], tokens: list[Token], position: int) -
     for index in _forward_target(mentions, tokens, position, frozenset({Tag.BREAK})):
         mention = mentions[index]
         if isinstance(mention, BinMention):
-            mention.negated = True
+            mention.negated = not mention.negated       # "must not go anywhere except the left bin" is positive
         elif mention.negated is Negation.NONE:
             mention.negated = Negation.WHOLE
 
@@ -446,8 +471,12 @@ def _apply_universal(mentions: list[Mention], tokens: list[Token], position: int
     objects = [i for i, mention in enumerate(mentions) if isinstance(mention, ObjectMention)]
     before = [i for i in objects if mentions[i].end <= position and same_sentence(mentions[i].end, position)]
     after = [i for i in objects if mentions[i].start > position and same_sentence(position, mentions[i].start)]
-    for index in _run_back(mentions, tokens, before[-1]) if before else _list_run(mentions, tokens, after[0]) if after else []:
+    forward = _list_run(mentions, tokens, after[0]) if after else []
+    for index in _run_back(mentions, tokens, before[-1]) if before else forward:
         mentions[index].universal = True
+    if tokens[position].value == "aside":
+        for index in _forward_target(mentions, tokens, position, _NOT_TRANSPARENT):
+            mentions[index].known = False
 
 
 def _apply_correction(mentions: list[Mention], tokens: list[Token], position: int) -> None:
@@ -467,7 +496,7 @@ _OPERATORS = {Tag.LEAVE: _apply_leave, Tag.NOT: _apply_not, Tag.EXCEPT: _apply_e
 
 # ---------------------------------------------------------------- cues
 def _mark_cues(mentions: list[Mention], tokens: list[Token]) -> None:
-    """Flag object mentions with 'too', 'as well', 'same for' beside them in their own clause."""
+    """Flag object mentions with 'too' / 'as well' in their clause or 'the same holds for' earlier in their sentence."""
     boundaries = (Tag.BREAK, Tag.COMMA, Tag.CLAUSE)
     for index, mention in enumerate(mentions):
         if not isinstance(mention, ObjectMention):
@@ -477,6 +506,8 @@ def _mark_cues(mentions: list[Mention], tokens: list[Token]) -> None:
         before = _until_boundary(reversed(tokens[low:mention.start]), boundaries)
         after = _until_boundary(tokens[mention.end:high], boundaries)
         mention.add = any(token.tag is Tag.ADD for token in before + after)
+        sentence = _until_boundary(reversed(tokens[:mention.start]), (Tag.BREAK,))
+        mention.same = any(token.tag is Tag.ADD and token.value == "same" for token in sentence)
 
 
 def _mark_sentences(mentions: list[Mention], tokens: list[Token]) -> None:
@@ -506,13 +537,18 @@ def _until_boundary(tokens: Iterable[Token], boundaries: tuple[Tag, ...]) -> lis
     return kept
 
 
-def _read_cubes_as_objects(mentions: list[Mention]) -> None:
-    """'red cubes left, blue cubes right' with no other shape or rest clause: 'cubes' is the generic noun."""
+def _read_cubes_as_objects(mentions: list[Mention], tokens: list[Token]) -> None:
+    """'red cubes left, blue cubes right', 'red cube left, yellow middle': 'cube' is generic; 'the red cube' is not."""
     objects = [m for m in mentions if isinstance(m, ObjectMention) and m.known]
     shaped = [m for m in objects if m.shape]
     contrast = any(m.shape != "cube" or not m.colour or m.negated is not Negation.NONE for m in shaped)
     has_rest_clause = any(m.scope is Scope.REST for m in objects)
-    if contrast or has_rest_clause or len({m.colour for m in shaped}) < 2:
+    elliptic = [m for m in objects if m.colour and not m.shape]
+    named_objects = any(not m.headless for m in elliptic)       # "yellow objects" beside "red cubes" is a contrast
+    plural = any(token.tag is Tag.SHAPE and token.text.endswith("s") for m in shaped for token in tokens[m.start:m.end])
+    if not shaped or contrast or has_rest_clause or named_objects or not (plural or elliptic):
+        return
+    if len({m.colour for m in shaped + elliptic}) < 2:
         return
     for mention in shaped:
         mention.shape = None

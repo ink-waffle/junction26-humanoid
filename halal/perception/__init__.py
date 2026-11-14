@@ -18,9 +18,10 @@ class ObjectDetection:
     top: np.ndarray
     shape: str | None = None    # None = not classified
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown
-    confidence: float = 1.0     # probability that this is a real object with this colour and shape
+    confidence: float = 1.0     # how sure the colour is (0..1); the pose rests on `visible`, the shape is None when unsure
     pixels: int = 0
     visible: float = 1.0        # fraction of the top face the camera saw; low = centre and yaw rest on little evidence
+    size: float | None = None   # height = edge length (m) the depth image shows; None = not measured, take the scene file's
 
 
 @dataclass(frozen=True, eq=False)
@@ -28,7 +29,7 @@ class SceneLayout:
     """Where the fixed scene parts are this episode (pelvis frame, m); scene-file values until perception knows better."""
     counter_z: float                    # counter height under the middle of the object band
     bins: Mapping[str, np.ndarray]      # "left" | "center" | "right" -> centre xy of the bin footprint
-    source: str                         # "scene": the file's values (camera anchored to them or nothing better) | "hands": as seen
+    source: str                         # "scene": the file's, camera anchored to them | "hands": as seen | "nominal": the file's, unchecked
 
 
 class Detector(Protocol):

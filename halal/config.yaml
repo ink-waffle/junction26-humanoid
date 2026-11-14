@@ -6,7 +6,7 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 perception:
   detector: topface           # key of halal.perception.DETECTORS
   calibration:                # head camera pose per episode (halal.perception.calibration)
-    agree_within: 0.010       # scene-anchored and hand-given pose this close at the object band: the scene file is believed
+    agree_within: 0.025       # hands and scene anchor this close at the object band: the scene file is believed (see log)
     max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
@@ -32,6 +32,15 @@ perception:
       min_agreement: 0.8      # fraction of the observed profile the best shift must explain
     hands:                    # own forearms and hands against their kinematic model -> camera pose in the arm frame
       gates: [0.04, 0.03, 0.02, 0.012, 0.008, 0.008]   # match distance of the successive iterations
+      starts:                 # camera shifts the descent is started from, in turn, while the result covers too little of the model
+        - [0.0, 0.0, 0.0]
+        - [0.015, 0.0, 0.0]
+        - [-0.015, 0.0, 0.0]
+        - [0.0, 0.015, 0.0]
+        - [0.0, -0.015, 0.0]
+        - [0.0, 0.0, 0.015]
+        - [0.0, 0.0, -0.015]
+      settled_coverage: 0.8   # a result with depth on this share of the visible model needs no further start
       min_points: 300
       min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible
       cell_px: 6              # image cell in which only the nearest model points are kept (self-occlusion)
@@ -39,13 +48,18 @@ perception:
       border_px: 25           # model points this close to the image edge may have their true match outside it
       pad_px: 50
       pixel_step: 2
-      floor_clearance: 0.015  # depth points this close to the counter plane are not hand
+      open_curl: 0.5          # rad: with index or middle fingers bent further the finger links are left out of the model
+      floor_clearance: 0.065  # only depth this far above the counter is arm evidence: nothing lying on it reaches there
       prior_turn_deg: 3.0     # how far the camera may plausibly be from the pose it starts at
       prior_shift: 0.02
       noise: 0.003            # point-to-surface error of one match ...
       independent_points: 50  # ... of which this many are worth as independent (model errors are systematic)
-      max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted
-      max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band
+      max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted,
+      max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band,
+      min_coverage: 0.5       # nor one with depth on less than this share of the visible model (it matched something else),
+      min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
+      max_turn_deg: 6.0       # nor one that moves the camera further than a head calibration can be wrong
+      max_shift: 0.05
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
@@ -59,40 +73,61 @@ perception:
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
   topface:                    # halal.perception.detectors.topface
+    arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
+    still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
+    still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
+    still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm
     depth_median: 3           # median filter on the depth image before anything else, px
     workspace_x: [0.12, 0.75] # objects are looked for on the counter inside this pelvis-frame box ...
     workspace_y_half: 0.50    # ... and outside the bin footprints
     bin_margin: 0.008         # points this close to a bin footprint are not objects on the counter
     min_separation: 0.03      # two fits closer than this are one object
+    window_px: 80             # half side of the image window that holds everything of one object
     min_support_px: 40        # object pixels needed to name a colour
     overhang_band: [0.008, 0.035]   # above the object top: where a bin rim or a wall would stand, a hovering thumb does not
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
     min_confidence: 0.05      # detections below this are dropped
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
+    min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
+    size_range: [0.045, 0.055]   # object heights (= edge lengths) looked for; real foam cubes measure 0.046 in drop 2
+    size_snap: 0.0025         # a top this close to the scene file's object height IS that height (sim reads 0.0439 for 0.045)
+    min_size_visible: 0.3     # top-face fraction that must be seen before `size` is reported, or an unexpected size believed at all
+    straggler:                # coloured blobs on the counter that no top-face fit explains: toppled objects
+      heights: [0.010, 0.060] # above the counter
+      claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
+      min_px: 300
+      max_extent: 0.09        # a longer blob is no single object (a wall, an arm)
+    wall_guard:               # while the scene has not anchored the camera: bin footprints are guesses, walls reach the candidates
+      min_level: 0.7          # |cos| of a fit's top cells against the counter normal: wall faces <= 0.61, 99.5 % of top faces >= 0.8
+      min_depth: 0.004        # thickness (std) in plan view a straggler needs: wall slivers 0.001 median, toppled objects 0.0077
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
-    score_range: [0.0, 0.2]   # outline fit score (fraction of the outline seen minus contradicted) mapped to confidence 0..1
     seed:
-      height_band: 0.006      # top-face pixels: this close to the object height above the counter
+      height_band: 0.006      # top-face pixels: no further than this outside the size range, above the counter
       open_px: 3
       min_px: 60
+      claim_radius: 0.034     # top-height pixels this close to a fitted centre belong to that object, not to a further one
     outline:
       cell: 0.001             # top-plane grid pitch
       view_cells: 112         # evidence grid side (even)
       outline_cells: 70       # outline mask side (even): covers the cube diagonal
       depth_tolerance: 0.004  # along the ray: nearer than this to the top plane counts as top face
       coarse_yaw_deg: 6       # yaw step of the half-resolution search, refined to 1 deg
+      max_per_view: 3         # objects extracted from one view (touching objects share a blob)
+      min_score: 0.02         # outline score (share of its area) the first object of a view needs ...
+      min_next_score: 0.15    # ... and every further one: leftovers of the first must not become objects
       refine_cells: 3
       support_coverage: 0.99  # outline mask value above which a seen top-face cell counts as support
     color:
-      window_px: 80           # half side of the image window searched for an object's pixels
       body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
       body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
-      basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, in which a colour is trusted
-        red: [335, 15]
-        yellow: [42, 90]
-        blue: [195, 250]
-      taper_deg: 6            # confidence falls to 0 this far outside a basin: orange (18..36) is nobody's
+      own_share: 0.5          # with this share of the pixels in one family, only they are sampled: a saturated neighbour's edge must not name a pale object
+      basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, of the three colour families
+        red: [335, 33]        # sim red -14..+20 and real orange foam 19..31 (the box tape, 1..28, and sim bins, 24, are in here too)
+        yellow: [39, 110]     # sim yellow 44..60; real yellow foam 41 (shaded) .. 98 (washed-out top)
+        blue: [195, 280]      # sim blue 200..234; real purple foam 217..225 lit, to 266 on shaded faces
+      taper_deg: 6            # confidence falls to 0 this far outside a basin: 36 deg is half red, half yellow
+      min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
@@ -100,6 +135,17 @@ perception:
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
     heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
     resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
+    held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
+    confidence_edges: [0.2, 0.34, 0.5, 0.8]
+    repaint_deg: {red: 25, yellow: 4, blue: -7}   # --repaint: hue turns that take sim red, yellow, blue (0, 51, 227) to real orange, yellow, purple (25, 55, 220)
+    decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
+    armless_seed: 7
+    armless_depth_noise_mm: 1.0
+    armless_arm_q:            # no arm is drawn; FK of these puts the hands over the band, at home, low, and out of view
+      - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      - [0.0, 0.35, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, -0.35, 0.0, -0.5, 0.0, 0.0, 0.0]
+      - [0.0, 0.1, 0.0, -0.15, 0.0, 0.0, 0.0, 0.0, -0.1, 0.0, -0.15, 0.0, 0.0, 0.0]
+      - [0.0, 0.65, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0, -0.65, -0.5, -0.5, 0.0, 0.0, 0.0]
     min_inside: 0.9           # top-face fraction inside the image, below it the view is `border`
     occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`
@@ -172,3 +218,52 @@ grasp_bench:
   dr_corners:                 # `dr: <name>` keeps seeds whose scales for every placed object lie in these ranges
     hard: {friction: [0.0, 0.82], mass: [1.2, 9.0]}      # slippery and heavy
     sticky: {friction: [1.0, 9.0], mass: [0.0, 1.0]}     # grippy and light: objects do not slide into place
+
+policy:
+  counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
+  bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
+  time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
+  time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
+  chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
+  hold_ticks: 10              # ticks per reply while the planner works
+  start_settle_s: 0.5         # hold before the first look: frames rendered before the episode's reset must have gone by
+  settle_s: 0.3               # hold after every motion before the head image is used
+  max_attempts: 5             # picks started on one spot before the object is left alone
+  retry_offsets: [[0.0, 0.0], [0.005, 0.0], [-0.005, 0.0], [0.0, 0.005], [0.0, -0.005]]   # pelvis xy added to the grasp point on the n-th pick of an object
+  blob_attempts: 3            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
+  replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
+  same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  neighbour_radius: 0.09      # an object with another one this close is picked after the free-standing ones (a grasp knocked over a neighbour at 7.5 cm)
+  displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
+  start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
+  empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
+  empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
+  min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
+  clear_view_pose: look_arm_q # key of `motion`: arm pose with nothing between the head camera and the counter
+  min_detection_confidence: 0.5   # colour certainty: 1.0 inside a hue basin, 0 from 6 degrees outside
+  min_instruction_confidence: 0.5
+  release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
+    left: [[0.0, -0.02], [0.0, 0.045]]    # sideways only, 65 mm apart: the staggered release lands objects up to 8 cm ahead, 5 cm outward
+    center: [[0.0, -0.03], [0.0, 0.03]]
+    right: [[0.0, 0.02], [0.0, -0.045]]
+  grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
+  grip_joints: [1, 3, 5]      # joints the grip score sums, each hand's own order: thumb_1 and both finger_0 (thumb_2 sits on its limit)
+  grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
+  grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
+    stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
+    soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
+    unknown: 0.02             # no calibration close, no empty-hand error to subtract: a real empty hand then reads 0.06-0.12 = held (6 s lost), a full hand is never dropped
+  release_check_after: [unknown]   # detected shapes (unknown = none) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
+  release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
+  release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
+  reopen_pause_s: 0.3         # a hand found full reopens thumb and one finger first, rests this long, then the last finger
+  grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
+  calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
+  calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish
+  calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
+  stiff_hand_bias: 0.002      # mean steady error (rad) under which a hand is the stiff sim kind (sim 0.0001, soft-hand sim 0.0055, real 0.02-0.04)
+  stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
+  calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
+  transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
+  background_nice: 10         # niceness of the planning thread (Linux)
+  gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often

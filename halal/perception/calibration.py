@@ -1,4 +1,4 @@
-"""Head camera pose per episode: the robot's own hands tie it to the arm frame, counter plane and bin walls to the scene file."""
+"""Head camera pose: the robot's own hands tie it to the arm frame, counter plane and bin walls to the scene file."""
 from __future__ import annotations
 
 import logging
@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from aaltonomous.scene.scene import Scene
 
@@ -18,9 +19,8 @@ LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CameraFit:
-    """The camera to deproject with, the counter plane in its frame, and what fixed the pose."""
+    """The camera to deproject with and what fixed its pose."""
     camera: Camera
-    counter: PlaneFit
     source: str             # "scene": counter and bins stand where the scene file says | "hands" | "nominal"
 
 
@@ -39,19 +39,25 @@ class SelfCalibration:
         corners = [scene.mat_to_pelvis([x, y, scene.object_height() / 2]) for x in region[0] for y in region[1]]
         self.band = np.array([*corners, np.mean(corners, axis=0)])   # object band corners and, last, its centre
 
-    def fit(self, depth: np.ndarray, nominal: Camera, arm_q: np.ndarray, hand_q: np.ndarray) -> CameraFit:
-        """Pose and counter plane for this look; every stage that fails its checks leaves the decision to the next."""
-        floor = self._counter(depth, nominal)
-        by_scene = self._anchored(depth, nominal, floor) if floor else None
-        by_hands = self._by_hands(depth, nominal, arm_q, hand_q, floor)
-        if by_scene is not None and (by_hands is None or self._apart(by_scene, by_hands) <= self.cfg["agree_within"]):
-            camera, source = by_scene, "scene"
-        elif by_hands is not None:
-            camera, source = by_hands, "hands"
+    def decide(self, nominal: Camera, by_scene: Camera | None, by_hands: Camera | None) -> CameraFit:
+        """The scene anchor unless the hands contradict it by more than `agree_within`; then the hands; with neither, nominal."""
+        apart = self._apart(by_scene, by_hands) if by_scene and by_hands else None
+        if by_scene is not None and (apart is None or apart <= self.cfg["agree_within"]):
+            fit = CameraFit(by_scene, "scene")
         else:
-            camera, source = nominal, "nominal"
-        LOG.info("head camera fixed by %s (scene fit %s, hand fit %s)", source, by_scene is not None, by_hands is not None)
-        return CameraFit(camera, self.counter(depth, camera), source)
+            fit = CameraFit(by_hands, "hands") if by_hands is not None else CameraFit(nominal, "nominal")
+        LOG.debug("head camera by %s: scene anchor %s, arms %s, apart %s", fit.source, "fits" if by_scene else "does not fit",
+                  "seen" if by_hands else "not seen", "n/a" if apart is None else f"{1e3 * apart:.1f} mm")
+        return fit
+
+    def scene_anchor(self, depth: np.ndarray, nominal: Camera) -> Camera | None:
+        """The pose that makes the counter level at its scene height and puts the bin row where the scene file has it."""
+        floor = self._counter(depth, nominal)
+        return self._anchored(depth, nominal, floor) if floor else None
+
+    def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray]) -> Camera | None:
+        """The pose that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
+        return self._by_hands(depth, nominal, joints, self._counter(depth, nominal))
 
     def counter(self, depth: np.ndarray, camera: Camera) -> PlaneFit:
         """The counter plane as this camera sees it now; the scene file's level plane when it cannot be fitted."""
@@ -72,15 +78,22 @@ class SelfCalibration:
         plane = fit_plane(points[near], c["tolerances"])
         return plane if plane.inliers >= c["min_points"] and plane.rms <= c["max_rms"] else None
 
-    def _by_hands(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray, floor: PlaneFit | None) -> Camera | None:
-        """The pose that puts the seen arms on their kinematic model, if enough of them is seen to trust it."""
+    def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> Camera | None:
         c = self.cfg["hands"]
-        fit = self.hands.fit(depth, camera, arm_q, hand_q, floor, self.band[-1])
-        trusted = fit is not None and fit.rms <= c["max_rms"] and fit.spread.max() <= c["max_spread"]
+        fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
+        if fit is None:
+            LOG.info("arms: too little of them in view")
+            return None
+        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ camera.T[:3, :3].T).as_rotvec()))
+        shift = np.linalg.norm(fit.camera.T[:3, 3] - camera.T[:3, 3])
+        trusted = (fit.rms <= c["max_rms"] and fit.spread.max() <= c["max_spread"] and fit.coverage >= c["min_coverage"]
+                   and fit.inliers >= c["min_inliers"] and turn <= c["max_turn_deg"] and shift <= c["max_shift"])
+        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f, pixels on model %.2f, spread %.1f mm, camera moved %.1f deg %.1f mm: %s",
+                 fit.points, 1e3 * fit.rms, fit.coverage, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
+                 "trusted" if trusted else "rejected")
         return fit.camera if trusted else None
 
     def _anchored(self, depth: np.ndarray, camera: Camera, floor: PlaneFit) -> Camera | None:
-        """The pose that makes the counter level at its scene height and puts the bin row where the scene file has it."""
         levelled = self._level(camera, floor)
         squared = self._square(depth, levelled) if levelled else None
         slide = self._slide(depth, squared) if squared else None

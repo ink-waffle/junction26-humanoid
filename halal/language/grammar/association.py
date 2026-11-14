@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import DEFAULT_KEY, Tag
+from halal.language.grammar.lexicon import COLOURS, DEFAULT_KEY, SHAPES, Tag
 from halal.language.grammar.mentions import BinMention, Gap, Mention, Negation, ObjectMention, Scope, gap_between
 from halal.language.grammar.tokens import Issue, Token
 
@@ -30,16 +30,16 @@ class Reading:
     """A segmentation of the mention sequence into units and unpaired mentions."""
     units: tuple[Unit, ...] = ()
     unpaired: tuple[int, ...] = ()
-    cost: float = 0.0
+    cost: float = 0.0            # what the units cost; loose ends are charged once the whole meaning is known
+    bound: float = 0.0           # cost plus the search's estimate for the loose ends, used to rank partial readings
 
 
 @dataclass(frozen=True)
 class _Move:
-    """One way to consume mentions from a position: the units it adds, what it leaves unpaired, its cost."""
+    """One way to consume mentions from a position: the units it adds and their cost."""
     end: int
-    units: tuple[Unit, ...] = ()
-    unpaired: tuple[int, ...] = ()
-    cost: float = 0.0
+    units: tuple[Unit, ...]
+    cost: float
 
 
 @dataclass
@@ -49,26 +49,49 @@ class _Sequence:
     gaps: list[Gap]                  # gaps[i] stands between mentions i and i + 1
     cued: list[bool]                 # mention i shares a sentence with "respectively"
     turns: list[bool] = field(init=False)        # turns[i]: mentions i and i + 1 are of different kinds
+    plain_pairs: list[bool] = field(init=False)  # plain_pairs[i]: mentions i, i + 1 form a plain "red in the left bin"
     moves: dict[tuple[int, str | None], list[_Move]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         kinds = [isinstance(mention, ObjectMention) for mention in self.mentions]
         self.turns = [a != b for a, b in zip(kinds, kinds[1:])]
+        self.plain_pairs = [_opens_plain_pair(self, index) for index in range(len(self.mentions))]
 
 
 def candidate_readings(mentions: list[Mention], tokens: list[Token]) -> list[Reading]:
-    """Readings of the whole sequence, cheapest first by the costs known before interpretation."""
+    """Complete readings worth interpreting, from a search that forgives loose ends and one that does not."""
     sequence = _Sequence(mentions, [gap_between(tokens, a, b) for a, b in zip(mentions, mentions[1:])],
                          _cued(mentions, tokens))
-    frontier: list[list[Reading]] = [[] for _ in range(len(mentions) + 1)]
+    found = _search(sequence, forgiving=True) + _search(sequence, forgiving=False)
+    return list({(reading.units, reading.unpaired): reading for reading in found}.values())
+
+
+def _search(sequence: _Sequence, forgiving: bool) -> list[Reading]:
+    """Beam search over segmentations; `forgiving` assumes unpaired mentions will turn out settled elsewhere."""
+    count = len(sequence.mentions)
+    width = max(2, tuning.BEAM_WIDTH * tuning.BEAM_FULL_UNTIL // max(count, tuning.BEAM_FULL_UNTIL))
+    frontier: list[list[Reading]] = [[] for _ in range(count + 1)]
     frontier[0].append(Reading())
-    for start in range(len(mentions)):
-        for partial in sorted(frontier[start], key=lambda reading: reading.cost)[:tuning.BEAM_WIDTH]:
+    for start in range(count):
+        skip = _skip_charges(sequence, start, forgiving)
+        for partial in sorted(frontier[start], key=lambda reading: reading.bound)[:width]:
+            frontier[start + 1].append(Reading(partial.units, partial.unpaired + (start,), partial.cost + skip[0],
+                                               partial.bound + skip[1]))
             for move in _moves(sequence, start, _previous_bin(partial)):
-                frontier[move.end].append(Reading(partial.units + move.units, partial.unpaired + move.unpaired,
-                                                  partial.cost + move.cost))
-            frontier[start + 1] += _amended(partial, mentions[start], start)
-    return sorted(frontier[-1], key=lambda reading: reading.cost)[:tuning.MAX_CANDIDATES]
+                frontier[move.end].append(Reading(partial.units + move.units, partial.unpaired,
+                                                  partial.cost + move.cost, partial.bound + move.cost))
+            frontier[start + 1] += _amended(partial, sequence.mentions[start], start)
+    return sorted(frontier[-1], key=lambda reading: reading.bound)[:tuning.MAX_CANDIDATES]
+
+
+def _skip_charges(sequence: _Sequence, index: int, forgiving: bool) -> tuple[float, float]:
+    """(cost, bound) added by leaving a mention unpaired: skipping a plain pair always costs, the rest is estimated."""
+    mention = sequence.mentions[index]
+    if mention.soft:
+        return 0.0, 0.0
+    cost = tuning.SKIPPED_PAIR - tuning.REDUNDANT if sequence.plain_pairs[index] else 0.0
+    worst = tuning.UNPAIRED_OBJECT if isinstance(mention, ObjectMention) else tuning.UNPAIRED_BIN
+    return cost, cost + (tuning.REDUNDANT if forgiving else worst)
 
 
 def _cued(mentions: list[Mention], tokens: list[Token]) -> list[bool]:
@@ -79,21 +102,18 @@ def _cued(mentions: list[Mention], tokens: list[Token]) -> list[bool]:
         sentence_of.append(sentence)
         if token.tag is Tag.RESPECTIVELY:
             cued_sentences.add(sentence)
-    return [sentence_of[mention.start] in cued_sentences for mention in mentions]
+    with_mentions = {sentence_of[mention.start] for mention in mentions}
+    everywhere = bool(cued_sentences - with_mentions)       # a cue on its own ("Same order.") covers the whole text
+    return [everywhere or sentence_of[mention.start] in cued_sentences for mention in mentions]
 
 
 def _moves(sequence: _Sequence, start: int, previous_bin: str | None) -> list[_Move]:
-    """Ways to consume the mention at `start`: leave it unpaired, attach it to the last bin, or open a unit."""
+    """Ways to pair the mention at `start`: attach it to the last bin, send it with a companion, or open a unit."""
     key = (start, previous_bin)
     if key not in sequence.moves:
-        mention = sequence.mentions[start]
-        plain_pair = not mention.soft and _opens_plain_pair(sequence, start)
-        skipped = 0.0 if mention.soft else tuning.SKIPPED_PAIR if plain_pair else tuning.REDUNDANT
-        singles = [_attached(mention, start, previous_bin), _companion(sequence, start)]
-        moves = [_Move(start + 1, unpaired=(start,), cost=skipped)]
-        moves += [_Move(start + 1, (unit,), cost=unit.cost) for unit in singles if unit]
-        moves += _unit_moves(sequence, start, previous_bin)
-        sequence.moves[key] = moves
+        singles = [_attached(sequence.mentions[start], start, previous_bin), _companion(sequence, start)]
+        moves = [_Move(start + 1, (unit,), unit.cost) for unit in singles if unit]
+        sequence.moves[key] = moves + _unit_moves(sequence, start, previous_bin)
     return sequence.moves[key]
 
 
@@ -110,7 +130,7 @@ def _unit_moves(sequence: _Sequence, start: int, previous_bin: str | None) -> li
         unit = _unit(sequence, start, end, previous_bin)
         nested = _nested_units(sequence, start, end, previous_bin)
         for units in ([(unit,)] if unit else []) + nested:
-            moves.append(_Move(end, units, cost=sum(u.cost for u in units) + boundary))
+            moves.append(_Move(end, units, sum(u.cost for u in units) + boundary))
     return moves
 
 
@@ -125,11 +145,12 @@ def _attached(mention: Mention, index: int, previous_bin: str | None) -> Unit | 
 def _opens_plain_pair(sequence: _Sequence, start: int) -> bool:
     """Mentions start, start + 1 are a self-contained 'red in the left bin', not items of longer lists."""
     mentions, gaps, turns = sequence.mentions, sequence.gaps, sequence.turns
-    if start + 1 >= len(mentions) or not turns[start] or mentions[start + 1].soft:
+    if start + 1 >= len(mentions) or not turns[start] or mentions[start].soft or mentions[start + 1].soft:
         return False
     listed_before = start > 0 and not turns[start - 1] and gaps[start - 1].list_like
     listed_after = start + 2 < len(mentions) and not turns[start + 1] and gaps[start + 1].list_like
-    plain = _transition_charge(gaps[start], isinstance(mentions[start], BinMention))[0] == 0
+    same_cue = any(isinstance(mention, ObjectMention) and mention.same for mention in mentions[start:start + 2])
+    plain = _transition_charge(gaps[start], isinstance(mentions[start], BinMention), same_cue)[0] == 0
     return plain and not listed_before and not listed_after
 
 
@@ -171,7 +192,8 @@ def _amended(partial: Reading, mention: Mention, index: int) -> list[Reading]:
     note = Issue("a self-correction replaced part of the previous assignment", tuning.F_CORRECTED)
     change = {"objects": (index,)} if isinstance(mention, ObjectMention) else {"bins": (mention.position,)}
     unit = replace(last, cost=last.cost + tuning.AMENDED, issues=last.issues + (note,), corrects=True, **change)
-    return [Reading(partial.units[:-1] + (unit,), partial.unpaired, partial.cost + tuning.AMENDED)]
+    return [Reading(partial.units[:-1] + (unit,), partial.unpaired, partial.cost + tuning.AMENDED,
+                    partial.bound + tuning.AMENDED)]
 
 
 def _previous_bin(partial: Reading) -> str | None:
@@ -197,7 +219,7 @@ def _unit(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -
     positions = [_position(mention, previous_bin) for mention in bins]
     allowed = _unique(p for p, mention in zip(positions, bins) if not mention.negated)
     forbidden = _unique(p for p, mention in zip(positions, bins) if mention.negated)
-    broken = any(sequence.gaps[i].has(Tag.BREAK) for i in range(start, end - 1) if i != turn)
+    broken = any(_breaks_list(sequence, i) for i in range(start, end - 1) if i != turn)
     if None in positions or broken or (len(allowed) > 1 and forbidden):
         return None
     if len(allowed) > 1 and len(allowed) != len(objects):
@@ -205,6 +227,12 @@ def _unit(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -
         return Unit(objects, (), cost=tuning.UNDECIDED, issues=(note,))
     cost, issues = _unit_cost(sequence, start, end, turn, len(allowed) > 1)
     return Unit(objects, allowed, forbidden, cost, issues, corrects=any(mention.corrects for mention in members))
+
+
+def _breaks_list(sequence: _Sequence, index: int) -> bool:
+    """No list runs across a sentence break; no list of object groups runs across a colon or arrow."""
+    gap = sequence.gaps[index]
+    return gap.has(Tag.BREAK) or (gap.has(Tag.ARROW) and isinstance(sequence.mentions[index], ObjectMention))
 
 
 def _position(mention: BinMention, previous_bin: str | None) -> str | None:
@@ -224,13 +252,35 @@ def _unit_cost(sequence: _Sequence, start: int, end: int, turn: int,
     """Cost of reading mentions [start, end) as one unit, with the doubts that cost stands for."""
     members = sequence.mentions[start:end]
     charges = [_run_charge(sequence, i) for i in range(start, end - 1) if i != turn]
-    charges.append(_transition_charge(sequence.gaps[turn], isinstance(members[0], BinMention)))
-    if distributes and not any(sequence.cued[start:end]):
+    objects = [mention for mention in members if isinstance(mention, ObjectMention)]
+    cued = any(sequence.cued[start:end])
+    charges.append(_transition_charge(sequence.gaps[turn], isinstance(members[0], BinMention),
+                                      any(mention.same for mention in objects), distributes and cued))
+    if distributes and not cued:
         charges.append((tuning.DISTRIBUTION, Issue("lists paired in order without 'respectively'",
                                                    tuning.F_DISTRIBUTION)))
-    charges.append(_object_charge([m for m in members if isinstance(m, ObjectMention)]))
+    if cued and not distributes and len({mention.key for mention in objects}) > 1:
+        charges.append((tuning.ORDER_IGNORED, Issue("the text asks for an order, yet a whole list goes to one bin",
+                                                    tuning.F_ORDER_IGNORED)))
+    collective = sequence.gaps[turn].has(Tag.ALL) or any(mention.scope is Scope.ALL for mention in objects)
+    plainly_stated = isinstance(members[0], ObjectMention) and _links_plainly(sequence.gaps[turn])
+    if not distributes and not collective and not plainly_stated and _names_whole_set(objects):
+        charges.append((tuning.WHOLE_SET_ONE_BIN, Issue("every colour (or shape) is listed for one bin without 'all'",
+                                                        tuning.F_WHOLE_SET_ONE_BIN)))
+    charges.append(_object_charge(objects))
     cost = sum(charge for charge, _ in charges)
     return cost, tuple(dict.fromkeys(issue for _, issue in charges if issue))
+
+
+def _links_plainly(gap: Gap) -> bool:
+    """Only a known verb or preposition stands in the gap: 'red, yellow and blue objects go in the left bin'."""
+    return gap.has(Tag.LINK) and not gap.separated and not gap.has(Tag.ARROW, Tag.OTHER)
+
+
+def _names_whole_set(objects: list[ObjectMention]) -> bool:
+    """The list names all three colours or all three shapes, one item each."""
+    keys = {mention.key for mention in objects if mention.negated is Negation.NONE}
+    return keys >= set(COLOURS) or keys >= set(SHAPES)
 
 
 def _run_charge(sequence: _Sequence, index: int) -> tuple[float, Issue | None]:
@@ -249,11 +299,13 @@ def _run_charge(sequence: _Sequence, index: int) -> tuple[float, Issue | None]:
     return tuning.RUN_MIXED, Issue("a list is interrupted by other words", tuning.F_RUN_MIXED)
 
 
-def _transition_charge(gap: Gap, bin_first: bool) -> tuple[float, Issue | None]:
+def _transition_charge(gap: Gap, bin_first: bool, same_cue: bool = False,
+                       ordered_lists: bool = False) -> tuple[float, Issue | None]:
     """Objects and their bin are normally joined by a verb, preposition or arrow, not split by punctuation."""
-    linked = gap.has(Tag.LINK, Tag.ARROW, Tag.NOT, Tag.LEAVE, Tag.COMPANION)
+    linked = gap.has(Tag.LINK, Tag.ARROW, Tag.NOT, Tag.LEAVE, Tag.COMPANION) or same_cue
     if gap.has(Tag.BREAK):
-        return tuning.ACROSS_BREAK, Issue("objects and bin stand in different sentences", tuning.F_ACROSS_BREAK)
+        doubt = Issue("objects and bin stand in different sentences", tuning.F_ACROSS_BREAK)
+        return tuning.ACROSS_BREAK, None if ordered_lists else doubt
     if gap.has(Tag.CLAUSE):
         return tuning.ACROSS_CLAUSE, Issue("objects and bin stand on two sides of 'but'", tuning.F_ACROSS_CLAUSE)
     if gap.has(Tag.AND) and not linked:

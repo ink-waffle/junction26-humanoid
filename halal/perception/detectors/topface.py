@@ -1,6 +1,7 @@
 """Depth-first detector: calibrated camera, top faces at object height, outline fit for shape, yaw and centre."""
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 import cv2
@@ -13,8 +14,11 @@ from halal.perception import ObjectDetection, SceneLayout, scene_layout
 from halal.perception.bins import BinFinder
 from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier
-from halal.perception.geometry import Camera, PlaneFit
+from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
 from halal.perception.shapes import OutlineFitter, TopFace
+
+
+LOG = logging.getLogger(__name__)
 
 
 class TopFaceDetector:
@@ -30,14 +34,22 @@ class TopFaceDetector:
         self.fitter = OutlineFitter(self.scene, self.cfg["outline"])
         self.colors = ColorClassifier(self.cfg["color"])
         self.band_centre = self.calibration.band[-1, :2]
-        self.pose: CameraFit | None = None
+        self.pose = CameraFit(self.nominal, "nominal")
         self.seen = scene_layout(self.scene)
+        self._forget()
+
+    def _forget(self) -> None:
+        """Drop what earlier looks established: a new episode has its own camera pose and scene."""
+        self.anchor: Camera | None = None
+        self.arms: Camera | None = None
+        self.arm_attempts = 0
         self.last_t = -np.inf
+        self.last_joints: np.ndarray | None = None
 
     @property
     def extrinsics(self) -> np.ndarray:
-        """`T_pelvis_optical` in use: the episode's calibrated pose once there is one, else nominal."""
-        return (self.pose.camera if self.pose else self.nominal).T
+        """`T_pelvis_optical` used at the last look."""
+        return self.pose.camera.T
 
     def layout(self) -> SceneLayout:
         return self.seen
@@ -46,36 +58,52 @@ class TopFaceDetector:
         depth, rgb = obs["head_depth"], obs["head_rgb"]
         if not depth.any():
             return []
-        camera = self._camera(obs)
+        anchor, arms = self._references(obs)
+        pose = self.calibration.decide(self.nominal, anchor or self.anchor, arms)
+        if pose.source != self.pose.source:
+            LOG.info("head camera now fixed by %s (was %s)", pose.source, self.pose.source)
+        self.pose, camera = pose, pose.camera
         counter = self.calibration.counter(depth, camera)
         self.seen = self._layout(depth, camera, counter)
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
-        seeds = self._seeds(cloud, height, counter)
-        faces = self._distinct([self.fitter.fit(depth, camera, seed, counter) for seed in seeds])
+        free = self._on_counter(cloud)
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
-        found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
-        return [d for d in found if d.confidence >= self.cfg["min_confidence"]]
+        faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
+        found = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains) for face in faces]
+        found += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
+        found = [d for d in found if d.confidence >= self.cfg["min_confidence"]]
+        if found:
+            self.anchor, self.arms = anchor or self.anchor, arms
+        return found
 
-    def _camera(self, obs: Mapping[str, Any]) -> Camera:
-        """The episode's camera pose: fitted at the first look that allows it, nominal until then."""
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, Camera | None]:
+        """This look's scene anchor, and the arm pose: the episode's once a look with objects kept one, else a new attempt."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
-            self.pose = None
-        self.last_t = t
-        if self.pose is None:
-            fit = self.calibration.fit(obs["head_depth"], self.nominal, obs["arm_q"], obs["hand_q"])
-            if fit.source == "nominal":
-                return fit.camera
-            self.pose = fit
-        return self.pose.camera
+            self._forget()
+        still = self._still(obs, t)
+        anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
+        if self.arms is not None or not still or self.arm_attempts >= self.cfg["arm_attempts"]:
+            return anchor, self.arms
+        self.arm_attempts += 1
+        return anchor, self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+
+    def _still(self, obs: Mapping[str, Any], t: float) -> bool:
+        """True when arms and fingers stand where an earlier look of this episode saw them: their image shows the joints."""
+        joints = np.r_[obs["arm_q"], obs["hand_q"]]
+        waited = t - self.last_t >= self.cfg["still_time"]
+        same = self.last_joints is not None and np.abs(joints - self.last_joints).max() < self.cfg["still_tolerance"]
+        if waited or self.last_joints is None:
+            self.last_t, self.last_joints = t, joints
+        return bool(waited and same and np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"])
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
         """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
-        if self.pose is None or self.pose.source == "scene":
-            return scene_layout(self.scene)
-        return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), self.pose.source)
+        if self.pose.source != "hands":
+            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source)
+        return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), "hands")
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
@@ -86,14 +114,81 @@ class TopFaceDetector:
             ok &= ~np.all(np.abs(cloud[..., :2] - centre) < half, axis=-1)
         return ok
 
-    def _seeds(self, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
-        """Rough top-plane centres of blobs at object-top height on the counter."""
-        c, tall = self.cfg["seed"], self.scene.object_height()
-        top = (np.abs(height - tall) < c["height_band"]) & self._on_counter(cloud)
-        mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, np.ones((c["open_px"], c["open_px"]), np.uint8))
+    def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
+               counter: PlaneFit, rgb: np.ndarray, gains: np.ndarray) -> list[TopFace]:
+        """Top faces of all objects: per colour first (touching objects of two colours part there), then what is left."""
+        c, (small, large) = self.cfg["seed"], self.cfg["size_range"]
+        top = (height > small - c["height_band"]) & (height < large + c["height_band"]) & free
+        kernel = np.ones((c["open_px"], c["open_px"]), np.uint8)
+        mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+        colour = np.full(mask.shape, -1, np.int8)
+        colour[mask > 0] = self.colors.pixel_classes(rgb[mask > 0], gains)
+        faces: list[TopFace] = []
+        for index in range(len(self.cfg["color"]["basins"])):
+            own = cv2.morphologyEx((colour == index).astype(np.uint8), cv2.MORPH_OPEN, kernel)
+            rival = (colour >= 0) & (colour != index)
+            faces += [face for seed in self._seeds(own, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter, rival)]
+        faces = self._distinct(faces)
+        for face in faces:
+            window = self._window(face, camera)
+            mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
+        rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
+        return self._distinct(faces + rest)
+
+    def _unanchored(self) -> bool:
+        """True when the scene did not fix the camera: bin footprints are then guesses and walls can reach the candidates."""
+        return self.pose.source != "scene"
+
+    def _level(self, face: TopFace, cloud: np.ndarray, counter: PlaneFit) -> bool:
+        """False for a fit whose top cells form no level patch (a wall face); only judged while the camera is unanchored."""
+        if not self._unanchored():
+            return True
+        inside = np.all((face.pixels >= 0) & (face.pixels < cloud.shape[1::-1]), axis=1)
+        points = cloud[face.pixels[inside, 1], face.pixels[inside, 0]]
+        points = points[np.isfinite(points).all(axis=1)]
+        return len(points) >= 3 and levelness(points, counter.normal) >= self.cfg["wall_guard"]["min_level"]
+
+    def _window(self, face: TopFace, camera: Camera) -> tuple[slice, slice]:
+        """Image rows and columns that contain everything of the object at the fitted centre."""
+        reach = self.cfg["window_px"]
+        u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
+        return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
+
+    def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
+                    rgb: np.ndarray, gains: np.ndarray) -> list[ObjectDetection]:
+        """Coloured blobs standing on the counter that no top-face fit explains (toppled objects): colour and a rough centre."""
+        c = self.cfg["straggler"]
+        mask = ((height > c["heights"][0]) & (height < c["heights"][1]) & free).astype(np.uint8)
+        for face in faces:
+            window = self._window(face, camera)
+            mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
+        coloured = np.zeros_like(mask)
+        coloured[mask > 0] = self.colors.pixel_classes(rgb[mask > 0], gains) >= 0
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(cv2.morphologyEx(coloured, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)))
+        found = []
+        for i in range(1, count):
+            points = cloud[labels == i]
+            if stats[i, cv2.CC_STAT_AREA] < c["min_px"] or np.ptp(points[:, :2], axis=0).max() > c["max_extent"]:
+                continue
+            if self._unanchored() and plan_depth(points) < self.cfg["wall_guard"]["min_depth"]:
+                continue
+            color, confidence = self.colors.classify(rgb[labels == i], gains)
+            found.append(ObjectDetection(color=color, top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=confidence,
+                                         pixels=int(stats[i, cv2.CC_STAT_AREA]), visible=0.0))
+        return found
+
+    def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
+        """Rough centres of the blobs left in the top-height mask, each on the top plane of an object as tall as the blob lies."""
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= c["min_px"]]
-        return [blob - (counter.height(blob) - tall) * counter.normal for blob in blobs]
+        blobs = [cloud[labels == i] for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= self.cfg["seed"]["min_px"]]
+        centres = [np.nanmean(blob, axis=0) for blob in blobs]
+        talls = [float(np.nanmedian(counter.height(blob))) for blob in blobs]
+        return [centre - (counter.height(centre) - self._tall(tall)) * counter.normal for centre, tall in zip(centres, talls)]
+
+    def _tall(self, measured: float) -> float:
+        """Object height to work with: the scene file's unless the measured one clearly differs, kept inside the size range."""
+        scene = self.scene.object_height()
+        return scene if abs(measured - scene) < self.cfg["size_snap"] else float(np.clip(measured, *self.cfg["size_range"]))
 
     def _distinct(self, faces: list[TopFace]) -> list[TopFace]:
         """Drop fits that landed on an object another, better seen, fit already explains."""
@@ -108,27 +203,26 @@ class TopFaceDetector:
         c = self.cfg["color"]
         return (np.abs(height) < c["mat_band"]) & (cloud[..., 0] > c["mat_x_range"][0]) & (cloud[..., 0] < c["mat_x_range"][1])
 
-    def _body(self, face: TopFace, camera: Camera, rgb: np.ndarray, cloud: np.ndarray, height: np.ndarray) -> tuple[np.ndarray, int]:
+    def _body(self, face: TopFace, camera: Camera, rgb: np.ndarray, cloud: np.ndarray, height: np.ndarray,
+              counter: PlaneFit) -> tuple[np.ndarray, int]:
         """Colours of the pixels on the object (footprint, counter to top) and how many pixels stand just above its top."""
-        c = self.cfg["color"]
-        u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
-        rows = slice(max(v - c["window_px"], 0), max(v + c["window_px"], 0))
-        cols = slice(max(u - c["window_px"], 0), max(u + c["window_px"], 0))
-        over = np.linalg.norm(cloud[rows, cols, :2] - face.best.centre[:2], axis=-1) < c["body_radius"]
-        tall = height[rows, cols]
+        c, window = self.cfg["color"], self._window(face, camera)
+        over = np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["body_radius"]
+        tall, own = height[window], float(counter.height(face.best.centre))
         low, top = self.cfg["overhang_band"]
-        overhang = over & (tall > self.scene.object_height() + low) & (tall < self.scene.object_height() + top)
-        return rgb[rows, cols][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
+        overhang = over & (tall > own + low) & (tall < own + top)
+        return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
-    def _describe(self, face: TopFace, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> ObjectDetection:
-        """Turn one top-face fit into a detection with honest shape, yaw and confidence."""
+    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> ObjectDetection:
+        """Turn one top-face fit into a detection: confidence is about the colour alone, `visible` about the pose and size."""
         c, best = self.cfg, face.best
-        if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb):
+        tall, measured = float(counter.height(best.centre)), best.visible >= c["min_size_visible"]
+        odd = abs(tall - self.scene.object_height()) >= c["size_snap"] and not measured   # an unexpected size needs a well seen top
+        if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb) or odd:
             return ObjectDetection(color="red", top=best.centre, confidence=0.0)
-        color, color_conf = self.colors.classify(body_rgb, gains)
-        shaped = face.margin >= c["min_shape_margin"]
+        color, confidence = self.colors.classify(body_rgb, gains)
+        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
-        low, full = c["score_range"]
-        fit_conf = float(np.clip((best.score / best.area - low) / (full - low), 0.0, 1.0))
+        size = tall if measured else None
         return ObjectDetection(color=color, top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
-                               confidence=fit_conf * color_conf, pixels=len(face.pixels), visible=best.visible)
+                               confidence=confidence, pixels=len(face.pixels), visible=best.visible, size=size)
