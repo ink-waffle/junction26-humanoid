@@ -18,6 +18,11 @@ class Attempts:
         """No plan was found for the object at `xy` in one look."""
         self._unplanned.append(np.array(xy, float))
 
+    def follow(self, old_xy: np.ndarray, new_xy: np.ndarray) -> None:
+        """The object tried at `old_xy` now lies at `new_xy`: what was tried on it counts there too."""
+        for spots in (self._picked, self._unplanned):
+            spots.extend([np.array(new_xy, float)] * self._near(spots, old_xy))
+
     def picks(self, xy: np.ndarray) -> int:
         """Picks started so far on the object at `xy`."""
         return self._near(self._picked, xy)

@@ -20,7 +20,7 @@ from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, hand
 from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
-from halal.policy.picking import Pick
+from halal.policy.picking import Pick, Target
 from halal.policy.transit import checked_move, lowest_clearance
 
 log = logging.getLogger(__name__)
@@ -88,6 +88,7 @@ class SortPolicy:
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.release_checked, self.unconfirmed_releases = True, 0
+        self.missed: Target | None = None
         self.stage = Stage.MOVING
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
@@ -184,7 +185,7 @@ class SortPolicy:
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
                               self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
-                              self.use_file_layout, calibrate, primer)
+                              self.use_file_layout, calibrate, primer, self.missed)
         self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -229,6 +230,7 @@ class SortPolicy:
         self.stage, self.next_view = Stage.MOVING, View.HOME
 
     def _note_look(self, t: float, look: Look) -> None:
+        self.missed = None
         for target in look.unplannable:
             self.attempts.record_plan_failure(target.xy)
         self.layout_source, self.use_file_layout = look.layout_source, self.use_file_layout or look.layout_rejected
@@ -267,7 +269,7 @@ class SortPolicy:
         self.tally.update(picks=1)
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)
-        if window is not None and self._checks_release(pick.side):
+        if window is not None and self._checks_release(pick):
             self._load_with_release_check(pick.plan, window)
         else:
             self.stream.load(pick.plan.arm, pick.plan.hand)
@@ -276,9 +278,10 @@ class SortPolicy:
         log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
 
-    def _checks_release(self, side: str) -> bool:
-        """Whether this hand is closed once more after letting go: only a calibrated hand has an empty reading to compare with."""
-        return self.release_checked and self.calibrator.hand_class(side) != "unknown"
+    def _checks_release(self, pick: Pick) -> bool:
+        """Whether the hand is closed once more after letting go: configured per shape, and only a calibrated hand has an empty reading."""
+        after = (pick.target.detection.shape or "unknown") in self.settings["release_check_after"]
+        return after and self.release_checked and self.calibrator.hand_class(pick.side) != "unknown"
 
     def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:
         """Queue the pick with one more close of the hand above the bin; it starts while the arm retreats."""
@@ -395,6 +398,7 @@ class SortPolicy:
         """The hand is empty: go home at once if the way is clear, else let the plan run out unwatched."""
         if not self.jobs.idle:
             return   # the planner is still busy with an abandoned look: decide at the next reply
+        self.missed = self.active.pick.target
         move = self._move_to(View.HOME)
         if move is None:
             log.info("t=%.1f hand empty (grip score %.3f) but no clear way home: finishing the plan", t, score)
