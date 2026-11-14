@@ -222,6 +222,7 @@ policy:
   blob_attempts: 3            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  neighbour_radius: 0.09      # an object with another one this close is picked after the free-standing ones (a grasp knocked over a neighbour at 7.5 cm)
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent

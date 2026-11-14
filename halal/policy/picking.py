@@ -24,6 +24,7 @@ class Target:
     detection: ObjectDetection
     bin_name: str
     attempts: int = 0
+    neighbours: int = 0         # other detections close enough to be knocked over by a grasp
 
     @property
     def xy(self) -> np.ndarray:
@@ -57,9 +58,9 @@ class PickChooser:
             unplannable.append(target)
         return None, unplannable
 
-    def _order(self, target: Target) -> tuple[int, bool, float]:
-        """Sort key: least tried first, a known shape before an unknown one, then nearest its bin."""
-        return target.attempts, target.detection.shape is None, self._distance_to_bin(target)
+    def _order(self, target: Target) -> tuple[int, bool, int, float]:
+        """Sort key: least tried first, a known shape before an unknown one, fewest close neighbours, then nearest its bin."""
+        return target.attempts, target.detection.shape is None, target.neighbours, self._distance_to_bin(target)
 
     def _plan(self, target: Target, released: int, hands: Mapping[str, str], arm_q: np.ndarray, hand_q: np.ndarray,
               cancelled: Cancelled) -> Pick | None:
