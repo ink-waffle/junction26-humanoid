@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Collection, Mapping, Sequence
 
 import numpy as np
 
@@ -39,6 +39,7 @@ class Pick:
     target: Target
     side: str
     grasp: Grasp
+    depth: float    # rad the thumb closes past the grasp's closed posture
     plan: Plan
 
 
@@ -47,25 +48,28 @@ class PickChooser:
         self.planner, self.slots = planner, slots
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], squeeze: Mapping[str, float | None],
-               arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
+               blocked: Collection[str], arm_q: np.ndarray, hand_q: np.ndarray,
+               cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
         """The first plannable target (least tried, then nearest its bin) and the targets before it without a plan."""
         unplannable: list[Target] = []
         for target in sorted(targets, key=lambda target: (target.attempts, self._distance_to_bin(target))):
-            pick = self._plan(target, released.get(target.bin_name, 0), squeeze, arm_q, hand_q, cancelled)
+            pick = self._plan(target, released.get(target.bin_name, 0), squeeze, blocked, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
             unplannable.append(target)
         return None, unplannable
 
-    def _plan(self, target: Target, released: int, squeeze: Mapping[str, float | None], arm_q: np.ndarray,
-              hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
-        """The first arm, grasp and release slot with a plan."""
+    def _plan(self, target: Target, released: int, squeeze: Mapping[str, float | None], blocked: Collection[str],
+              arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
+        """The first arm (not a blocked one), grasp and release slot with a plan."""
         for side, grasp, shift in self._options(target, released):
             if cancelled():
                 break
+            if side in blocked:
+                continue
             plan = self._plan_pick(target, side, grasp, shift, squeeze[side], arm_q, hand_q)
             if plan.ok:
-                return Pick(target, side, grasp, plan)
+                return Pick(target, side, grasp, grasp.squeeze if squeeze[side] is None else squeeze[side], plan)
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
                      shift, plan.reason)
         return None

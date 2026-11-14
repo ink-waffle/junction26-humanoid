@@ -10,12 +10,14 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from aaltonomous.baselines.classical.planner import Plan
+
 from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
 from halal.policy.area import ObjectArea
 from halal.policy.background import Background, Cancelled
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
-from halal.policy.grip import SIDES, GripWindow, phase
+from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, phase
 from halal.policy.hands import HandCalibrator
 from halal.policy.memory import Attempts, Shapes
 from halal.policy.picking import Pick, PickChooser, Target
@@ -63,6 +65,7 @@ class Situation:
     attempts: Attempts
     shapes: Shapes
     released: Mapping[str, int]
+    blocked: frozenset[str]     # arms whose hand could not let go of an object: not used again this episode
     file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
     primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
@@ -70,10 +73,14 @@ class Situation:
 
 @dataclass
 class ActivePick:
-    """The pick being executed and what its grip check has seen so far."""
+    """The pick being executed and what its grip checks have seen so far."""
     pick: Pick
     window: GripWindow | None   # None = not watched (check disabled, or no clear way back after a failed grip)
     lowest_score: float = math.inf
+    carried: bool = False       # the carry is over: the window's ticks no longer apply
+    check_tick: int | None = None   # trajectory tick at which the hand, closed once more after letting go, is read
+    checks_left: int = 0
+    tail: tuple[np.ndarray, np.ndarray] | None = None   # the way home that follows a release check
 
 
 def leave_everything(color: str, shape: str | None) -> None:
@@ -108,6 +115,7 @@ class SortPolicy:
         self.shapes = Shapes(s["same_object_radius"])
         self.layout_source, self.use_file_layout = self.file_layout.source, False
         self.released: Counter[str] = Counter()
+        self.blocked: set[str] = set()
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
@@ -205,7 +213,8 @@ class SortPolicy:
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
-                              self.shapes, dict(self.released), self.use_file_layout, calibrate, primer)
+                              self.shapes, dict(self.released), frozenset(self.blocked), self.use_file_layout,
+                              calibrate, primer)
         self.jobs.submit(lambda cancelled: self._look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -237,8 +246,8 @@ class SortPolicy:
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         squeeze = {side: self.settings["squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
-        pick, unplannable = self.chooser.choose(clear, situation.released, squeeze, situation.arm_q, situation.hand_q,
-                                                cancelled)
+        pick, unplannable = self.chooser.choose(clear, situation.released, squeeze, situation.blocked, situation.arm_q,
+                                                situation.hand_q, cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
@@ -328,22 +337,58 @@ class SortPolicy:
         self.empty_looks, self.empty_since = 0, math.inf
         self.attempts.record_pick(pick.target.xy)
         self.tally.update(picks=1)
-        window = GripWindow.of(pick.plan, pick.side, round(self.settings["grip_settle_s"] * HZ)) if self.grip_trusted else None
-        cuts = (window.first_tick + OBS_LAG_TICKS, window.release_tick + OBS_LAG_TICKS) if window else ()
-        self.stream.load(pick.plan.arm, pick.plan.hand, cuts=cuts)
+        window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)
+        if window is None:
+            self.stream.load(pick.plan.arm, pick.plan.hand)
+        elif pick.depth < self.settings["release_check_squeeze"]:
+            self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS])
+        else:
+            self._load_with_release_check(pick.plan, window)
         self.stage, self.next_view = Stage.MOVING, View.HOME
         drop = pick.plan.waypoints["drop"]
         log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
 
+    def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:
+        """Queue the pick with one more close of the hand after the retreat, arm still above the bin."""
+        active, stream, at = self.active, self.stream, phase(plan, "retreat")[1]
+        check = self._release_check(plan.arm[at - 1], plan.hand[at - 1], window, open_s=0.0)
+        active.check_tick, active.checks_left = at + check.read_tick, self.settings["release_checks"] - 1
+        active.tail = (plan.arm[at:], plan.hand[at:])
+        stream.load(np.vstack([plan.arm[:at], check.arm, plan.arm[at:]]), np.vstack([plan.hand[:at], check.hand, plan.hand[at:]]),
+                    cuts=[window.first_tick + OBS_LAG_TICKS, active.check_tick + OBS_LAG_TICKS])
+
+    def _release_check(self, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_s: float) -> ReleaseCheck:
+        return ReleaseCheck.after(arm_q, hand_q, window, round(open_s * HZ), self._grip_settle_ticks,
+                                  self.planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
+
+    def _check_release(self, obs: Mapping[str, Any], t: float) -> None:
+        """The hand has closed again after letting go: if it still holds something, open and close once more, then give the arm up."""
+        active, stream, window = self.active, self.stream, self.active.window
+        score = window.score(obs["hand_q"], self.calibrator.empty_error(window.side))
+        active.check_tick, active.carried = None, True
+        if score < self._empty_below(window.side):
+            return
+        self.tally.update(stuck_in_hand=1)
+        if active.checks_left == 0:
+            log.warning("t=%.1f the %s hand still holds something (grip score %.3f): arm not used again", t, window.side, score)
+            self.blocked.add(window.side)
+            return
+        log.warning("t=%.1f the %s hand still holds something after letting go (grip score %.3f): opening again", t,
+                    window.side, score)
+        check = self._release_check(stream.arm_cmd, stream.hand_cmd, window, self.planner.cfg["motion"]["open_hold_s"])
+        active.check_tick, active.checks_left = check.read_tick, active.checks_left - 1
+        stream.load(np.vstack([check.arm, active.tail[0]]), np.vstack([check.hand, active.tail[1]]),
+                    cuts=[check.read_tick + OBS_LAG_TICKS])
+
     def _check_grip(self, obs: Mapping[str, Any]) -> None:
         """While the object should be in the hand: when the fingers say it is not, give the pick up."""
         active, tick, t = self.active, self.stream.observed_tick, float(obs["t"])
         window = active.window
-        if tick == window.release_tick:
-            log.info("t=%.1f fingers short of the released posture by %.3f after letting go", t, window.stuck(obs["hand_q"]))
-        if not window.first_tick <= tick <= window.last_tick:
+        if active.check_tick is not None and tick >= active.check_tick:
+            self._check_release(obs, t)
+        if active.carried or not window.first_tick <= tick <= window.last_tick:
             return
         score = window.score(obs["hand_q"], self.calibrator.empty_error(window.side))
         if math.isinf(active.lowest_score):
@@ -383,7 +428,7 @@ class SortPolicy:
 
     def _finish_pick(self, t: float) -> None:
         active, self.active = self.active, None
-        if active.lowest_score < self._empty_below(active.pick.side):
+        if active.lowest_score < self._empty_below(active.pick.side) or active.pick.side in self.blocked:
             return
         self.released[active.pick.plan.target_bin] += 1
         self.tally.update(released=1)
@@ -393,3 +438,7 @@ class SortPolicy:
         if self.tally:
             log.info("episode tally: %s", dict(self.tally))
         self.tally.clear()
+
+    @property
+    def _grip_settle_ticks(self) -> int:
+        return round(self.settings["grip_settle_s"] * HZ)

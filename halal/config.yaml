@@ -233,6 +233,8 @@ policy:
     stiff: null
     soft: 1.0                 # thumb limit: ~6 N on a cube, 4-5 N on a triangle at the real hand's kp 1.5
     unknown: null
+  release_check_squeeze: 0.6  # after a grasp this deep the hand closes once more above the bin to see that it let go
+  release_checks: 3           # such closes per pick (each reopens the hand) before the arm is given up for the episode
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
   calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish

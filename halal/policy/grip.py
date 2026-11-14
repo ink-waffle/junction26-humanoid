@@ -85,7 +85,6 @@ class GripWindow:
     first_tick: int          # the lift is over and the hand command has been still for the settle time
     last_tick: int           # a little before the hand opens: an observation may be newer than assumed
     released: np.ndarray     # commanded posture of the hand after letting go (7,)
-    release_tick: int        # end of the retreat: the hand has been told to be open for a while
 
     @classmethod
     def of(cls, plan: Plan, side: str, settle_ticks: int) -> GripWindow:
@@ -94,16 +93,31 @@ class GripWindow:
         closed, before = plan.hand[close_end - 1, joints], plan.hand[close_start - 1, joints]
         still_from = close_start + int(np.argmax(np.all(plan.hand[close_start:close_end, joints] == closed, axis=1)))
         first_tick = max(still_from + settle_ticks, phase(plan, "lift")[1] - 1)
-        release_tick = phase(plan, "retreat")[1] - 1
         return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS,
-                   plan.hand[release_tick, joints], release_tick)
+                   plan.hand[phase(plan, "retreat")[1] - 1, joints])
 
     def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float) -> float:
         """Summed shortfall of the joints behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
         error = self.closed - np.asarray(hand_q, float)[hand_slice(self.side)]
         return float(np.maximum(self.direction * (error - empty_error), 0.0).sum())
 
-    def stuck(self, hand_q: np.ndarray) -> float:
-        """Summed amount by which the joints are still more closed than the released posture (rad); ~0 = let go."""
-        error = np.asarray(hand_q, float)[hand_slice(self.side)] - self.released
-        return float(np.maximum(self.direction * error, 0.0).sum())
+
+@dataclass(frozen=True)
+class ReleaseCheck:
+    """One more close on nothing after letting go, arm still above the bin: a hand that still holds something shows it."""
+    arm: np.ndarray     # (n, 14)
+    hand: np.ndarray    # (n, 14): open (if not yet), stay open, close, hold, reopen to the released posture
+    read_tick: int      # tick of this segment at which the grip score is read
+
+    @classmethod
+    def after(cls, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_ticks: int, settle_ticks: int,
+              hand_vel: float, dt: float) -> ReleaseCheck:
+        """The check for the hand of `window` from the commanded pose `arm_q`, `hand_q`, after `open_ticks` with the hand open."""
+        joints = hand_slice(window.side)
+        released, closed = hand_q.copy(), hand_q.copy()
+        released[joints], closed[joints] = window.released, window.closed
+        opening = np.vstack([ramp(hand_q, released, hand_vel, dt), np.repeat(released[None], open_ticks, 0)])
+        closing = ramp(released, closed, hand_vel, dt)
+        still = np.repeat(closed[None], settle_ticks + 2 * OBS_LAG_TICKS, 0)
+        hand = np.vstack([opening, closing, still, ramp(closed, released, hand_vel, dt)])
+        return cls(np.repeat(arm_q[None], len(hand), 0), hand, len(opening) + len(closing) + settle_ticks - 1)
