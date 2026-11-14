@@ -4,7 +4,7 @@
 
 Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise ([{pos, yaw_deg, yaw_known}]),
-variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `candidates`, `overrides`}).
+variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `noise`, `squeeze`, `candidates`, `overrides`}).
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ from aaltonomous.sim.scene_client import SceneClient
 
 from halal import config
 from halal.motion import Grasp, PickPlanner, candidate_grasps
-from halal.motion.grasps import build_grasp
+from halal.motion.grasps import strategy_grasps
 from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
@@ -70,18 +70,19 @@ class Pick:
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
-    """Every variant on every shape, yaw, spot and noise level, arms alternating so both get each combination."""
-    cases: list[Case] = []
-    for name, variant in spec["variants"].items():
-        grid = itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"], spec["noise"],
-                                 range(spec["repeats"]))
-        for shape, spot, yaw, noise, _ in grid:
-            side = SIDES[len(cases) % 2]
-            cases.append(Case(variant=name, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])),
-                              side=side, bin_name=side if spec["bin"] == "side" else spec["bin"],
-                              pos_noise=float(noise["pos"]), yaw_noise_deg=float(noise["yaw_deg"]),
-                              yaw_known=bool(noise["yaw_known"]), present=not spec["empty"]))
-    return cases
+    """Every variant on every shape, spot, yaw and noise level in a seeded random order, arms alternating."""
+    grid = [(name, *rest) for name, variant in spec["variants"].items()
+            for rest in itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"],
+                                          variant.get("noise", spec["noise"]), range(spec["repeats"]))]
+    order = np.random.default_rng(spec["seed"]).permutation(len(grid))
+    return [_case(spec, *grid[k], SIDES[i % 2]) for i, k in enumerate(order)]
+
+
+def _case(spec: Mapping[str, Any], variant: str, shape: str, spot: list[float], yaw: float, noise: Mapping[str, Any],
+          _repeat: int, side: str) -> Case:
+    return Case(variant=variant, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])), side=side,
+                bin_name=side if spec["bin"] == "side" else spec["bin"], pos_noise=float(noise["pos"]),
+                yaw_noise_deg=float(noise["yaw_deg"]), yaw_known=bool(noise["yaw_known"]), present=not spec["empty"])
 
 
 def mirrored(case: Case) -> tuple[np.ndarray, float]:
@@ -196,11 +197,11 @@ class Bench:
             grasps = candidate_grasps(detection.shape, detection.yaw, case.side)
         else:
             params = {**config.load()["motion"]["grasps"].get(variant.get("base"), {}), **variant}
-            grasps = [g for g in [build_grasp(case.variant, params, detection.shape, detection.yaw, case.side)] if g]
+            grasps = strategy_grasps(case.variant, params, detection.shape, detection.yaw, case.side)
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
-                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"])
+                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"], squeeze=variant.get("squeeze", 0.0))
             if plan.ok:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan

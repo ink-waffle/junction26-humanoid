@@ -1,6 +1,6 @@
 """Offline planner statistics over sampled layouts: every object x bin x arm, coverage, phase durations, planning time.
 
-    python -m halal.eval.plan_bench --layouts 60 [--organiser] [--end retreat]     (no sim needed)
+    python -m halal.eval.plan_bench --layouts 60 [--organiser] [--end retreat] [--start look]     (no sim needed)
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import numpy as np
 from aaltonomous.baselines.classical.planner import Plan, Planner
 from aaltonomous.interface.tasks import BINS, sample_layout
 
+from halal import config
 from halal.motion import PickPlanner, candidate_grasps
 from halal.perception import ObjectDetection
 
@@ -33,9 +34,10 @@ def detections(planner: Planner, seed: int) -> list[ObjectDetection]:
     return found
 
 
-def plan_one(planner: Planner, det: ObjectDetection, side: str, bin_name: str, organiser: bool, end: str) -> Plan:
-    """First candidate grasp that plans from home, or the organiser planner's own pinch."""
-    arm, hand = planner.home.copy(), planner.post["open"].copy()
+def plan_one(planner: Planner, det: ObjectDetection, side: str, bin_name: str, organiser: bool, end: str, start: str) -> Plan:
+    """First candidate grasp that plans from the start pose, or the organiser planner's own pinch."""
+    arm = planner.home.copy() if start == "home" else np.asarray(config.load()["motion"]["look_arm_q"], float)
+    hand = planner.post["open"].copy()
     if organiser:
         return planner._plan_side_hints(det, side, bin_name, arm, hand)
     plan = Plan(False, reason="no grasp")
@@ -46,14 +48,14 @@ def plan_one(planner: Planner, det: ObjectDetection, side: str, bin_name: str, o
     return plan
 
 
-def collect(planner: Planner, layouts: int, organiser: bool, end: str) -> list[dict[str, Any]]:
+def collect(planner: Planner, layouts: int, organiser: bool, end: str, start: str) -> list[dict[str, Any]]:
     rows = []
     for seed in range(layouts):
         for det in detections(planner, seed):
             for bin_name in BINS:
                 for side in SIDES:
                     start = time.perf_counter()
-                    plan = plan_one(planner, det, side, bin_name, organiser, end)
+                    plan = plan_one(planner, det, side, bin_name, organiser, end, start)
                     rows.append({"y": float(det.top[1]), "bin": bin_name, "side": side, "ok": plan.ok,
                                  "wall": time.perf_counter() - start, "reason": plan.reason, "duration": plan.duration,
                                  "phases": {name: (stop - first) / 30.0 for name, first, stop in plan.phases}})
@@ -93,11 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--layouts", type=int, default=60)
     ap.add_argument("--organiser", action="store_true", help="the organiser planner's own pinch instead of ours")
     ap.add_argument("--end", default="home", choices=("home", "retreat"))
+    ap.add_argument("--start", default="home", choices=("home", "look"), help="arm pose the plans start from")
     args = ap.parse_args(argv)
     planner: Planner = PickPlanner.create()
     if args.organiser:
         planner = Planner(planner.cfg, planner.scene, planner.post, planner.home, planner.kin, planner.safety, planner.spec)
-    report(collect(planner, args.layouts, args.organiser, args.end))
+    report(collect(planner, args.layouts, args.organiser, args.end, args.start))
     return 0
 
 

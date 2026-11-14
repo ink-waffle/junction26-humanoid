@@ -19,6 +19,7 @@ from halal.motion.grasps import Grasp
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
+BIN_PHASES = ("carry", "lower", "retreat")
 
 
 class PickPlanner(Planner):
@@ -32,19 +33,24 @@ class PickPlanner(Planner):
 
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
-                  place_xy: tuple[float, float] | None = None) -> Plan:
-        """Pick -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat); `Plan.ok` False with a reason on failure."""
+                  place_xy: tuple[float, float] | None = None, squeeze: float = 0.0) -> Plan:
+        """Pick (closing `squeeze` rad past the grasp's closed posture) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
         if place_xy is None and not self.reaches_bin(side, bin_name):
             return Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         self.drop_shift = np.asarray(drop_shift, float)
-        with self._grasp_applied(grasp, side), self._counter_under(target):
+        with self._grasp_applied(grasp, side, squeeze), self._counter_under(target):
             if grasp.finger_yaw is None:
                 plan = self._plan_side_hints(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
             else:
                 plan = self._plan_side(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
                 plan = self._check_finger_yaw(plan, side, grasp.finger_yaw)
         return self._ending_at(plan, end)
+
+    def use_scene(self, scene: Scene) -> None:
+        """Replace the geometry (counter height, bins) all later plans work against."""
+        self.scene = scene
+        self.__dict__.pop("_reach", None)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
         """Whether this arm can hold the grasp point above the bin's release point at carry height (cached)."""
@@ -64,16 +70,28 @@ class PickPlanner(Planner):
 
     def _cartesian(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, name: str, plan: Plan) -> list | None:
         """Carry in joint space when it stays above the release height; other segments become one joint move when straight enough."""
-        if name == "carry":
-            reason = plan.reason
-            carry = self._joint_carry(side, q0, p0, p1, self._release_height(), name, plan)
-            if carry is not None:
-                return carry
-            plan.reason = reason
-        waypoints = super()._cartesian(side, p0, p1, q0, name, plan)
+        with self._heading_free(name in BIN_PHASES):
+            if name == "carry":
+                reason = plan.reason
+                carry = self._joint_carry(side, q0, p0, p1, self._release_height(), name, plan)
+                if carry is not None:
+                    return carry
+                plan.reason = reason
+            waypoints = super()._cartesian(side, p0, p1, q0, name, plan)
         if waypoints and len(waypoints) > 1 and self._is_straight(side, p0, p1, q0, waypoints[-1], name):
             return [waypoints[-1]]
         return waypoints
+
+    @contextmanager
+    def _heading_free(self, free: bool) -> Iterator[None]:
+        """Drop the grasp's finger heading from the IK: on the way to the bin the hand may turn as the arm likes."""
+        weight = self.kin.w_hint
+        if free:
+            self.kin.w_hint = 0.0
+        try:
+            yield
+        finally:
+            self.kin.w_hint = weight
 
     def _release_height(self) -> float:
         """Grasp point height at which objects are released over a bin."""
@@ -116,8 +134,8 @@ class PickPlanner(Planner):
             self.scene = nominal
 
     @contextmanager
-    def _grasp_applied(self, grasp: Grasp, side: str) -> Iterator[None]:
-        """Swap the grasp's overrides into the planner and kinematics state for the duration of one plan."""
+    def _grasp_applied(self, grasp: Grasp, side: str, squeeze: float) -> Iterator[None]:
+        """Swap the grasp's overrides and the squeeze depth into the planner and kinematics state for one plan."""
         kin, g = self.kin, self.cfg["grasp"]
         saved = (kin.hint, kin.w_hint, dict(kin.offset), dict(self.post), g["height_frac"])
         if grasp.finger_yaw is not None:
@@ -130,12 +148,20 @@ class PickPlanner(Planner):
             self.post[name] = np.r_[np.asarray(left, float), mirror_left_to_right(left)]
         if grasp.height_frac is not None:
             g["height_frac"] = grasp.height_frac
+        self.post["closed"] = self._squeezed(self.post["closed"], grasp, squeeze)
         try:
             yield
         finally:
             kin.hint, kin.w_hint, kin.offset, post, g["height_frac"] = saved
             self.post.clear()
             self.post.update(post)
+
+    def _squeezed(self, closed: np.ndarray, grasp: Grasp, squeeze: float) -> np.ndarray:
+        """Closed posture (14,) pushed `squeeze` rad further along the grasp's squeeze axis, kept inside the filter's range."""
+        axis = np.asarray(grasp.squeeze_axis or config.load()["motion"]["squeeze_axis"], float)
+        margin = config.load()["motion"]["hand_limit_margin"]
+        deeper = closed + squeeze * np.r_[axis, mirror_left_to_right(axis)]
+        return np.clip(deeper, self.spec.hand_lower + margin, self.spec.hand_upper - margin)
 
     def _check_finger_yaw(self, plan: Plan, side: str, finger_yaw: float) -> Plan:
         """Reject a plan whose fingers at the grasp point away from the requested heading."""
