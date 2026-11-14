@@ -285,6 +285,7 @@ class Bench:
         left_order = (lambda e: e) if pick.case.side == "left" else right_hand
         record["finger_error"] = {key: np.round(left_order(error[t]), 4).tolist() for key, t in marks.items()}
         record["phases_s"] = {name: round((end - start) / 30.0, 2) for name, start, end in pick.plan.phases}
+        record["release_xy"] = np.round(pick.plan.waypoints["drop"][:2], 4).tolist()
         if pick.name is None:
             return {**record, "outcome": None, "failure": "empty"}
         record.update(self._object_metrics(pick, slot, marks, trace))

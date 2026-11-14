@@ -16,6 +16,7 @@ import numpy as np
 JOINTS = ("thumb_0", "thumb_1", "thumb_2", "finger_0", "finger_1")
 HELD_MARKS = ("lift", "carry")
 TOPPLED_DEG = 45.0
+RELEASED_BELOW = 0.05
 
 
 def by_role(error: list[float]) -> list[float]:
@@ -34,15 +35,36 @@ def success_table(picks: list[dict[str, Any]], by: list[str]) -> None:
     for pick in picks:
         if pick["present"]:
             groups[(pick["variant"], pick["shape"], *(str(pick[key]) for key in by))].append(pick)
-    print(f"{'variant':<16} {'shape':<9} {' '.join(by):<22} ok/n   spin  tilt  slip   failures")
+    print(f"{'variant':<16} {'shape':<9} {' '.join(by):<22} ok/n   out@open  spin  tilt  slip   failures")
     for key, group in sorted(groups.items(), key=lambda kv: tuple(map(str, kv[0]))):
         good = sum(p["failure"] == "ok" for p in group)
         fails = Counter(p["failure"] for p in group if p["failure"] != "ok")
         lifted = [p for p in group if p.get("held", {}).get("lift")]
+        carried = [p for p in group if p.get("held", {}).get("carry")]
+        out = sum(left_hand_in_open(p) for p in carried)
         spin, tilt, slip = (np.median([abs(p[k]) for p in lifted]) if lifted else np.nan for k in ("spin_deg", "tilt_deg", "slip_mm"))
         condition = " ".join(str(v) for v in key[2:])
-        print(f"{key[0]:<16} {key[1]:<9} {condition:<22} {good:2d}/{len(group):<3d} {spin:5.0f} {tilt:5.0f} {slip:5.1f}   "
+        print(f"{key[0]:<16} {key[1]:<9} {condition:<22} {good:2d}/{len(group):<3d}  {out:2d}/{len(carried):<3d}  {spin:5.0f} {tilt:5.0f} {slip:5.1f}   "
               + ", ".join(f"{name} {count}" for name, count in fails.most_common()))
+
+
+def left_hand_in_open(pick: dict[str, Any]) -> bool:
+    """Whether a carried object had dropped out of the hand by the end of the open phase, before any retreat motion."""
+    return pick["height"]["open"] < RELEASED_BELOW
+
+
+def landing_table(picks: list[dict[str, Any]]) -> None:
+    """Where objects released within the open phase come to rest, relative to the release point (pelvis x, outward y)."""
+    groups: dict[tuple, list[np.ndarray]] = defaultdict(list)
+    for pick in picks:
+        if pick.get("held", {}).get("carry") and "release_xy" in pick and left_hand_in_open(pick) and pick["outcome"] != "counter":
+            outward = 1.0 if pick["side"] == "left" else -1.0
+            offset = 1000 * (np.array(pick["final_pos"][:2]) - np.array(pick["release_xy"]))
+            groups[(pick["variant"], pick["shape"])].append(offset * [1.0, outward])
+    print("\nlanding minus release point (mm), objects that left the hand within the open phase: n, x min..max, outward y min..max")
+    for key, offsets in sorted(groups.items()):
+        box = np.array(offsets)
+        print(f"{key[0]:<16} {key[1]:<9} {len(box):2d}  x {box[:, 0].min():+4.0f}..{box[:, 0].max():+4.0f}  y {box[:, 1].min():+4.0f}..{box[:, 1].max():+4.0f}")
 
 
 def finger_table(picks: list[dict[str, Any]]) -> None:
@@ -92,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     success_table(picks, args.by)
     finger_table(picks)
     aftermath_table(picks)
+    landing_table(picks)
     return 0
 
 
