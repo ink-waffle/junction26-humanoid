@@ -117,6 +117,8 @@ Consequences
 - Palm at the grasp, cube (ep0–9): approach axis (palm normal) 15–26° from straight down, fingers pointing across
   the body (yaw −66…−84° for the left hand, ep0 −39°) and 13–25° downwards (ep0 level), palm origin at x 0.28–0.32,
   y 0.07–0.14, z 0.13–0.21; fingertips at z 0.04–0.09. A top-down claw turned inward, not forward.
+- Approach: the hand hovers over the object with the thumb swung out, then sinks 0–3 cm during the last second
+  before closing with at most 3 cm of sideways motion; no sweeping approach from the side for the cube.
 - Palm at the grasp, cylinder (ep11, 14, 17): from the side, palm normal 45–70° from down, fingers forward-inward
   (yaw −42…−51°), palm origin only 7–10 cm above pelvis z = 0.
 - Carry and release: lift 7–18 cm (median 12), carry 2.7–5.8 s at 0.13–0.27 m/s (p95 of palm speed per carry), palm
@@ -172,6 +174,8 @@ Consequences
 - Head camera, 640×480, upright, image left = robot's left, as in sim. Three orange bins in a row at the top, objects
   below them, the left hand and silver forearm bottom-left, the right hand at the right edge. Both hands are in view
   at rest in every episode; the left arm hides up to a quarter of the image and a black cable loops around its wrist.
+- Full frame, no crop or rotation evident: the FK hand silhouette fits with the factory intrinsics of
+  `calibration.yaml` to 5 px (B7), and a 21 cm bin at 0.6 m spans the 215–235 px those intrinsics predict.
 - Not the printed scene: no 5 cm grid mat, the table is bare, glossy and light brown with specular highlights and
   screw heads; the bins are cardboard boxes wrapped in orange tape (brown inside, loose flaps on the rim, walls about
   7–8 cm) with orange tape strips on the table in front of them.
