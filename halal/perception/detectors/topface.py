@@ -84,7 +84,8 @@ class TopFaceDetector:
         gains = self.colors.white_balance(bare)
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
         drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains, bare) for face in faces]
-        drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
+        solid = [face for face, draft in zip(faces, drafts) if not self._yields(draft)]
+        drafts = self._settled(drafts, self._stragglers(solid, camera, cloud, height, free, rgb, gains, counter))
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
         found = [self._named(draft) for draft in drafts if draft.colour is not None]
@@ -150,6 +151,19 @@ class TopFaceDetector:
             mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
         rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
         return self._distinct(faces + rest)
+
+    def _yields(self, draft: Draft) -> bool:
+        """True for an accepted top face seen so little that a lying prism found in its place is the better reading."""
+        return draft.colour is not None and draft.detection.visible < self.cfg["straggler"]["yield_visible"]
+
+    def _settled(self, faces: list[Draft], blobs: list[Draft]) -> list[Draft]:
+        """Top-face fits and blobs together: a barely seen top face gives way to a lying prism found there, and keeps any other blob out."""
+        radius = self.cfg["straggler"]["claim_radius"]
+        near = lambda draft, others: any(np.linalg.norm(draft.detection.top[:2] - o.detection.top[:2]) < radius for o in others)
+        lying = [blob for blob in blobs if blob.detection.lying]
+        weak = [face for face in faces if self._yields(face) and not near(face, lying)]
+        return ([face for face in faces if not self._yields(face)] + weak + lying
+                + [blob for blob in blobs if not blob.detection.lying and not near(blob, weak)])
 
     def _unanchored(self) -> bool:
         """True when the scene did not fix the camera: bin footprints are then guesses and walls can reach the candidates."""
