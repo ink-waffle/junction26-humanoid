@@ -420,9 +420,9 @@ quaternion; the bench line "prisms lying on a side"):
 | whole set: xy mean / p95 / max mm | 2.9 / 10.0 / 27.4 | 2.4 / 5.6 / 29.2 |
 | whole set: shape decided / right | 0.746 / 0.999 | 0.822 / 0.997 |
 
-The 6: five are a prism in motion or tilted next to a cube (matched to the cube 24 to 29 mm away; the same blobs were
-fallback detections before, which is also where the larger xy maximum comes from), one a triangle the ground truth
-does not count as toppled. The other eight sets are unchanged and contain no lying call.
+The 6: five are matched to a cube 24 to 29 mm away from it (so they are something next to the cube, not the cube; the
+frames were not looked at, and the set's xy maximum of 29.2 is one of them), one to a triangle the ground truth counts
+as upright. The other eight sets are unchanged and contain no lying call.
 
 Mock world (the organisers' renderer only draws boxes and cylinders; prisms ray-cast from scratch code into its image,
 1 mm depth noise, no arms; 72 poses: 2 distances, 3 lateral positions, ridge every 15 deg):
@@ -434,8 +434,8 @@ Mock world (the organisers' renderer only draws boxes and cylinders; prisms ray-
 
 The misses are ridge directions 15 and 90 deg at the lateral positions: they stay fallback blobs.
 Not verified: real depth on foam (the 2 mm plane tolerance is sim noise; real stereo at 0.55 m is about 1.5 mm per
-pixel and smears edges), a prism touching a box or another object, and the 15 lying prisms in `motion` that are found
-but not recognised (all partly hidden: they stay blobs).
+pixel and smears edges), a prism touching a box or another object. Not looked into: the 15 lying prisms in `motion`
+that are found but stay blobs, and the 37 not found at all.
 
 ### Real object size
 
