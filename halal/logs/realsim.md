@@ -91,6 +91,28 @@ hands (3.8 to 12 cm gap in rs22); none touched a hand or was flung.
 | rs22-robot6-rest | v22 (cb81d93c1969) | six-parameter | 29/31 | +3.62 ± 0.99 | 0 | 0 | PASS, done 8/8 | every episode: start look `nominal`, "no room here for the hands' calibration close: going home", home look still `nominal`, a pick on the nominal camera, then the fit (all 35 `trusted`, 6.4 to 7.7 deg, 21 to 42 mm). 9 picks before the first trusted fit (1 per episode, 2 in seed 1002), first pick at t 5.2 to 14.2 s: 8 closed on air (grip 0.010 to 0.013), 1 sorted (seed 1005). 17 looks `nominal`, 186 `hands`. Lost, both in seed 1006: the orange cube (try 1 on nominal and try 2 empty, try 3 held 0.424 then slipped in the carry and came to rest on the wall between the center and right boxes, z 0.098) and the orange lying prism (left arm "cannot reach the right bin" x6, 4 empty right-arm `cage_lying` picks) |
 | rs23-robot6-rest | v23 (6da97a3e9847) | six-parameter | 28/31 | +3.50 ± 0.87 | 0 | 0 | PASS, done 7, time limit 1 | as v22: 1 pick on the nominal camera before the first trusted fit in every episode (8; 7 on air, 1 sorted), 16 looks `nominal`, 190 `hands`, 36 fits `trusted`. Lost, all lying prisms: seed 1006 orange (as v22), seed 1007 yellow (`ridge_opposed` x2, `cage_lying` x1, all empty; v22 sorted it), seed 1004 purple: held by `ridge_opposed` (0.627), slipped in the carry, then 25 x `no options for blue lying cylinder` = `grasps._depth` KeyError 'cylinder' (`cage_lying.squeeze` has only a `triangle` key) until the time limit. Any lying target not named triangle gets no grasp |
 
+### Hands on the counter (counter near edge, clear-hands layouts)
+
+The only physics test of "leave the table first". `table.near_edge_x` (real_sim.py `cut_near_edge`) shortens the counter
+on the robot's side; `real_eval --clear-hands 0.045` redraws each seed's layout from the same rng until every object
+centre is 4.5 cm from the resting hands (FK of the recorded start), as staff would place them (27 objects over seeds
+1000-1007 instead of 31, mostly 3 per episode); `--config` gives the evaluator the sim's variant file. Configs on the
+instance: `/data/scratch/realsim/robot6edge24{,far}.yaml`, `robotmildedge24far.yaml`. Checked before the legs with
+`edge_check.py` (arms to the recorded start, layout of seed 1000, head frame, FK hand points against the counter):
+
+| Counter top (pelvis z) | Near edge (pelvis x) | Lowest hand point above the counter, left / right | Arm against the recorded pose |
+|---|---|---|---|
+| 0.02 (robot6) | 0.09 (scene file) | 4.2 / 4.1 cm | elbows 0.43 / 0.42 (0.95 / 0.81): wrists rest on the counter |
+| 0.02 | 0.17 | 5.5 / 5.7 cm | left elbow 0.66, left wrist pitch -1.60 (its limit; recorded -1.16): the hand folds up on the edge |
+| 0.02 | 0.20 | 2.7 / 3.2 cm | elbow 0.92, wrist pitch -1.59 |
+| 0.00 | 0.20 | 3.3 / 3.6 cm | wrist pitch -1.37 |
+| 0.02 | 0.24 (under the finger bases) | 1.8 / 2.3 cm | palms 3.4 cm above their commanded height: the counter carries the hands; head frame: both hands low on the table, the left on its heel with the fingers up, as recorded (index tip z 0.094 there too) |
+
+The recorded palms (z 0.004 to 0.013) lie below robot6's counter top (0.02): on the robot either the table is lower
+than the depth estimate or the arm's FK sits about 2 cm low (the robot log saw the palm 9 to 11 mm under its command).
+With the edge at 0.24 an object pushed more than about 2 cm towards the robot can fall off the near edge: such an
+"off" would be an artefact of the variant.
+
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
 
