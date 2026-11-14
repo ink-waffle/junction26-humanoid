@@ -251,6 +251,10 @@ motion:
     side: 0.085               # from the side walls
   release_rise: [0.0]         # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
   min_retreat_up: 0.02        # a raised release shortens the retreat after it by the rise, down to this
+  landing:                    # where released objects come to rest around the release point (sweeps 5, 20: n = 232); a release whose box crosses an inner wall is refused
+    forward: [-0.032, 0.077]
+    outward: [-0.048, 0.048]
+    margin: 0.0               # the box stays this far inside the inner walls
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
     default: 0.01
@@ -259,7 +263,7 @@ motion:
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
   candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified, `lying` = prism on a side
-    stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}
+    stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, ridge_pinch, cage_lying]}
     soft: {cube: [cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}   # the pinch has no soft closure
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), inward_headings_deg (fixed finger headings
   # in the pelvis frame, positive = turned inward, tried in this order), point_in_palm, preshape / closed /
@@ -283,9 +287,22 @@ motion:
       inward_headings_deg: [90, -90]
       last_resort: true       # never the grasp a retry starts with: it runs only when no other candidate has a plan
       height_frac: 0.6        # the hand is tilted 22-36 deg there: 4.5 mm higher keeps the closed fingertips off the counter
-    cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold
+    cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold, for ridges the arm cannot turn the fingers along
       base: cage
       squeeze: {triangle: 0.75}
+      last_resort: true       # holds 1 in 4, and only with the fingers across the ridge
+    ridge_opposed:            # lying prism, fingers along its ridge: one finger on an end face, the thumb swung opposite it (thumb_0)
+      point_in_palm: [0.092, -0.084, 0.0285]
+      preshape: [-0.63, -0.5, 1.5, -0.4, -0.4, -0.4, -0.4]
+      closed: [-0.63, 0.1, 1.01, -1.0, -0.6, -1.0, -0.6]   # thumb tip at palm x 65 mm, z 28.5 mm: under the finger
+      squeeze_axis: [0.46, 1.0, -1.23, 0.0, 0.0, 0.0, 0.0]   # 46 mm per rad at constant height and z
+      squeeze: 0.30           # deeper loses more on the stiff hand (0.45: 6/9 against 18/23)
+      headings_deg: {triangle: [0, 180]}
+      height_frac: 0.4        # the end face is a triangle: wide enough for a fingertip only in its lower half
+      soft: {squeeze_axis: [0.46, 1.0, -1.23, -0.5, 0.0, -0.5, 0.0], squeeze: 0.45, carry_acc: 4.0}
+    ridge_pinch:              # the same without the thumb swing (thumb_0 = 0): organiser pinch along the ridge; too weak for a soft hand
+      headings_deg: {triangle: [0, 180]}
+      height_frac: 0.4
     pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}

@@ -17,7 +17,7 @@ from aaltonomous.scene.scene import Scene
 
 from halal import config
 from halal.motion import sequence
-from halal.motion.grasps import Grasp, right_hand
+from halal.motion.grasps import INWARD, Grasp, right_hand
 from halal.motion.obstacles import distance, outline, top_of
 from halal.perception import SceneLayout
 
@@ -37,6 +37,7 @@ class PickPlanner(Planner):
     release_rise = 0.0
     low = False
     obstacles: Sequence[Any] = ()
+    rim_z: float | None = None
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -64,11 +65,22 @@ class PickPlanner(Planner):
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
             releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name)
             for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
+                if place_xy is None and not self._lands_inside(side, bin_name):
+                    plan = replace(plan, reason="release would land on a bin wall")
+                    continue
                 with self._released_from(rise):
                     plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
         return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
+
+    def _lands_inside(self, side: str, bin_name: str) -> bool:
+        """Whether the whole landing box around the release point lies inside the bin's inner walls."""
+        box, outward = self.motion["landing"], -INWARD[side]
+        spans = np.array([box["forward"], sorted(outward * np.asarray(box["outward"], float))]).T
+        inner = self.scene.mat_to_pelvis(np.array(self.scene.bin_inner_box(bin_name)))[:, :2]
+        lands = self.drop_xy(bin_name) + spans
+        return bool(np.all(lands[0] >= inner.min(0) + box["margin"]) and np.all(lands[1] <= inner.max(0) - box["margin"]))
 
     def _carried_gently(self, plan: Plan, grasp: Grasp) -> Plan:
         """The plan with lift and carry re-timed to the grasp's own arm acceleration; unchanged when the grasp sets none."""
@@ -165,7 +177,8 @@ class PickPlanner(Planner):
                        reason="" if clips == 0 else f"{clips} safety clips in dry run")
 
     def set_layout(self, layout: SceneLayout) -> None:
-        """Plan against the counter height and bin positions perception reports for this episode."""
+        """Plan against the counter height, bin positions and highest rim perception reports for this episode."""
+        self.rim_z = layout.rim_z
         file_scene = self.__dict__.setdefault("file_scene", self.scene)
         cfg = copy.deepcopy(file_scene.cfg)
         cfg["counter"]["mat_origin_in_pelvis"][2] = float(layout.counter_z)
@@ -174,11 +187,15 @@ class PickPlanner(Planner):
         self.use_scene(Scene(cfg))
 
     def use_scene(self, scene: Scene) -> None:
-        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall."""
+        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall and up to the measured rim."""
         self.__dict__.setdefault("file_scene", self.scene)
-        cfg = copy.deepcopy(scene.cfg)
-        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"])
-        self.scene = Scene(cfg)
+        self.scene = self._walled(copy.deepcopy(scene.cfg))
+
+    def _walled(self, cfg: dict[str, Any]) -> Scene:
+        """Scene of `cfg` with its bin walls raised to `min_wall_height` and to the measured rim (`rim_z`) above its counter."""
+        seen = 0.0 if self.rim_z is None else self.rim_z - float(cfg["counter"]["mat_origin_in_pelvis"][2])
+        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"], seen)
+        return Scene(cfg)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
         """Whether this arm can hold the grasp point over one of the bin's release points."""
@@ -362,7 +379,7 @@ class PickPlanner(Planner):
         if self.motion["counter_from_detection"]:
             cfg = copy.deepcopy(nominal.cfg)
             cfg["counter"]["mat_origin_in_pelvis"][2] = float(det.top[2]) - self.height
-            self.scene = Scene(cfg)
+            self.scene = self._walled(cfg)
         try:
             yield
         finally:
