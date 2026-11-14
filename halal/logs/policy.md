@@ -70,7 +70,19 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v10 | 7e65414e990c | 513e266 | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.13** | PASS (through the image, 0 clips, ≥ 29.99 Hz, rt ≥ 186) | v9 + motion's staggered release (main 2120e4f) + finger-by-finger reopening before every re-check + last check back home before an arm is retired + hand opens on the way home + release slots sideways only; 86 release checks, 0 positive; lost: the seed-1001 triangle, pushed out of view by its first pick |
 | v11 | 13ae623395f5 | 8428e32 | soft sim only: +3.88 ± 0.78, 31/31 | – | – | – | PASS (soft sim) | v10 + main b28f322 + soft hands told by a 0.002 rad bias + release check only after unknown-shape picks + known shapes first + the check back home at the calibration posture; not run on the stock sims (v12 contains it) |
 | v12 | d2cadf30d4c2 | 8382cb2 | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.13** | PASS (through the image, 0 clips, ≥ 29.99 Hz, rt ≥ 151) | v11 + main 1f02750 (vertex-aligned triangle grasp, soft carry at 4 rad/s²) + lag as a second vote for a soft hand + slots 65 / 60 mm apart + attempts follow an object pushed in small steps; 48 of 48 hands classed stiff from a completed calibration; lost: a triangle knocked over by the grasp of its neighbour 7.5 cm away |
-| v13 | – | 8701a4e | – | – | – | – | mock suites pass | v12 + main f91db01 and 66b64dc (obstacle-aware plans, real colour words) + other detections passed as obstacles, a blocked target waits for its neighbour + free-standing objects first + soft grasps for a hand without a completed calibration + calibration at home when the start pose has no room |
+| v13 | 3063629595a9 | d3a28be | +3.75 ± 0.66, 30/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.00** | PASS (through the image, 0 clips, 29.99 Hz, rt ≥ 186) | v12 + main 7cfd3f1 (obstacle-aware plans, colour families orange → red and purple → blue, real colour words) + other detections passed as obstacles, a blocked target waits for its neighbour + free-standing objects first + soft grasps for a hand without a completed calibration + calibration at home when the start pose has no room + release slots 30 / 40 mm apart; lost: a cube stacked on its twin (slots), a triangle picked with plain `cage` after a neighbour ruled out `cage_apex`; soft sim 29/31, both lost objects stacked; not published |
+
+v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Hands (16 closes) | Empty picks | "hand would touch" / last resort | Seed 1001 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.75 ± 0.66 | 30/31, 1 counter | done 8 | 0 | 29.99 | 186 | PASS | stiff 16 | 0 | 12 / 1 | 4/5: second red cube stacked on the first |
+| known | c | +6.75 ± 1.71 | 27/28, 1 counter | done 8 | 0 | 29.99 | 200 | PASS | stiff 16 | 3 | 2 / 0 | 2/3: yellow triangle, `cage` after `cage_apex` was refused, 3 empty picks |
+| unseen | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 29.99 | 195 | PASS | stiff 16 | 0 | 2 / 0 | 3/3: the same fall-through to `cage` held (0.101) |
+| fixed, soft-hand sim | c | +3.62 ± 0.70 | 29/31, 2 counter | done 8 | 0 | 30.0 | 168 | PASS | soft 16 (bias 0.0055, lag 0.126–0.142) | 0 | 12 / 1 | 4/5: second red cube stacked (seed 1002: a blue cube stacked) |
+
+Pre-check `replay --synthetic 100 --container`: pass, p50 6.2 ms. All 31 soft picks held at the first try (lift
+score 0.307–0.561, threshold 0.15). Every lost object but the triangle came to rest on another one in its bin.
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -225,6 +237,21 @@ bench, n = 119): two slots cannot be separated forward any more. Slots now diffe
 4 cm outward, centre bin ±2 cm (±3.5 cm would leave 4 mm to the side wall for an outward throw).
 v12, with motion's release points 8.5 cm inside the side walls (landing box x −28..+77 mm, outward −40..+48 mm):
 side bins 2 cm inward and 4.5 cm outward (65 mm apart), centre bin ±3 cm, so two objects cannot rest on each other.
+v13 tried motion's narrower slots (side 0 and 3 cm outward, centre ±2 cm; his landing box in the grippy-and-light
+corner is x −35..+79 mm, outward −59..+69 mm around the release point, so the first slot at 0 keeps every wall
+clear). Objects that share a bin, centre to centre at rest (objects are 45 mm wide, the rim is at z 0.070):
+
+| Slots | Legs | Pairs | Smallest gap | Not flat | Lost |
+|---|---|---|---|---|---|
+| v10: side 0 / +4 cm, centre ±2 cm | 3 | 15 | 32 mm | 3 leaning, z 0.051–0.067 | 0 |
+| v12: side −2 / +4.5 cm, centre ±3 cm | 4 (one on the soft sim) | 22 | 52 mm | 0 | 0 |
+| v13: side 0 / +3 cm, centre ±2 cm | 4 (one on the soft sim) | 22 | 2 mm | 3 stacked at z 0.077–0.081, 2 leaning at z 0.043–0.048 | 3 |
+
+v13, fixed seed 1001: two red cubes released at y 0.243 and 0.273 rested 2 mm apart, one on the other, above the
+rim: scored as left on the counter; the soft-hand sim stacked the same pair and one more (gaps 14 and 33 mm). Two
+more pairs landed on each other and slid apart (gap 44–46 mm along x). No object of any version came to rest
+outside its bin. v14 is back on v12's slots: stacking has cost an object in
+measured episodes, the walls have not. Open: the grippy-and-light corner is not in our eval seeds.
 
 ### Two evaluators on one sim (14.11, 09:28 UTC, my mistake)
 `halal.eval.proxy --port P` serves leg i on P + i and `serve_image.sh` names its container `halal-eval-<port>`
@@ -270,6 +297,17 @@ then took three empty picks and was lost; in the unseen leg it did not. v13 pass
 `plan_pick(obstacles=...)`: a target whose options fail with "hand would touch" is not a failed attempt while
 another target can go; if none can, the first blocked target is planned without its nearest neighbour (logged).
 Targets without another detection within `policy.neighbour_radius` (9 cm) are picked first.
+v13 through its image: 28 "hand would touch" refusals in 32 episodes, the last resort twice. Known seed 1001: the refusal took `cage_apex`
+away from the yellow triangle (the blue one 7.5 cm away), the next option was plain `cage`, the planner passed it,
+the pick came up empty and toppled the triangle: lost after two more picks (the same fall-through held it in the
+unseen leg, lift score 0.101). So v13 traded a risk for the neighbour against a worse grasp for the target.
+v14: a target waits as soon as the plan it would get alone on the counter would touch a neighbour, and no other
+arm or grasp is tried for it in that look; clear targets go first. When no target is clear (objects that touch,
+neighbours that are not to be sorted) the first one in order is planned without obstacles, as v12 did (logged):
+obstacles change the order of picks, never the grasp, and can not keep a target from being picked. Mock, real
+planner, two cubes 50–70 mm apart and a free cylinder: cylinder first, then the nearer cube as if alone, then
+the other one clear, 3/3; at 85 mm no refusal. This run is also the check that the planner's reason text still
+reaches the chooser (the policy recognises a neighbour by the words "hand would touch").
 
 ### Which class for a hand nobody calibrated (v13)
 Motion's table: a soft hand with stiff grasps holds 2 of 18, a stiff hand with soft grasps loses only triangles
@@ -299,6 +337,45 @@ least tried, known shape, free-standing, nearest its bin; a pick cut off by the 
 | no room for the calibration close at the start pose | 3/3, calibrated at home | done | 0 |
 | instruction for one colour/shape ("Put the purple cube into the center box.") | 1 pick, the rest untouched | done, 31–34 s | 0 |
 | object stays in the hand for the first n openings (release check on) | n ≤ 3: 3/3, arm kept; n ≥ 4: arm retired | done / time limit | 0 |
+| detector call never returns on look 2 / on looks 1, 3, 4 (v14) | 3/3 / 4/4 | done | 0 |
+| detector never returns at all, then a normal episode (v14) | 0/3, then 5/5 | time limit, then done | 0 |
+| every detector call takes 1.5 × the deadline (v14) | 3/3 after one abandoned look | done | 0 |
+| a detection with an unknown shape word in every look, ahead of a real target in the order (v14) | 3/3 | time limit | 0 |
+| a detection with NaN position, NaN yaw, NaN confidence, unknown colour, 30 cm above or below the counter | 3/3 | done / time limit | 0 |
 
-Worst `act()` 2–5 ms in every case. Not covered by the mock: physics of a failed grasp, real camera frames, a
-detector that never returns (the look would wait for it for the rest of the episode).
+Worst `act()` 2–5 ms in every case. Not covered by the mock: physics of a failed grasp, real camera frames.
+
+### A detector call that never returns (v14)
+Before: the look waited for it for the rest of the episode, and because jobs share one lock the next episodes
+waited too (mock: 0/3, then 0/5 in the following episode). v14: the detector call runs in a thread of its own and
+is left behind after `policy.detect_deadline_s` (5 s; a call takes 0.03–0.1 s, a whole look 0.8 s of wall time
+under three sims): the look fails, the policy pauses 1 s and looks at a fresh frame. Every miss doubles the
+deadline for the calls after it, so a detector that is only slow costs one deadline, not every look. The
+abandoned call never reaches the planner. Not given a deadline: the planner (its loops are bounded, and a second
+call on the same planner while one is stuck would share its state).
+
+### One target that breaks planning (v14)
+The options of a target (arms, grasps, slots) were built outside the guard around the planner call: a detection
+whose shape is not one of ours raised in `candidate_grasps`, the whole look failed, and when that target was
+ahead of others in the order nothing behind it was ever picked (mock: 2/3 with 17 failed looks). v14 counts
+anything that fails for one target as no plan for that target: 3/3. A phantom that can never be planned still
+keeps the episode from ending with `done` (it runs to the time limit; nothing is lost by that).
+
+### Real colours in the mock (v13 and v14 trees; rendered mock world, object colours orange 25°, pale yellow 55°, purple 220°)
+The detector's `red` family covers orange and `blue` covers purple (main 7cfd3f1); the parser maps the words.
+
+| Instruction | Objects | What happened | Clips |
+|---|---|---|---|
+| "Put the purple objects in the left bin, the yellow objects in the center bin and the orange objects in the right bin." | real colours, 3 seeds | {blue: left, yellow: center, red: right}, conf 1.00; 3/3, 4/4, 5/5, done in 61–95 s | 0 |
+| "Put the orange cube into the right box." | real colours, 4 seeds | {red/cube: right}; every orange cube moved, nothing else touched, done in 35–62 s | 0 |
+| the sim's training sentence with permuted bins (red / yellow / blue words) | real colours, 2 seeds | orange sorted as red, purple as blue: 3/3, 4/4 | 0 |
+| the fixed-task sentence | real colours | 5/5 | 0 |
+| "Sort the blocks into the orange boxes: purple left, yellow middle, orange right." | real colours | boxes not taken for a rule; 4/4 | 0 |
+| the real three-colour sentence, the one-cube sentence | sim colours | 3/3; only red cubes moved | 0 |
+
+The mock draws every prism as a box, so "cube" there includes its triangles. One colour moved at a time, the real
+three-colour sentence: orange read at 15–34° correct; at 36°, 40°, 45° it is detected as yellow with full
+confidence and goes to the yellow bin (the one way to a wrong bin found here); purple at 200–284° correct, at
+295° not detected (stays); yellow at saturation 0.30 correct, at 0.20 not detected (stays). Reported to
+perception, who are moving the orange / yellow boundary into the hue gap the scene shows; this sweep is the
+acceptance test for that.
