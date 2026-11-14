@@ -78,7 +78,8 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v18 | b99fd5dd4a9f | e981865 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 134 with four sims running) | v17 + main 4d93acb (perception hardening, bin row finder) + perception's layout is the only layout (no scene-file re-plan, no latch); known leg on sim `d`; soft sim 31/31, 0 empty picks |
 | v19 | ede4203ebfb1 | 6216ebb | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 115 at rtf 0.33–0.38) | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
 | v20 | b7468d515c78 | a3498c7 | +3.88 ± 0.78, 31/31 | stopped | – | – | PASS on the fixed leg | v19 + main 9a0dc50 (perception H10 / H11: bins as seen without a measured camera; soft lists; early obstacle rejection); stopped after its fixed leg for v21 |
-| v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | see below | | | | | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
+| v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
+| v22 | cb81d93c1969 | e318a23 (= main cae48ed) | see below | | | | | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -715,3 +716,13 @@ move (our rim check, not the safety filter), hence the layout before the move an
 | sim home | unchanged |
 
 Suites on that tree as v20's; two fast-mock episodes ran past 120 s under Mac load, nothing else lost.
+
+v22 tree, mock (18:55 UTC): neighbours_e2e 5/5 cases 3/3, grip suite 5/5, soft path 2/2, lying prisms with
+`ridge_opposed`, real colours clean; recorded start poses with the boxes at the file's place and 6 cm farther: 12 of 12
+episodes leave the table within ~1 s (run 1's pose by way of the clear-view pose when the boxes stand at the file's
+place), calibrate, and sort 3/3 and 5/5 (one 4/5 at the limit under Mac load), 0 clips.
+On `grip_check_patience` (asked after the real-look run rs20: 27 of 40 releases with "lowest grip score inf"): left at
+3. The patience is the net under an unvalidated threshold (no real HELD reading exists yet; `soft` 0.15 is an estimate
+from teleop data): a check that is never distrusted would open the hand above the counter on every pick if a held
+object read below it. Its cost, ~5 s per truly empty pick once it is off, only arises in episodes whose grasps miss
+anyway. To revisit with the first real "grip score after the lift" of a held object.
