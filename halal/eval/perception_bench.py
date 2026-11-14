@@ -27,6 +27,7 @@ from aaltonomous.scene.scene import Scene, shape_polygon
 
 from halal import config
 from halal.perception import SHAPES, Detector, ObjectDetection, make_detector
+from halal.perception.color import turned
 
 REPO = Path(__file__).resolve().parents[2]
 CAMERA = "head"
@@ -179,12 +180,16 @@ def silhouette(scene: Scene, truth: Truth, camera: Pinhole, shape: tuple[int, in
 
 def repainted(frame: Frame, scene: Scene, turns: Mapping[str, float]) -> Frame:
     """The frame with every lying object's pixels turned in hue by its colour's angle (deg): the real foam palette in the sim's light."""
-    hsv = cv2.cvtColor(frame.obs["head_rgb"].astype(np.float32) / 255.0, cv2.COLOR_RGB2HSV)
+    rgb = frame.obs["head_rgb"].copy()
     for truth in frame.truths:
-        mask = silhouette(scene, truth, frame.camera, hsv.shape[:2])
-        hsv[mask, 0] = (hsv[mask, 0] + turns[truth.color]) % 360.0
-    rgb = np.round(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB) * 255.0).astype(np.uint8)
+        mask = silhouette(scene, truth, frame.camera, rgb.shape[:2])
+        rgb[mask] = turned(rgb[mask], turns[truth.color])
     return replace(frame, obs={**frame.obs, "head_rgb": rgb})
+
+
+def rotated(frame: Frame, degrees: float) -> Frame:
+    """The frame with the hue of the whole image turned: a colour cast the counter's white balance does not remove."""
+    return replace(frame, obs={**frame.obs, "head_rgb": turned(frame.obs["head_rgb"], degrees)})
 
 
 def in_split(seed: int, split: str, heldout_every: int) -> bool:
@@ -413,6 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--looks", type=int, default=1, help="show every frame this many times, 0.2 s apart (a robot standing still)")
     ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
     ap.add_argument("--repaint", action="store_true", help="turn the objects' hues to the real foam palette (bench.repaint_deg)")
+    ap.add_argument("--rotate", type=float, default=0.0, metavar="DEG", help="then turn the hue of the whole image by this much")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
@@ -424,6 +430,7 @@ def main(argv: list[str] | None = None) -> int:
         load_frame(p, scene, nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
     frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
+    frames = [rotated(frame, args.rotate) for frame in frames] if args.rotate else frames
     passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
     result = report(passed, cfg)
     print(render(f"{args.detector} on {label} [{args.split}]", result))
