@@ -6,6 +6,20 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 01:05
+- **Hand-in candidate: v26** (amd64 `sha256:010977be9f6fa7222a2959961eacaec900f1824b1b596ebc261ad92a40b7dead`,
+  `:v26-multi` `sha256:55c54bb3…`): fixed 31/31, known 27/28 (one sim-jitter loss; that seed rerun 5/5), unseen
+  28/28, soft 31/31, gate PASS on all 33 episodes. = v24 + v25's frozen check from home, shape memory by colour,
+  a lying detection keeps its shape, complete squeeze maps, a target whose options raise is left alone, and the
+  skewed ridge grasp for lying prisms in the soft hand's reach hole at the counter edge.
+- **Real-look sim, hands ON the counter as on the robot (v24):** every episode leaves the table first (0 clips),
+  fits the camera at home (34/34 trusted) and makes no pick before the fit: 24/26; with the box row +10 cm 19/26
+  (time is the limit there: far-box planning since cut 2.4×, `main` 59e86fc).
+- **Closed-loop grasp** (`policy.grasp_feedback`, default open): pre-submitted to the organisers as servo2-servo;
+  three fixes since (arm-fit turn cap, re-hover, own old detection not an obstacle). servo5 set gating now.
+- In `main`, not yet in an image: carry corridor (off; physics A/B running), far-box planning speed-up, attempt
+  over-count fix, clear-view look when nothing plans (pending).
+
 ### Sat 14.11, 23:00
 - **Hand-in candidate: v24** (amd64 `sha256:e4869cbc15002be99625e5dd8a8c5732ce8d2b5a59cecb36a736cf905e3c166d`, `:v24-multi`
   `sha256:1f52f8a6…`): stock 87/87, gate PASS 24/24, soft 31/31. = v22 + frozen head image stops picks, kept box row,
