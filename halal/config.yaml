@@ -237,9 +237,9 @@ policy:
   min_detection_confidence: 0.5   # colour certainty: 1.0 inside a hue basin, 0 from 6 degrees outside
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
-    left: [[0.0, -0.02], [0.0, 0.045]]    # sideways only, 65 mm apart: the staggered release lands objects up to 8 cm ahead, 5 cm outward
-    center: [[0.0, -0.03], [0.0, 0.03]]
-    right: [[0.0, 0.02], [0.0, -0.045]]
+    left: [[0.0, 0.0], [0.0, 0.03]]       # sideways only: motion's release point, then 3 cm outward (grippy-light sweep: wider slots reach the walls)
+    center: [[0.0, -0.02], [0.0, 0.02]]
+    right: [[0.0, 0.0], [0.0, -0.03]]
   grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
   grip_joints: [1, 3, 5]      # joints the grip score sums, each hand's own order: thumb_1 and both finger_0 (thumb_2 sits on its limit)
   grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
