@@ -1,9 +1,11 @@
 """Dev-only evaluator with the real robot's words: sim_eval with the colours renamed and the real sort_fixed rule.
 
     python -m halal.eval.proxy --evaluator halal.eval.real_eval ...     (words and rule: halal/ops/real_sim.yaml)
+    --record-video NAME                                                 films every episode to runs/videos/NAME
 """
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -12,6 +14,7 @@ from typing import Callable
 import numpy as np
 import yaml
 
+from aaltonomous.deploy import runner
 from aaltonomous.interface import env as env_module
 from aaltonomous.interface import tasks
 
@@ -48,11 +51,17 @@ def real_instructions(make: Callable[[str, np.random.Generator], Instruction], c
 
 
 def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False)
+    ap.add_argument("--record-video", metavar="NAME")
+    args, rest = ap.parse_known_args(argv)
+    if args.record_video:
+        from .video import VideoRecorder  # needs a running sim
+        runner.run_episode = VideoRecorder(args.record_video).episode
     cfg = yaml.safe_load(CONFIG.read_text())
     render = paraphrases.render
     tasks.make_instruction = env_module.make_instruction = real_instructions(tasks.make_instruction, cfg)
     paraphrases.render = lambda *args: (lambda text, mapping: (reword(text, cfg["words"]), mapping))(*render(*args))
-    return sim_eval.main(argv)
+    return sim_eval.main(rest)
 
 
 if __name__ == "__main__":
