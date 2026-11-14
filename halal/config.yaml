@@ -1,5 +1,7 @@
 # Halal policy settings. Units: m, rad, s. Organiser baseline values are changed only through `baseline_overrides`.
-baseline_overrides: {}        # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
+baseline_overrides:           # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
+  motion.close_hold_s: 0.45   # the real fingers need 0.3-0.4 s to reach 90 %; the sim hand lags by 0.1 s as well
+  motion.hand_max_vel: 2.0    # rad/s the real proximal and thumb joints can follow
 
 perception:
   detector: baseline          # key of halal.perception.DETECTORS
