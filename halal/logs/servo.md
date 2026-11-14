@@ -36,6 +36,7 @@ pregrasp, 91-98 % at the grasp), so the look is taken from beside the object.
 | s3-servo | servo3-servo 34443d4b8b17 (32024af) | 15/15 | +3.75 | 0 | 169.6 | PASS | 16 looks applied, 3 refused (rms: the cylinder misread among them), 5 on visible; all held; 1 no hover |
 | s4-measure | servo4-measure 28dd119f2754 (e944ede, v26 base) | 15/15 | +3.75 | 0 | 168.2 | PASS | measure path identical to ca14b09 |
 | s5-servo | servo5-servo 15c5465be573 (ca14b09) | 15/15 | +3.75 | 0 | 166.8 | PASS | 8 corrected and held, 3 open loop from the hover held, 1 no hover |
+| s5-open | servo5-open 5a3cdcf2689d (ca14b09) | 15/15 | +3.75 | 0 | 155.2 | PASS | no hover (open) |
 
 - Believable corrections median 12-15 mm, max 21 mm. Of that, the arm hangs under its command at the hover: tracking
   (commanded minus measured grasp point) about (+3, +1, +7) mm; the object in the arm frame differs from the scene camera by
