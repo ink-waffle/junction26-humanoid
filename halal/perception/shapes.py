@@ -93,25 +93,27 @@ class OutlineFitter:
         offsets = (np.arange(self.grid) - (self.grid - 1) / 2) * self.cell
         self.offsets = np.stack(np.meshgrid(offsets, offsets, indexing="ij"), axis=-1).reshape(-1, 2)
 
-    def view(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, axes: np.ndarray) -> np.ndarray:
+    def view(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, axes: np.ndarray, rival: np.ndarray | None) -> np.ndarray:
         """Top-plane evidence grid around `origin` (a point of the top plane): +1 top face, -1 empty, 0 hidden or unknown."""
-        labels = camera.surface_labels(depth, origin + self.offsets @ axes, self.cfg["depth_tolerance"])
+        labels = camera.surface_labels(depth, origin + self.offsets @ axes, self.cfg["depth_tolerance"], rival)
         return labels.reshape(self.grid, self.grid).astype(np.float32)
 
-    def fit(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, counter: PlaneFit) -> list[TopFace]:
-        """Every top face in the view around a rough centre on the top plane: fit, claim its cells, fit what is left."""
+    def fit(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, counter: PlaneFit, rival: np.ndarray | None = None) -> list[TopFace]:
+        """Every top face in the view around a rough centre: fit, claim its cells, fit what is left; `rival` pixels are not it."""
         axes = counter.axes()
-        view = self.view(depth, camera, origin, axes)
+        view = self.view(depth, camera, origin, axes, rival)
         start = origin - self._silhouette_shift(camera, origin, counter.normal)
         faces: list[TopFace] = []
-        while len(faces) < self.cfg["max_per_view"]:
+        needed = self.cfg["min_score"]
+        while len(faces) < self.cfg["max_per_view"] and (view > 0).sum() >= needed * min(self.area.values()):
             small = cv2.resize(view, (self.grid // COARSE, self.grid // COARSE), interpolation=cv2.INTER_AREA)
             fits = sorted((self._fit_shape(s, view, small, start, axes) for s in SHAPES), key=lambda f: -f.score)
-            if fits[0].score < self.cfg["min_score"] * fits[0].area:
+            if fits[0].score < needed * fits[0].area:
                 break
             pixels = camera.project(origin + self.offsets[fits[0].cells] @ axes)[:, :2]
             faces.append(TopFace(tuple(fits), np.round(pixels).astype(int)))
             view.ravel()[fits[0].footprint] = -1.0
+            needed = self.cfg["min_next_score"]
         return faces
 
     def _silhouette_shift(self, camera: Camera, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:

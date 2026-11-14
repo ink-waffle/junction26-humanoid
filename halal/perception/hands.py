@@ -25,6 +25,7 @@ PARTS = ("elbow_link", "wrist_roll_link", "wrist_pitch_link", "wrist_yaw_link", 
          "hand_thumb_1_link", "hand_thumb_2_link", "hand_middle_0_link", "hand_middle_1_link", "hand_index_0_link",
          "hand_index_1_link")
 LINKS = tuple(f"{side}_{part}" for side in ("left", "right") for part in PARTS)
+RIGID_PARTS = PARTS[:5]  # forearm to palm: no finger joints in between, large surfaces
 SAMPLE_AREA = 16e-6     # one surface sample per this many square metres
 COVER_REACH = 0.05      # a sample whose outward ray meets its own link within this distance is not on the outside
 
@@ -41,15 +42,18 @@ class HandSurface:
         asset = np.load(ASSET)
         self.frames = [self.model.getFrameId(str(name)) for name in asset["links"]]
         self.link, self.points, self.normals = asset["link"], asset["points"].astype(float), asset["normals"].astype(float)
+        self.rigid = np.array([str(name).endswith(RIGID_PARTS) for name in asset["links"]])[self.link]
 
-    def posed(self, arm_q: np.ndarray, hand_q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Surface points and outward normals (N, 3) in the pelvis frame."""
+    def posed(self, arm_q: np.ndarray, hand_q: np.ndarray, fingers: bool) -> tuple[np.ndarray, np.ndarray]:
+        """Surface points and outward normals (N, 3) in the pelvis frame; without `fingers` only forearms and palms."""
         q = pin.neutral(self.model)
         q[self.arm_iq], q[self.hand_iq] = arm_q, hand_q
         pin.framesForwardKinematics(self.model, self.data, q)
-        rotations = np.stack([self.data.oMf[f].rotation for f in self.frames])[self.link]
-        offsets = np.stack([self.data.oMf[f].translation for f in self.frames])[self.link]
-        return np.einsum("nij,nj->ni", rotations, self.points) + offsets, np.einsum("nij,nj->ni", rotations, self.normals)
+        keep = slice(None) if fingers else self.rigid
+        rotations = np.stack([self.data.oMf[f].rotation for f in self.frames])[self.link[keep]]
+        offsets = np.stack([self.data.oMf[f].translation for f in self.frames])[self.link[keep]]
+        return (np.einsum("nij,nj->ni", rotations, self.points[keep]) + offsets,
+                np.einsum("nij,nj->ni", rotations, self.normals[keep]))
 
 
 @dataclass(frozen=True)
@@ -59,6 +63,8 @@ class HandFit:
     points: int             # depth pixels matched to the model at the final gate
     rms: float              # their point-to-surface distance, m
     spread: np.ndarray      # predicted standard deviation (xyz, m) this pose leaves on a point at `anchor`
+    coverage: float         # share of the visible model surface that has depth on it: low = it locked onto something else
+    inliers: float          # share of the depth pixels around the arms that lie on the model: low = something else is there
 
 
 class HandReference:
@@ -72,7 +78,7 @@ class HandReference:
     def fit(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray, floor: PlaneFit | None,
             anchor: np.ndarray) -> HandFit | None:
         """Register starting from `camera`; None when too little of the arms is in view."""
-        model, normals = self._facing(*self.surface.posed(arm_q, hand_q), camera, depth.shape)
+        model, normals = self._facing(*self.surface.posed(arm_q, hand_q, self.cfg["fingers"]), camera, depth.shape)
         pixels = self._pixels(depth, camera, model, floor)
         if len(model) < self.cfg["min_points"] or len(pixels) < self.cfg["min_points"]:
             return None
@@ -86,7 +92,11 @@ class HandReference:
             moved = camera.moved(Rotation.from_rotvec(pose[:3]).as_matrix(), pose[3:])
         lever = np.c_[-skew(anchor - camera.T[:3, 3]), np.eye(3)]
         covariance = lever @ np.linalg.inv(information + np.diag(self.prior)) @ lever.T
-        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)))
+        seen = moved.deproject(pixels)
+        around = np.isfinite(tree.query(seen, distance_upper_bound=self.cfg["gates"][0])[0])
+        on_model = np.isfinite(tree.query(seen[around], distance_upper_bound=self.cfg["gates"][-1])[0])
+        covered = np.isfinite(cKDTree(seen[around][on_model]).query(model, distance_upper_bound=self.cfg["gates"][-1])[0])
+        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.mean()), float(on_model.mean()))
 
     def _facing(self, model: np.ndarray, normals: np.ndarray, camera: Camera, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
         """The model points inside the image that face the camera and are the nearest in their image cell."""

@@ -37,6 +37,16 @@ class ColorClassifier:
         grey = np.median(counter_rgb, axis=0).astype(float) + 1e-6
         return grey.mean() / grey
 
+    def pixel_classes(self, samples: np.ndarray, gains: np.ndarray) -> np.ndarray:
+        """Per RGB sample (N, 3): index of the basin its hue is in, -1 when it is in none or too pale to say."""
+        r, g, b = (samples * gains).T
+        hue = np.degrees(np.arctan2(SQRT3 * (g - b), 2 * r - g - b)) % 360.0
+        vivid = (np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)) >= self.cfg["chroma_range"][0] * np.maximum(np.maximum(r, g), b)
+        classes = np.full(len(samples), -1, np.int8)
+        for index, (lo, hi) in enumerate(self.cfg["basins"].values()):
+            classes[vivid & ((hue - lo) % 360.0 <= (hi - lo) % 360.0)] = index
+        return classes
+
     def classify(self, samples: np.ndarray, gains: np.ndarray) -> tuple[str, float]:
         """Colour name and confidence in [0, 1] for RGB samples (N, 3) of one object."""
         balanced = samples * gains
