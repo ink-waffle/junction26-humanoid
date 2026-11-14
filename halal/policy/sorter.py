@@ -75,7 +75,7 @@ class SortPolicy:
         self.bin_for = bin_for
         self.time_limit = self.episode_s
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
-        self.attempts = Attempts(s["same_object_radius"], s["max_attempts"])
+        self.attempts = Attempts(s["same_object_radius"], s["max_attempts"], s["max_plan_failures"])
         self.released: Counter[str] = Counter()
         self.hands: dict[str, HandResponse] = {}
         self.trace: CalibrationTrace | None = None
@@ -83,7 +83,7 @@ class SortPolicy:
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
         self.at_look_pose = self.hands_clear = False
-        self.empty_looks = 0
+        self.empty_looks, self.empty_since = 0, math.inf
 
     def act(self, obs: Mapping[str, Any]) -> Action:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
@@ -168,8 +168,8 @@ class SortPolicy:
 
     def _look(self, obs: Mapping[str, Any], arm_q: np.ndarray, hand_q: np.ndarray, bin_for: BinFor, attempts: Attempts,
               released: Mapping[str, int], squeeze: Mapping[str, float], cancelled: Cancelled) -> Look | None:
-        """Background job: detect, keep what is sortable, plan the next pick; None when the head frame is blank."""
-        if not np.any(obs["head_rgb"]):
+        """Background job: detect, keep what is sortable, plan the next pick; None when a head image has not arrived."""
+        if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
             return None
         detections = self.detector.detect(obs)
         inside = [det for det in detections if self.area.contains(det.top[:2])]
@@ -185,7 +185,7 @@ class SortPolicy:
             sure = det.confidence >= self.settings["min_detection_confidence"]
             bin_name = bin_for(det.color, det.shape) if sure else None
             if bin_name is not None and not attempts.exhausted(det.top[:2]):
-                targets.append(Target(det, bin_name))
+                targets.append(Target(det, bin_name, attempts.count(det.top[:2])))
         return targets
 
     def _finish_look(self, t: float) -> None:
@@ -209,7 +209,7 @@ class SortPolicy:
 
     def _note_look(self, t: float, look: Look) -> None:
         for target in look.unplannable:
-            self.attempts.abandon(target.xy)
+            self.attempts.record_plan_failure(target.xy)
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
         seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f})" for d in look.detections)
@@ -217,18 +217,20 @@ class SortPolicy:
                  len(look.outside), seen)
 
     def _nothing_to_pick(self, t: float) -> None:
-        """Finish only after several looks in a row agree that nothing sortable is left."""
+        """Finish only after several looks in a row, spread over some time, agree that nothing sortable is left."""
         self.empty_looks += 1
+        self.empty_since = min(self.empty_since, t)
         log.info("t=%.1f nothing to pick (look %d in a row)", t, self.empty_looks)
-        if self.empty_looks >= self.settings["empty_looks_before_done"]:
+        s = self.settings
+        if self.empty_looks >= s["empty_looks_before_done"] and t - self.empty_since >= s["empty_span_before_done_s"]:
             self.stage = Stage.DONE
             self._log_tally()
         else:
             self.stage, self.at_look_pose = Stage.MOVING, False   # settles again, so the next look sees a later frame
 
     def _start_pick(self, pick: Pick, t: float) -> None:
-        self.empty_looks = 0
-        self.attempts.record(pick.target.xy)
+        self.empty_looks, self.empty_since = 0, math.inf
+        self.attempts.record_pick(pick.target.xy)
         self.tally.update(picks=1, relocations=int(pick.relocation))
         watch = self.grip_trusted
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if watch else None

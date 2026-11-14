@@ -110,12 +110,14 @@ policy:
   bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
   time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
-  chunk_ticks: 10             # ticks per reply while a trajectory runs
-  hold_ticks: 6               # ticks per reply while the planner works
+  chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
+  hold_ticks: 10              # ticks per reply while the planner works
   settle_s: 0.3               # hold after every motion before the head image is used
-  max_attempts: 2             # picks started on one spot before the object is left alone
+  max_attempts: 5             # picks started on one spot before the object is left alone
+  max_plan_failures: 2        # looks in which no plan was found for an object before it is left alone
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
+  empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
   min_detection_confidence: 0.5
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack

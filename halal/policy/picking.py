@@ -20,9 +20,10 @@ SIDES = ("left", "right")
 
 @dataclass(frozen=True)
 class Target:
-    """A detected object and the bin the instruction sends it to."""
+    """A detected object, the bin the instruction sends it to and the picks already tried on it."""
     detection: ObjectDetection
     bin_name: str
+    attempts: int = 0
 
     @property
     def xy(self) -> np.ndarray:
@@ -52,9 +53,9 @@ class PickChooser:
     def choose(self, targets: Sequence[Target], obstacles: Sequence[ObjectDetection], released: Mapping[str, int],
                squeeze: Mapping[str, float], arm_q: np.ndarray, hand_q: np.ndarray,
                cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
-        """The first plannable target, nearest its bin first, and the targets before it that have no plan."""
+        """The first plannable target, least tried and then nearest its bin first, and the targets before it without a plan."""
         unplannable: list[Target] = []
-        for target in sorted(targets, key=self._distance_to_bin):
+        for target in sorted(targets, key=lambda target: (target.attempts, self._distance_to_bin(target))):
             pick = self._plan(target, obstacles, released.get(target.bin_name, 0), squeeze, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
@@ -75,7 +76,7 @@ class PickChooser:
         det = target.detection
         shifts = self.slots.candidates(target.bin_name, released)
         attempts = [(side, grasp, shift) for shift in shifts for side in self._arms(target)
-                    for grasp in candidate_grasps(det.shape, det.yaw, side)]   # the next free slot with any grasp first
+                    for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side), target.attempts)]
         for side, grasp, shift in attempts:
             if cancelled():
                 break
@@ -100,10 +101,17 @@ class PickChooser:
         return Pick(target, plan.side, None, plan)
 
     def _arms(self, target: Target) -> list[str]:
-        """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side."""
+        """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side; a retry starts with the next one."""
         near = target.bin_name if target.bin_name in SIDES else ("left" if target.xy[1] > 0 else "right")
         far = "right" if near == "left" else "left"
-        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
+        arms = [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
+        return _rotated(arms, target.attempts)
 
     def _distance_to_bin(self, target: Target) -> float:
         return float(np.linalg.norm(target.xy - self.planner.bin_xy(target.bin_name)))
+
+
+def _rotated(options: list, turns: int) -> list:
+    """The same options starting `turns` places later, so that a retry does not repeat the last choice."""
+    turns %= max(len(options), 1)
+    return options[turns:] + options[:turns]

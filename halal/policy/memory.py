@@ -5,22 +5,27 @@ import numpy as np
 
 
 class Attempts:
-    def __init__(self, radius: float, limit: int) -> None:
-        self.radius, self.limit = radius, limit
-        self._tried: list[np.ndarray] = []
-        self._abandoned: list[np.ndarray] = []
+    def __init__(self, radius: float, max_picks: int, max_plan_failures: int) -> None:
+        self.radius, self.max_picks, self.max_plan_failures = radius, max_picks, max_plan_failures
+        self._picked: list[np.ndarray] = []
+        self._unplanned: list[np.ndarray] = []
 
-    def record(self, xy: np.ndarray) -> None:
+    def record_pick(self, xy: np.ndarray) -> None:
         """A pick was started on the object at `xy`."""
-        self._tried.append(np.array(xy, float))
+        self._picked.append(np.array(xy, float))
 
-    def abandon(self, xy: np.ndarray) -> None:
-        """No plan exists for the object at `xy`."""
-        self._abandoned.append(np.array(xy, float))
+    def record_plan_failure(self, xy: np.ndarray) -> None:
+        """No plan was found for the object at `xy` in one look."""
+        self._unplanned.append(np.array(xy, float))
+
+    def count(self, xy: np.ndarray) -> int:
+        """Picks started and planning failures so far for the object at `xy`."""
+        return self._near(self._picked, xy) + self._near(self._unplanned, xy)
 
     def exhausted(self, xy: np.ndarray) -> bool:
-        """Whether the object at `xy` was abandoned or has used up its attempts."""
-        return self._near(self._abandoned, xy) > 0 or self._near(self._tried, xy) >= self.limit
+        """Whether the object at `xy` has used up its picks or failed planning too often."""
+        return (self._near(self._picked, xy) >= self.max_picks
+                or self._near(self._unplanned, xy) >= self.max_plan_failures)
 
     def _near(self, spots: list[np.ndarray], xy: np.ndarray) -> int:
         return sum(float(np.linalg.norm(spot - xy)) < self.radius for spot in spots)
