@@ -11,3 +11,8 @@ logs/
 # team
 .env
 .venv/
+
+# private team notes (instance details, Discord excerpts)
+team/SETUP.md
+team/notes/
+weights/
