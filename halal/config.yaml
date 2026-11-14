@@ -6,7 +6,7 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 perception:
   detector: topface           # key of halal.perception.DETECTORS
   calibration:                # head camera pose per episode (halal.perception.calibration)
-    agree_within: 0.010       # scene-anchored and hand-given pose this close at the object band: the scene file is believed
+    agree_within: 0.025       # hands and scene anchor this close at the object band: the scene file is believed (see log)
     max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
@@ -32,6 +32,15 @@ perception:
       min_agreement: 0.8      # fraction of the observed profile the best shift must explain
     hands:                    # own forearms and hands against their kinematic model -> camera pose in the arm frame
       gates: [0.04, 0.03, 0.02, 0.012, 0.008, 0.008]   # match distance of the successive iterations
+      starts:                 # camera shifts the descent is started from, in turn, while the result covers too little of the model
+        - [0.0, 0.0, 0.0]
+        - [0.015, 0.0, 0.0]
+        - [-0.015, 0.0, 0.0]
+        - [0.0, 0.015, 0.0]
+        - [0.0, -0.015, 0.0]
+        - [0.0, 0.0, 0.015]
+        - [0.0, 0.0, -0.015]
+      settled_coverage: 0.8   # a result with depth on this share of the visible model needs no further start
       min_points: 300
       min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible
       cell_px: 6              # image cell in which only the nearest model points are kept (self-occlusion)
@@ -39,7 +48,7 @@ perception:
       border_px: 25           # model points this close to the image edge may have their true match outside it
       pad_px: 50
       pixel_step: 2
-      fingers: true           # register on forearms and palms only (finger joints and glossy fingers are the weak part)
+      open_curl: 0.5          # rad: with index or middle fingers bent further the finger links are left out of the model
       floor_clearance: 0.065  # only depth this far above the counter is arm evidence: nothing lying on it reaches there
       prior_turn_deg: 3.0     # how far the camera may plausibly be from the pose it starts at
       prior_shift: 0.02
@@ -111,6 +120,16 @@ perception:
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
     heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
     resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
+    held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
+    confidence_edges: [0.2, 0.34, 0.5, 0.8]
+    decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
+    armless_seed: 7
+    armless_depth_noise_mm: 1.0
+    armless_arm_q:            # no arm is drawn; FK of these puts the hands over the band, at home, low, and out of view
+      - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      - [0.0, 0.35, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, -0.35, 0.0, -0.5, 0.0, 0.0, 0.0]
+      - [0.0, 0.1, 0.0, -0.15, 0.0, 0.0, 0.0, 0.0, -0.1, 0.0, -0.15, 0.0, 0.0, 0.0]
+      - [0.0, 0.65, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0, -0.65, -0.5, -0.5, 0.0, 0.0, 0.0]
     min_inside: 0.9           # top-face fraction inside the image, below it the view is `border`
     occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`

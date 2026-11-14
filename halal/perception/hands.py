@@ -26,6 +26,7 @@ PARTS = ("elbow_link", "wrist_roll_link", "wrist_pitch_link", "wrist_yaw_link", 
          "hand_index_1_link")
 LINKS = tuple(f"{side}_{part}" for side in ("left", "right") for part in PARTS)
 RIGID_PARTS = PARTS[:5]  # forearm to palm: no finger joints in between, large surfaces
+CURL_JOINTS = (3, 4, 5, 6, 10, 11, 12, 13)   # index and middle finger joints in `hand_q`, both hands
 SAMPLE_AREA = 16e-6     # one surface sample per this many square metres
 COVER_REACH = 0.05      # a sample whose outward ray meets its own link within this distance is not on the outside
 
@@ -77,12 +78,26 @@ class HandReference:
 
     def fit(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray, floor: PlaneFit | None,
             anchor: np.ndarray) -> HandFit | None:
-        """Register starting from `camera`; None when too little of the arms is in view."""
-        model, normals = self._facing(*self.surface.posed(arm_q, hand_q, self.cfg["fingers"]), camera, depth.shape)
-        pixels = self._pixels(depth, camera, model, floor)
+        """The registration with the most depth pixels on the model among starts around `camera`; None if no arm is in view."""
+        best = None
+        surface = self.surface.posed(arm_q, hand_q, bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.cfg["open_curl"]))
+        for start in self.cfg["starts"]:
+            fit = self._register(depth, camera, np.r_[np.zeros(3), start], surface, floor, anchor)
+            if fit is not None and (best is None or fit.points > best.points):
+                best = fit
+            if best is None or best.coverage >= self.cfg["settled_coverage"]:
+                break
+        return best
+
+    def _register(self, depth: np.ndarray, camera: Camera, start: np.ndarray, surface: tuple[np.ndarray, np.ndarray],
+                  floor: PlaneFit | None, anchor: np.ndarray) -> HandFit | None:
+        """One point-to-plane descent from the camera shifted by `start` (turn, shift); the prior still pulls to `camera`."""
+        first = camera.moved(np.eye(3), start[3:])
+        model, normals = self._facing(*surface, first, depth.shape)
+        pixels = self._pixels(depth, first, model, floor)
         if len(model) < self.cfg["min_points"] or len(pixels) < self.cfg["min_points"]:
             return None
-        tree, pose, moved = cKDTree(model), np.zeros(6), camera
+        tree, pose, moved = cKDTree(model), start.copy(), first
         for gate in self.cfg["gates"]:
             system = self._normal_equations(tree, model, normals, moved, pixels, gate)
             if system is None:
