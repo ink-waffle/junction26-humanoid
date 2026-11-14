@@ -141,9 +141,15 @@ class SortPolicy:
     def _leave_the_counter(self, t: float) -> None:
         """An episode can start with the hands resting on the counter (the real robot's does): both arms go home before the first pick is planned."""
         height = resting_clearance(self.planner, self.stream.arm_cmd, self.stream.hand_cmd)
-        if height < self.settings["transit_clearance"]:
-            log.info("t=%.1f the hands start %.1f cm above the counter: going home before anything is planned", t, 100 * height)
-            self.next_view = View.HOME
+        if height >= self.settings["transit_clearance"]:
+            return
+        log.info("t=%.1f the hands start %.1f cm above the counter: going home before anything is planned", t, 100 * height)
+        detour = None if self._move_to(View.HOME) is not None else self._move_to(View.CLEAR)
+        if detour is not None:
+            log.info("t=%.1f no safe way straight home from here: by way of the clear-view pose", t)
+            self.stream.load(*detour)
+            self.view = View.CLEAR
+        self.next_view = View.HOME
 
     def _stop_grip_check(self) -> None:
         """Run the rest of the episode without calibration and without watching the grip."""
