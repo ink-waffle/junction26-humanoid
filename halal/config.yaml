@@ -186,7 +186,7 @@ motion:
   carry_dip: 0.005            # the rising carry may sink this far below the lift height
   carry_margin: 0.03          # held object's bottom above a bin rim at carry height
   rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
-  min_wall_height: 0.06       # bin walls count as at least this tall for carry, release and rim checks (real boxes measure 0.07)
+  min_wall_height: 0.07       # bin walls count as at least this tall for carry, release and rim checks (real boxes measure 0.07, the scene file says 0.06)
   min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
   obstacles:                  # other objects the fingers must stay off while they are down among them (descend, close)
     radius: 0.030             # footprint of an object of unknown shape and yaw around its centre (triangle circumradius)
@@ -203,8 +203,8 @@ motion:
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
   candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified, `lying` = prism on a side
-    stiff: {cube: [cage, pinch], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage], lying: [cage_lying]}
-    soft: {cube: [cage], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage], lying: [cage_lying]}   # the pinch has no soft closure
+    stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}
+    soft: {cube: [cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}   # the pinch has no soft closure
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), inward_headings_deg (fixed finger headings
   # in the pelvis frame, positive = turned inward, tried in this order), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
@@ -222,6 +222,10 @@ motion:
     cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
       base: cage
       headings_deg: {triangle: [0, 120, 240]}
+    cage_side:                # fingers 90 deg sideways (inward, then outward): the only plan for an object 3-5 cm before a bin's near wall
+      base: cage
+      inward_headings_deg: [90, -90]
+      height_frac: 0.6        # the hand is tilted 22-36 deg there: 4.5 mm higher keeps the closed fingertips off the counter
     cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold
       base: cage
       squeeze: {triangle: 0.75}
