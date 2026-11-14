@@ -313,26 +313,39 @@ class SortPolicy:
             log.info("t=%.1f the %s hand is empty after letting go (grip score %.3f)", t, side, score)
 
     def _open_again(self, t: float, score: float) -> None:
-        """Something is still in the hand: open it finger by finger above the bin and close once more; after the last try the arm is given up."""
-        active, stream, window, plan = self.active, self.stream, self.active.window, self.active.pick.plan
+        """Something is still in the hand: open it finger by finger and close once more, above the bin, the last time back home."""
+        active, side = self.active, self.active.window.side
         self.tally.update(stuck_in_hand=int(not active.stuck), still_stuck=int(active.stuck))
         active.stuck = True
-        hand = opening_in_turn(stream.hand_cmd, window.both_hands(stream.hand_cmd, window.released), window.side,
-                               round(self.settings["reopen_pause_s"] * HZ), self._hand_vel, 1.0 / HZ)
-        if active.checks_left == 0:
-            log.warning("t=%.1f the %s hand still holds something (grip score %.3f): arm not used again", t, window.side, score)
-            self.blocked.add(window.side)
-            tail = plan.arm[phase(plan, "retreat")[1]:], plan.hand[phase(plan, "retreat")[1]:]
-            stream.load(np.vstack([np.repeat(stream.arm_cmd[None], len(hand), 0), tail[0]]), np.vstack([hand, tail[1]]))
+        if active.checks_left < 0:
+            log.warning("t=%.1f the %s hand still holds something back home (grip score %.3f): arm not used again", t, side, score)
+            self.blocked.add(side)
+            self.stream.load(*self._opening_at_rest(self.stream.hand_cmd))
             return
-        log.warning("t=%.1f the %s hand still holds something after letting go (grip score %.3f): opening finger by finger",
-                    t, window.side, score)
-        opened = np.repeat(hand[-1][None], round(self.planner.cfg["motion"]["open_hold_s"] * HZ), 0)
+        log.warning("t=%.1f the %s hand still holds something after letting go (grip score %.3f): opening finger by finger%s",
+                    t, side, score, "" if active.checks_left else ", next check back home")
+        self._load_reopening(home=active.checks_left == 0)
+
+    def _load_reopening(self, home: bool) -> None:
+        """Queue: open finger by finger where the arm is, stay open (or go home so), close and read the hand once more."""
+        active, stream, window, plan = self.active, self.stream, self.active.window, self.active.pick.plan
+        opening = opening_in_turn(stream.hand_cmd, window.both_hands(stream.hand_cmd, window.released), window.side,
+                                  round(self.settings["reopen_pause_s"] * HZ), self._hand_vel, 1.0 / HZ)
+        opened = np.repeat(opening[-1][None], round(self.planner.cfg["motion"]["open_hold_s"] * HZ), 0)
+        end = phase(plan, "retreat")[1] if home else len(plan.arm)
+        hand = np.vstack([opening, opened, plan.hand[end:]])
+        arm = np.vstack([np.repeat(stream.arm_cmd[None], len(opening) + len(opened), 0), plan.arm[end:]])
         check = self._release_check(hand[-1], window)
-        hand = np.vstack([hand, opened, check.hand])
-        active.check_tick, active.checks_left = len(hand) - len(check.hand) + check.read_tick, active.checks_left - 1
-        stream.load(np.vstack([np.repeat(stream.arm_cmd[None], len(hand), 0), active.tail[0]]),
-                    np.vstack([hand, active.tail[1]]), cuts=[active.check_tick + OBS_LAG_TICKS])
+        after = self._opening_at_rest(check.hand[-1]) if home else active.tail
+        active.check_tick, active.checks_left = len(hand) + check.read_tick, active.checks_left - 1
+        stream.load(np.vstack([arm, np.repeat(arm[-1][None], len(check.hand), 0), after[0]]),
+                    np.vstack([hand, check.hand, after[1]]), cuts=[active.check_tick + OBS_LAG_TICKS])
+
+    def _opening_at_rest(self, hand_q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Rows that open the hands from `hand_q` to where the running pick's plan leaves them, arms still at its end."""
+        plan = self.active.pick.plan
+        hand = ramp(hand_q, plan.hand[-1], self._hand_vel, 1.0 / HZ)
+        return np.repeat(plan.arm[-1][None], len(hand), 0), hand
 
     def _check_grip(self, obs: Mapping[str, Any]) -> None:
         """While the object should be in the hand: when the fingers say it is not, give the pick up."""
