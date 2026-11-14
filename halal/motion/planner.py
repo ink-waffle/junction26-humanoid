@@ -34,6 +34,7 @@ DIGIT_SAMPLES = np.linspace(0.0, 1.0, 5)
 class PickPlanner(Planner):
     drop_shift = np.zeros(2)
     near_inset = 0.0
+    release_rise = 0.0
     low = False
     obstacles: Sequence[Any] = ()
 
@@ -57,13 +58,14 @@ class PickPlanner(Planner):
         """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline)."""
         self.drop_shift = np.asarray(drop_shift, float)
         self.obstacles = [o for o in obstacles if np.linalg.norm(top_of(o)[:2] - det.top[:2]) > self.motion["obstacles"]["radius"]]
-        insets = [0.0] if place_xy is not None else self._reachable_insets(side, bin_name)
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
-            for self.near_inset, self.low in itertools.product(insets, self._sequences(place_xy)):
-                plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
+            releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name)
+            for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
+                with self._released_from(rise):
+                    plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
         return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
@@ -177,25 +179,53 @@ class PickPlanner(Planner):
         cfg = copy.deepcopy(scene.cfg)
         cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"])
         self.scene = Scene(cfg)
-        self.__dict__.pop("_reach", None)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
-        """Whether this arm can hold the grasp point over the bin's release point at carry and release height (cached)."""
-        cache = self.__dict__.setdefault("_reach", {})
-        key = (side, bin_name, self.near_inset)
-        if key not in cache:
-            xy = self.drop_xy(bin_name) - self.drop_shift
-            heights = (self.carry_height(), self.release_height())
-            cache[key] = all(self.kin.solve(side, np.r_[xy, z], self.home)[1] for z in heights)
+        """Whether this arm can hold the grasp point over one of the bin's release points."""
+        return bool(self._reachable_releases(side, bin_name))
+
+    def _reachable_releases(self, side: str, bin_name: str) -> list[tuple[float, float]]:
+        """(distance from the bin's near wall, release rise) pairs this arm reaches: distances largest first, each at its lowest rise."""
+        rises = {inset: self._lowest_rise(side, bin_name, inset) for inset in self.motion["drop_inset"]["near"]}
+        return [(inset, rise) for inset, rise in rises.items() if rise is not None]
+
+    def _lowest_rise(self, side: str, bin_name: str, inset: float) -> float | None:
+        """The lowest configured rise from which this arm reaches that release point (reach grows with the height); None if the highest does not."""
+        rises = self.motion["release_rise"]
+        if self._reaches(side, bin_name, inset, rises[0]):
+            return rises[0]
+        if not self._reaches(side, bin_name, inset, rises[-1]):
+            return None
+        short, enough = 0, len(rises) - 1
+        while enough - short > 1:
+            middle = (short + enough) // 2
+            short, enough = (short, middle) if self._reaches(side, bin_name, inset, rises[middle]) else (middle, enough)
+        return rises[enough]
+
+    def _reaches(self, side: str, bin_name: str, inset: float, rise: float) -> bool:
+        """Whether the IK of the carry holds the grasp point over that release point at carry and release height (cached per point)."""
+        self.near_inset = inset
+        with self._released_from(rise), self._heading_free(True):
+            points = [np.r_[self.drop_xy(bin_name), z] for z in sorted({self.carry_height(), self.release_height()})]
+            key = (side, *np.round([*self.kin.offset[side], *np.ravel(points)], 3))
+            cache = self.__dict__.setdefault("_reach", {})
+            if key not in cache:
+                cache[key] = all(self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
         return cache[key]
 
-    def _reachable_insets(self, side: str, bin_name: str) -> list[float]:
-        """The configured distances from the bin's near wall that pass the reach check for this arm, largest first."""
-        reachable = []
-        for self.near_inset in self.motion["drop_inset"]["near"]:
-            if self.reaches_bin(side, bin_name):
-                reachable.append(self.near_inset)
-        return reachable
+    @contextmanager
+    def _released_from(self, rise: float) -> Iterator[None]:
+        """Release `rise` above the configured height (the arm reaches further there); the retreat after it is shorter by as much."""
+        g = self.cfg["grasp"]
+        saved = (g["drop_above_rim"], g["retreat_up"])
+        self.release_rise = rise
+        g["drop_above_rim"] += rise
+        g["retreat_up"] = max(g["retreat_up"] - rise, self.motion["min_retreat_up"])
+        try:
+            yield
+        finally:
+            g["drop_above_rim"], g["retreat_up"] = saved
+            self.release_rise = 0.0
 
     def drop_xy(self, name: str) -> np.ndarray:
         """Release point (pelvis xy): the point inside the bin's inset inner walls nearest the pelvis, plus the drop shift."""
@@ -209,11 +239,13 @@ class PickPlanner(Planner):
         return super().bin_clearance(side, arm_q, hand_q, margin=margin)
 
     def _cartesian(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, name: str, plan: Plan) -> list | None:
-        """Carry in joint space when it stays above the release height; other segments become one joint move when straight enough."""
+        """Carry in joint space when it stays above the rims, ending no lower than the release height; other segments become one joint move when straight enough."""
+        p0 = self._at_release_height(p0) if name == "lower" else p0
+        p1 = self._at_release_height(p1) if name == "carry" else p1
         with self._heading_free(name in BIN_PHASES):
             if name == "carry":
                 reason = plan.reason
-                carry = self._joint_carry(side, q0, p0, p1, self.release_height(), name, plan)
+                carry = self._joint_carry(side, q0, p0, p1, self.release_height() - self.release_rise, name, plan)
                 if carry is not None:
                     return carry
                 plan.reason = reason
@@ -233,15 +265,19 @@ class PickPlanner(Planner):
         finally:
             self.kin.w_hint = weight
 
+    def _at_release_height(self, p: np.ndarray) -> np.ndarray:
+        """A point above a bin lifted to the release height when that is higher (a raised release is above the carry height)."""
+        return np.r_[p[:2], max(p[2], self.release_height())] if self.release_rise else p
+
     def release_height(self) -> float:
         """Grasp point height at which objects are released over a bin."""
         bins, g = self.scene.cfg["bins"], self.cfg["grasp"]
         return self.scene.counter_z + float(bins["wall_height"]) + self.height / 2 + g["drop_above_rim"]
 
     def carry_height(self) -> float:
-        """Grasp point height above a bin before lowering to the release height."""
+        """Grasp point height above a bin before lowering to the release height (the release height itself when that is raised above it)."""
         clear_of_rim = float(self.scene.cfg["bins"]["wall_height"]) + self.height + self.motion["carry_margin"]
-        return self.scene.counter_z + max(self.cfg["grasp"]["carry_height"], clear_of_rim)
+        return max(self.scene.counter_z + max(self.cfg["grasp"]["carry_height"], clear_of_rim), self.release_height())
 
     def object_clears_bins(self, p: np.ndarray) -> bool:
         """Whether an object held with its centre at p is above the rim of every bin it overlaps."""
