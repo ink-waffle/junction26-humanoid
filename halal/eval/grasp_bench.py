@@ -2,7 +2,7 @@
 
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
-Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
+Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = grippy and light), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
@@ -118,23 +118,23 @@ def perceived_yaw(shape: str, quat_xyzw: list[float]) -> float | None:
 
 
 class DrSeeds:
-    """Seeds for the sim's DR config; `hard` keeps those that give every named object low friction and high mass."""
+    """Seeds for the sim's DR config; `hard` / `sticky` keep those that give every named object such friction and mass."""
 
-    def __init__(self, scene_client: SceneClient, scene: Any, first: int, hard: bool) -> None:
+    def __init__(self, scene_client: SceneClient, scene: Any, first: int, mode: str) -> None:
         info = scene_client.info().get("dr")
         self.cfg = dr_module.load(info["path"]) if info else None
         self.names, self.bins = object_names(scene), scene.bin_names
-        self.next, self.hard = first, hard and self.cfg is not None
+        self.next = first
+        self.limits = config.load()["grasp_bench"]["dr_corners"].get(mode) if self.cfg else None
 
     def take(self, names: list[str]) -> int:
-        limits = config.load()["grasp_bench"]["hard_dr"]
         while True:
             seed, self.next = self.next, self.next + 1
-            if not self.hard:
+            if self.limits is None:
                 return seed
             objects = dr_module.sample(self.cfg, seed, self.names, self.bins)["objects"]
-            if all(objects[n]["friction_scale"] <= limits["friction_max"] and objects[n]["mass_scale"] >= limits["mass_min"]
-                   for n in names):
+            if all(self.limits["friction"][0] <= objects[n]["friction_scale"] <= self.limits["friction"][1]
+                   and self.limits["mass"][0] <= objects[n]["mass_scale"] <= self.limits["mass"][1] for n in names):
                 return seed
 
 
@@ -147,7 +147,7 @@ class Bench:
                             head_rgbd=False, cameras=False, head_rgbd_port=int(os.environ.get("AALTO_RGBD_PORT", "55560")))
         self.scene = self.env.scene
         self.planners = {name: self._planner(variant) for name, variant in spec["variants"].items()}
-        self.seeds = DrSeeds(self.scene_client, self.scene, int(spec["seed"]), spec["dr"] == "hard")
+        self.seeds = DrSeeds(self.scene_client, self.scene, int(spec["seed"]), spec["dr"])
         self.rest_z = self.scene.counter_z + self.scene.object_height() / 2
 
     def _planner(self, variant: Mapping[str, Any]) -> PickPlanner:
