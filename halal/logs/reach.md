@@ -229,3 +229,48 @@ Shape gate, every rim release by inset (binned / carried; stock + soft):
 |---|---|---|---|
 | 1 cm (centre +10: r3 stock, r7 soft) | 2/4 + 3/3 = 5/7 | 4/4 + 4/4 | 4/4 + 4/4 |
 | 0 cm (side +12: r4 stock, r8 soft) | 0/8 + 0/5 = 0/13 | 6/8 + 3/8 = 9/16 | 8/8 + 7/8 = 15/16 |
+
+## Decision: rim insets for cylinders and triangles (`motion.drop_inset.rim`, e024ffd)
+
+The orchestrator took `rim: {shapes: [cylinder, triangle], near: [0.01, 0.0]}`, no cubes (the list is per shape, not
+per inset: a cube would also get inset 0, 0/13 on both hands). The gate is motion's 90c4eb7: the rim insets replace
+`near` only for an upright object of a listed shape and only when neither arm reaches a `near` inset of that bin; the
+first rim inset in reach gets the `limit` landing box.
+
+Offline, `PickPlanner` from the home pose, every object × bin × arm × stiff/soft over 4 `plan_bench` layouts (228 plans per
+offset), sha256 of arm, hand and reason per plan:
+
+| tree | +0 | +3 | +6 | +8 | ok per offset |
+|---|---|---|---|---|---|
+| 6f53d88 (landing rule, before the gate) | 539b38c6 | 1d1c9b56 | ee9ef6e0 | b47a05ec | 152/228 |
+| main + reach 14e41c3, `shapes: []` | same | same | same | same | 152/228 |
+| main + reach, `shapes: [cylinder, triangle]` (e024ffd) | same | same | same | same | 152/228 |
+
+`reach_bench --hand soft` with e024ffd (16 plans per row: every bin × arm × policy slot × 2 spots):
+
+| shape | +10 cm | +12 cm |
+|---|---|---|
+| cylinder | 12/16 (side 2 cm, centre 1 cm), rise 6–9 cm | 8/16 (inset 0: side 2/4 + 2/4, centre 4/8) |
+| triangle | 12/16, as cylinder | 8/16, as cylinder |
+| cube | 8/16 (inset 2 cm only), unchanged | 0/16, unchanged |
+
+- Not run in sim: the centre box at +12 with inset 0 on the policy's own-side slots (y ±0.03); r4 tried it at y 0 only,
+  where no cylinder or triangle planned. Expect the side boxes' inset 0 numbers (soft: cylinder 3/8, triangle 7/8), unproven.
+- Every rim EV stays an upper bound for the real hand.
+
+## Sweep r9: soft hand, centre bin at +12 cm, inset 0 on the own-side slots, the v22 planner
+
+Code 60ba75d pushed to the instance (motion's gate 90c4eb7, landing rule, `rim.shapes: [cylinder, triangle]` from
+config; no `motion` override in the spec). Centre bin, one arm at a time, `drop_shift` [0, 0.03] outward = each arm on
+its own-side policy slot (release y ±0.03), cylinder and triangle, yaw 0 / 30°, 16 picks.
+
+| bins, bin, hand | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | by shape (binned / carried, EV) |
+|---|---|---|---|---|---|---|---|---|
+| +12, centre (y ±0.03), soft | 16/16 | 16 | 11/16 | 5 / 0 / 0 | +0.69 | 0 cm, +6 cm | −91…+63 mm (median +30) | cylinder 3/8 (+0.38), triangle 8/8 (+1.00) |
+
+- The gate chose inset 0 at rise +6 cm for every pick (release x 0.523), as offline.
+- All five cylinder misses are left-arm picks (right arm 3/3); the bench calls them `lost_in_carry`, but each was held
+  at carry height (0.15–0.16 m) to the end of the carry and rests 41–91 mm in front of the near wall: a rim miss.
+  On the side boxes at inset 0 (r8) misses came from both arms, so no arm rule is drawn from this.
+- Nothing left the counter and nothing reached another box: the centre box at +12 stays in the gate. Rim releases so far:
+  134 carried, off 0, other box 0. Sim d back on stock.
