@@ -113,6 +113,10 @@ than the depth estimate or the arm's FK sits about 2 cm low (the robot log saw t
 With the edge at 0.24 an object pushed more than about 2 cm towards the robot can fall off the near edge: such an
 "off" would be an artefact of the variant.
 
+| Leg | Image | Variant | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs24-robot6edge-rest | v24 (e4869cbc1500) | robot6 + edge 0.24, clear-hands (26 objects, 9 lying prisms) | 24/26 | +2.88 ± 0.93 | 1 | 0 | PASS, done 8/8 | 8/8 episodes: "the hands start 0.3 to 2.0 cm above the counter: going home before anything is planned" at t 0.8 (the robot logged 0.7 to 1.6), no detour, 0 clips; a trusted fit at home each time (34 `trusted`, 0 rejected), all 176 looks `layout from hands`, no pick before the fit, first pick at t 5.5 to 10.8 s. Lost: seed 1001's orange lying prism (right `cage_lying` x3 empty, left arm cannot reach the right bin) and, WRONG BIN, seed 1003's yellow lying prism: picked at y -0.12 by the left arm (`ridge_opposed`, 0.627 after the lift) for the left box, it slipped 1 s into the cross-body carry and fell into the centre box. 7 of 9 lying prisms sorted. Nothing fell off the near edge |
+
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
 
