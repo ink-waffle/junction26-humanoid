@@ -1,0 +1,9 @@
+# Halal policy settings. Units: m, rad, s. Organiser baseline values are changed only through `baseline_overrides`.
+baseline_overrides: {}        # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
+
+perception:
+  detector: baseline          # key of halal.perception.DETECTORS
+
+motion:
+  finger_yaw_weight: 3.0      # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
+  finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
