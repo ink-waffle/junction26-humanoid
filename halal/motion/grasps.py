@@ -35,7 +35,7 @@ def right_hand(left: np.ndarray) -> np.ndarray:
 def candidate_grasps(shape: str | None, yaw: float | None, side: str, hand: str = "stiff") -> list[Grasp]:
     """Grasps worth trying for this object with this arm, best first, closed as the hand class (stiff | soft) needs."""
     motion = config.load()["motion"]
-    names = motion["candidates"][shape or "unknown"]
+    names = motion["candidates"][hand][shape or "unknown"]
     return [grasp for name in names
             for grasp in strategy_grasps(name, for_hand(strategy_params(name), hand), shape, yaw, side)]
 
