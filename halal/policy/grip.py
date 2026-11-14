@@ -84,6 +84,8 @@ class GripWindow:
     direction: np.ndarray    # per joint +1 / -1 / 0: the way it moves when the hand closes
     first_tick: int          # the lift is over and the hand command has been still for the settle time
     last_tick: int           # a little before the hand opens: an observation may be newer than assumed
+    released: np.ndarray     # commanded posture of the hand after letting go (7,)
+    release_tick: int        # end of the retreat: the hand has been told to be open for a while
 
     @classmethod
     def of(cls, plan: Plan, side: str, settle_ticks: int) -> GripWindow:
@@ -92,9 +94,16 @@ class GripWindow:
         closed, before = plan.hand[close_end - 1, joints], plan.hand[close_start - 1, joints]
         still_from = close_start + int(np.argmax(np.all(plan.hand[close_start:close_end, joints] == closed, axis=1)))
         first_tick = max(still_from + settle_ticks, phase(plan, "lift")[1] - 1)
-        return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS)
+        release_tick = phase(plan, "retreat")[1] - 1
+        return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS,
+                   plan.hand[release_tick, joints], release_tick)
 
     def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float) -> float:
         """Summed shortfall of the joints behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
         error = self.closed - np.asarray(hand_q, float)[hand_slice(self.side)]
         return float(np.maximum(self.direction * (error - empty_error), 0.0).sum())
+
+    def stuck(self, hand_q: np.ndarray) -> float:
+        """Summed amount by which the joints are still more closed than the released posture (rad); ~0 = let go."""
+        error = np.asarray(hand_q, float)[hand_slice(self.side)] - self.released
+        return float(np.maximum(self.direction * error, 0.0).sum())

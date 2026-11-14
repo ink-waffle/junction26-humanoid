@@ -46,7 +46,7 @@ class PickChooser:
     def __init__(self, planner: PickPlanner, slots: ReleaseSlots) -> None:
         self.planner, self.slots = planner, slots
 
-    def choose(self, targets: Sequence[Target], released: Mapping[str, int], squeeze: Mapping[str, float],
+    def choose(self, targets: Sequence[Target], released: Mapping[str, int], squeeze: Mapping[str, float | None],
                arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
         """The first plannable target, least tried and then nearest its bin first, and the targets before it without a plan."""
         unplannable: list[Target] = []
@@ -57,14 +57,10 @@ class PickChooser:
             unplannable.append(target)
         return None, unplannable
 
-    def _plan(self, target: Target, released: int, squeeze: Mapping[str, float], arm_q: np.ndarray,
+    def _plan(self, target: Target, released: int, squeeze: Mapping[str, float | None], arm_q: np.ndarray,
               hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
-        """The first arm, grasp and release slot with a plan; the next free slot is tried with every arm and grasp first."""
-        det = target.detection
-        shifts = self.slots.candidates(target.bin_name, released)
-        options = [(side, grasp, shift) for shift in shifts for side in self._arms(target)
-                   for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side), target.attempts)]
-        for side, grasp, shift in options:
+        """The first arm, grasp and release slot with a plan."""
+        for side, grasp, shift in self._options(target, released):
             if cancelled():
                 break
             plan = self._plan_pick(target, side, grasp, shift, squeeze[side], arm_q, hand_q)
@@ -74,7 +70,15 @@ class PickChooser:
                      shift, plan.reason)
         return None
 
-    def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, squeeze: float, arm_q: np.ndarray,
+    def _options(self, target: Target, released: int) -> list[tuple[str, Grasp, Shift]]:
+        """Arm, grasp and release slot in the order to try: the next free slot first; a retry forgets the detected shape, the one after turns to the next arm and grasp."""
+        det, turns = target.detection, target.attempts // 2
+        shape = det.shape if target.attempts % 2 == 0 else None
+        shifts = self.slots.candidates(target.bin_name, released)
+        return [(side, grasp, shift) for shift in shifts for side in _rotated(self._arms(target), turns)
+                for grasp in _rotated(candidate_grasps(shape, det.yaw, side), turns)]
+
+    def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, squeeze: float | None, arm_q: np.ndarray,
                    hand_q: np.ndarray) -> Plan:
         """One planner call; an exception inside the planner counts as no plan."""
         try:
@@ -85,17 +89,16 @@ class PickChooser:
             return Plan(False, side=side, color=target.detection.color, reason=repr(error))
 
     def _arms(self, target: Target) -> list[str]:
-        """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side; a retry starts with the next one."""
+        """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side."""
         near = target.bin_name if target.bin_name in SIDES else ("left" if target.xy[1] > 0 else "right")
         far = "right" if near == "left" else "left"
-        arms = [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
-        return _rotated(arms, target.attempts)
+        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
 
     def _distance_to_bin(self, target: Target) -> float:
         return float(np.linalg.norm(target.xy - self.planner.bin_xy(target.bin_name)))
 
 
 def _rotated(options: list, turns: int) -> list:
-    """The same options starting `turns` places later, so that a retry does not repeat the last choice."""
+    """The same options starting `turns` places later."""
     turns %= max(len(options), 1)
     return options[turns:] + options[:turns]
