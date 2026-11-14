@@ -325,7 +325,7 @@ motion:
         carry_acc: 4.0        # rad/s^2 while the object is held (lift, carry); the planner's default is 8
     cage_deep:                # cube on a soft hand: 0.45 holds 55/56 where 0.30 holds 65/75 (it slides down out of the hand at lift start)
       base: cage
-      squeeze: {cube: 0.45}
+      squeeze: {cube: 0.45, cylinder: 0.45, triangle: 0.80, unknown: 0.75}   # every shape key: only the cube's differs from cage
     cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
       base: cage
       headings_deg: {triangle: [0, 120, 240]}
@@ -336,7 +336,7 @@ motion:
       height_frac: 0.6        # the hand is tilted 22-36 deg there: 4.5 mm higher keeps the closed fingertips off the counter
     cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold, for ridges the arm cannot turn the fingers along
       base: cage
-      squeeze: {triangle: 0.75}
+      squeeze: {cube: 0.75, cylinder: 0.75, triangle: 0.75, unknown: 0.75}   # every shape key: a lying target may be remembered as any shape
       last_resort: true       # holds 1 in 4, and only with the fingers across the ridge
     ridge_opposed:            # lying prism, fingers along its ridge: one finger on an end face, the thumb swung opposite it (thumb_0)
       point_in_palm: [0.092, -0.084, 0.0285]
