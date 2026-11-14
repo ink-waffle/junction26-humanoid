@@ -119,7 +119,7 @@ class PickChooser:
         return None, False
 
     def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> list[tuple[str, Grasp, Shift]]:
-        """Arm, grasp and slot in the order to try; a retry starts with the next arm and grasp and moves the grasp point a little."""
+        """Arm, grasp and slot in the order to try: a retry starts with the next arm and grasp and moves the grasp point a little; an arm left with last resorts only goes last."""
         det, turns = target.detection, target.attempts
         offsets = self.settings["retry_offsets"]
         dx, dy = offsets[turns % len(offsets)]
@@ -128,6 +128,7 @@ class PickChooser:
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
                          for grasp in self._in_turn(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
                   for side in arms}
+        arms = sorted(arms, key=lambda side: all(grasp.last_resort for grasp in grasps[side]))
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
 
     @staticmethod
