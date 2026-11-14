@@ -7,3 +7,29 @@ perception:
 motion:
   finger_yaw_weight: 3.0      # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
   finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
+  natural_heading_deg: 25     # finger heading an arm reaches most easily: forward, turned inward by this much
+  max_heading_deviation_deg: 75   # headings further than this from the natural one are not tried
+  counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
+  bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
+  shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
+    default: 0.01
+    descend: 0.004
+    lift: 0.004
+  candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
+    cube: [pinch_face, pinch]
+    cylinder: [pinch]
+    triangle: [pinch]
+    unknown: [pinch]
+  # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
+  # release (LEFT order), height_frac, shift_along_fingers. Unset keys keep the organiser pinch.
+  grasps:
+    pinch: {}
+    pinch_face:
+      headings_deg: {cube: [0, 90, 180, 270]}
+
+grasp_bench:
+  settle_ticks: 20            # hold after placing the objects before reading their poses
+  trace_every: 2              # ticks between privileged object pose samples
+  held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
+  lifted_height: 0.03         # and at least this far above its resting height
+  hard_dr: {friction_max: 0.82, mass_min: 1.2}   # `dr: hard` keeps seeds giving every placed object such scales
