@@ -771,11 +771,25 @@ is 1.9 times the threshold (0.80: 3.4 times). Not changed here: proposed to the 
 as one map on `cage.soft` (cube 0.45, cylinder 0.45, triangle 0.60, unknown 0.75) and `cage_deep` removed, because a
 soft squeeze map on `cage` overrides `cage_deep`'s cube depth.
 
-## Sweep 30: cylinders lying on their side, perceived as an object of unknown shape (in progress)
+## Sweep 30: cylinders lying on their side, perceived as an object of unknown shape
 
-The scripted push tips a cylinder only about one time in three (the rest slide and stay upright). Soft-hand sim,
-first run: 5 of 16 lying, all 5 binned with the unknown-shape cage at 0.75 (grip signal 0.26–0.41); the 11 upright
-ones binned 11/11 as cylinders. A second soft run (s30b, 32 picks) and the stock run (s30, 32 picks) were queued.
+A cylinder tipped over by the scripted push (`topple_deg` 90 / 135, two spots near a side bin) reaches the policy as
+an object of unknown shape and is picked with the `unknown` candidates (`cage` 0.75, then `cage_side`). DR as it
+comes. The push tips a cylinder in 29 % of the soft runs and 50 % of the stock run; the rest stay upright and are
+picked as cylinders.
+
+| run | hand | lying after the push | planned | binned | grasp on the binned | upright binned | off the counter |
+|---|---|---|---|---|---|---|---|
+| s30 + s30b (48 picks) | soft-hand sim | 14 | 14 | 13 (1 not lifted, left on the counter) | `cage` 13 | 34/34 | 0 |
+| s30 (32 picks) | stock | 16 | 16 | 16 | `cage` 15, `cage_side` 1 (3.5 cm before the bin wall) | 16/16 | 0 |
+
+- Lying: 29/30 binned. The one miss rolled in the closing hand (spin −54°, slip 147 mm) and came to rest 3.5 cm
+  further forward, still on the counter.
+- Contact sum (thumb_1 + both finger_0 joints) at the lift, held: soft 0.72–1.14 (threshold 0.15), stock 0.13–0.42
+  (0.02). Spin −54…+53° (one −171° on `cage_side`), slip ≤ 19 mm on the binned picks.
+- Nothing was knocked off the counter in 80 picks (lowest final object z 0.0325 m, on the counter or in a bin).
+
+Verdict: the `unknown` path holds lying cylinders on both hands; no lying-cylinder grasp of its own is needed.
 
 ## Real robot, run 2 (14.11): the hand sits lower than commanded at the bottom of the descent (offline, FK)
 
