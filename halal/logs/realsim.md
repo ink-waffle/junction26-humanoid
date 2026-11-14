@@ -76,6 +76,13 @@ soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; config
 | rs21-robot6 | v21 (0f7ca3635d25) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 30 of 30 hand fits `trusted`, `layout from hands` on all 184 looks; 7 empty picks, 14 refused options; 2 of 3 lying prisms sorted with `ridge_opposed` (left arm), the third got 3 empty right-arm `cage_lying` picks |
 | rs22-robot6 | v22 (cb81d93c1969) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 31 of 31 hand fits `trusted` ("camera turned 6.4 to 7.7 deg, shifted 21 to 42 mm"), `layout from hands` on all 182 looks; 6 empty picks, 5 refused options; lying prisms as v21: the one lost is seed 1006's orange prism, 3 empty right-arm `cage_lying` picks |
 
+Resting start (`real_eval --start-pose`, arms where the real episode of 19:46 started, driven there past the safety
+filter before the layout is placed; an object can therefore spawn under a hand, which staff would not do).
+rs22-robot6-rest (v22, robot6), first two episodes: seed 1000 3/3, seed 1001 5/5, both done. From this start the first
+look and the first look from home say `layout from nominal`, and the first pick is made before the hand fit exists: in
+seed 1000 it closed on air at a position 4 cm too far (grip 0.013) and pushed the object; the fit was trusted right
+after ("camera turned 7.7 deg") and the rest went as from the home start. Full leg and v23: see the queue in the handoff.
+
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
 
