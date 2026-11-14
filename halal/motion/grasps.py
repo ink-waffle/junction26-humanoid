@@ -31,11 +31,17 @@ def right_hand(left: np.ndarray) -> np.ndarray:
     return np.array([left[0], -left[1], -left[2], -left[5], -left[6], -left[3], -left[4]])
 
 
-def candidate_grasps(shape: str | None, yaw: float | None, side: str) -> list[Grasp]:
-    """Grasps worth trying for this object with this arm, best first."""
+def candidate_grasps(shape: str | None, yaw: float | None, side: str, hand: str = "stiff") -> list[Grasp]:
+    """Grasps worth trying for this object with this arm, best first, closed as the hand class (stiff | soft) needs."""
     motion = config.load()["motion"]
     names = motion["candidates"][shape or "unknown"]
-    return [grasp for name in names for grasp in strategy_grasps(name, motion["grasps"][name], shape, yaw, side)]
+    return [grasp for name in names
+            for grasp in strategy_grasps(name, for_hand(motion["grasps"][name], hand), shape, yaw, side)]
+
+
+def for_hand(params: Mapping[str, Any], hand: str) -> Mapping[str, Any]:
+    """A strategy's parameters with its `soft` overrides applied for a soft hand."""
+    return {**params, **params.get("soft", {})} if hand == "soft" else params
 
 
 def strategy_grasps(name: str, params: Mapping[str, Any], shape: str | None, yaw: float | None, side: str) -> list[Grasp]:

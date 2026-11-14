@@ -1,6 +1,7 @@
 #!/bin/bash
 # Isaac sims on the dev instance, one per tag (a|b|c), each with its own DDS domain, ports, cores, log and pid file.
-#   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set)
+#   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set;
+#                                              HAND_GAINS="kp,kd[,armature]" = dev-only sim with those Dex3 actuator gains)
 #   sims.sh stop <tag> | status | env <tag>   (eval "$(sims.sh env b)" points clients at sim b)
 set -eo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
@@ -32,9 +33,10 @@ start)
     export OMP_NUM_THREADS=1   # torch's per-core OpenMP pool only spin-waits at num_envs=1 (halal/logs/infra.md)
     cores="${CORES:-$(tag_cores "$tag")}"
     cd "$REPO"
-    nohup taskset -c "$cores" bash aaltonomous/sim/run_sim.sh --kit_args "$KIT_THREADS" "$@" >"$(logfile "$tag")" 2>&1 &
+    runner="${HAND_GAINS:+halal/ops/soft_hand_sim.sh}"
+    nohup taskset -c "$cores" bash "${runner:-aaltonomous/sim/run_sim.sh}" --kit_args "$KIT_THREADS" "$@" >"$(logfile "$tag")" 2>&1 &
     echo $! >"$(pidfile "$tag")"
-    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, log $(logfile "$tag"))"
+    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, hand gains ${HAND_GAINS:-stock}, log $(logfile "$tag"))"
     for _ in $(seq 400); do
         if ping_scene "$tag" >/dev/null; then echo "sim $tag ready after $SECONDS s"; exit 0; fi
         if ! alive "$tag"; then echo "sim $tag exited:"; tail -30 "$(logfile "$tag")"; exit 1; fi

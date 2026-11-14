@@ -22,6 +22,7 @@ from halal.perception import SceneLayout
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
+LATE_FINGER = slice(5, 7)
 
 
 class PickPlanner(Planner):
@@ -54,18 +55,31 @@ class PickPlanner(Planner):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
-        return self._ending_at(plan, end)
+        return self._ending_at(self._staggered_release(plan, side), end)
 
     def _sequences(self, place_xy: tuple[float, float] | None) -> list[bool]:
         """Whether to try our low sequence, per configured sequence in order; counter placements only have the organiser's."""
         names = ["organiser"] if place_xy is not None else self.motion["sequences"]
         return [name == "low" for name in names]
 
+    def _staggered_release(self, plan: Plan, side: str) -> Plan:
+        """The plan with its release rebuilt so that one finger starts opening after the rest of the hand; unchanged when the stagger is 0."""
+        if not plan.ok or not self.motion["release_stagger_s"]:
+            return plan
+        cols = ArmKinematics.sl(side)
+        first, stop = next((a, b) for name, a, b in plan.phases if name == "open")
+        opening = self._opening(plan.hand[first - 1, cols], plan.hand[stop - 1, cols])
+        parts = [(name, *((plan.arm[a:b], plan.hand[a:b]) if name != "open" else self._held(plan, first, cols, opening)))
+                 for name, a, b in plan.phases]
+        return self._assembled(plan, parts)
+
     def _opening(self, closed: np.ndarray, release: np.ndarray) -> np.ndarray:
-        """One hand's rows (7 joints) from closed to the release posture and the hold after."""
-        motion = self.cfg["motion"]
-        hold = np.repeat(release[None], int(round(motion["open_hold_s"] / self.dt)), 0)
-        return np.vstack([ramp(closed, release, motion["hand_max_vel"], self.dt), hold])
+        """One hand's rows (7 joints) from closed to release and the hold after; with a stagger one finger starts that much later."""
+        motion, delay = self.cfg["motion"], int(round(self.motion["release_stagger_s"] / self.dt))
+        together = ramp(closed, release, motion["hand_max_vel"], self.dt)
+        rows = np.vstack([together, np.repeat(release[None], delay + int(round(motion["open_hold_s"] / self.dt)), 0)])
+        rows[:delay + len(together), LATE_FINGER] = np.vstack([np.repeat(closed[None], delay, 0), together])[:, LATE_FINGER]
+        return rows
 
     def _plan_with(self, grasp: Grasp, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
                    place_xy: tuple[float, float] | None) -> Plan:
