@@ -711,6 +711,37 @@ typical 0.958 -> 1.000); bins 67.9 mm (98 to 119 with the lateral offset) -> 11.
 included), counter 15.0 -> 6.6 (max 18); `rim_z` reported there too: +12.7 median, -4.0 to +33 (so on the nominal pose it can
 be a few mm low). Recall, xy and every clean set: unchanged. A look anchored to the scene file still gets the file's layout.
 
+### The real-look sim, whole episodes (`realsim_looks`)
+
+Recorded by the realsim workstream: policy v18, `sort_fixed`, seeds 1000 to 1007, `REAL_SIM=all` (bins +6 cm, counter +1 cm,
+walls 7 cm, real colours, bare table, half of the prisms lying), soft hands, every 10th tick: 2582 frames, 1326 of them still
+looks. On the instance under `/data/wt/infra/runs/frames/realsim_looks/`; the bench reads the placement from `scene.json`
+({"offsets": {"counter": [0, 0, 0.01], "bins": [0.06, 0]}, "boxes": {"wall_height": 0.07}}). Detector as of H11, one per episode.
+
+| | all frames, sim depth | typical | bad | still looks, sim depth | typical | bad |
+|---|---|---|---|---|---|---|
+| recall / precision | 0.917 / 1.000 | 0.838 / 1.000 | 0.811 / 0.997 | 1.000 / 1.000 | 0.941 / 1.000 | 0.929 / 0.997 |
+| xy mm, median / p95 | 2.2 / 3.6 | 3.2 / 12.4 | 5.7 / 14.3 | 2.5 / 3.5 | 3.3 / 15.0 | 6.3 / 15.8 |
+| camera part, median / p95 | 2.2 / 3.6 | 2.5 / 4.0 | 4.7 / 8.0 | 1.9 / 3.6 | 2.4 / 4.5 | 5.8 / 8.0 |
+| shape decided / right | 0.863 / 1.000 | 0.714 / 0.999 | 0.420 / 0.986 | 0.894 / 1.000 | 0.694 / 1.000 | 0.411 / 0.996 |
+| lying prisms seen as such | 0.897 of 1063 | 0.739 | 0.454 | 1.000 of 600 | 0.820 | 0.493 |
+| ridge direction deg, centre mm (medians) | 0.7, 1.5 | 0.9, 2.6 | 1.7, 4.1 | 0.8, 1.8 | 0.9, 2.5 | 1.7, 4.6 |
+| called lying without being one | 0 | 0 | 0 | 0 | 0 | 0 |
+| bins by hands mm, median / p95 / max | 3.3 / 6.1 / 9.4 | 3.2 / 6.7 / 13.5 | 5.7 / 11.4 / 109.4 | 3.3 / 5.8 / 6.9 | 2.9 / 6.4 / 10.9 | 6.4 / 11.4 / 16.5 |
+| counter mm, median | 2.9 | 3.3 | 3.5 | 2.8 | 3.0 | 1.3 |
+| rim mm, signed: median (lowest, highest) | +9.2 (+7.5, +10.6) | +10.5 (+6.8, +14.6) | +14.5 (+5.1, +26.6) | +9.2 (+7.8, +11.6) | +10.6 (+6.8, +14.4) | +13.4 (+5.3, +25.4) |
+
+- Layout source: nominal at the first frame of each episode (8 frames), hands at all 2574 others, at every depth level; no
+  other change in any episode. The policy's own log of that run agrees: 181 looks "layout from hands", none from scene, the
+  hand fit "trusted" with rms 1.7 to 1.8 mm, covered 0.85 to 0.92.
+- The xy tail under noisy depth (p95 12 to 15 mm) is lying prisms that fall back to blobs (seen as lying 1.000 -> 0.82 at
+  typical on still looks) and objects under a hand; upright, clear objects stay as in `dr_train`.
+- Wrong shapes at typical: 4 of 2702 decided (two cylinders as cubes, a cube and a cylinder as triangles).
+- At bad depth 4 of 2574 moving frames have a bin more than 3 cm off (one 109 mm), no still look.
+- Runtime per look in this hands mode: 60 ms median, 87 p95, 166 max on the Mac.
+This set gave H10 (lying cylinder called a triangle) and H11 (cardboard insides as yellow blobs on the nominal pose).
+Not yet run: the control set without offsets (`realsim_looks_nooff`, announced for later).
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
