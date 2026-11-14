@@ -474,3 +474,23 @@ comes, candidates as the policy gets them; the bench records the planned digit g
 Verdict: the check works and stays at 47 mm for objects of unknown shape and heading. What it rejects needlessly are
 flat sides and cylinders; the footprint (shape and yaw of the neighbour) would say which. Gap scan with cube, cylinder
 and triangle neighbours: sweep 26.
+
+## Sweep 24: the policy's first side-bin slot, 2 cm inward of the release point, against the walls
+
+Question from full episodes: slots that keep two objects of one bin apart put the first one 2 cm inward (65 mm from
+the inner side wall); the landing box (inward y down to −59 mm in the grippy-light corner) says an object could
+reach that wall. Stock sim, grippy-light corner, side bins, candidates; new metric: distance of the object's centre
+to the nearest inner wall when its bottom passes the rim (under 22.5 mm it touches the rim).
+
+| release point | shape | binned | centre to wall passing the rim, min / p5 | touches the rim | at rest, min |
+|---|---|---|---|---|---|
+| slot −2 cm | cube | 12/12 | 37 / 40 mm | 0 | 37 mm |
+| | cylinder | 12/12 | 28 / 38 mm | 0 | 28 mm |
+| | triangle | 24/24 | 28 / 29 mm | 0 | 28 mm |
+| default (85 mm from the side wall) | cube | 11/12 | 45 / 46 mm | 0 | 45 mm |
+| | cylinder | 12/12 | 49 / 50 mm | 0 | 49 mm |
+| | triangle | 12/12 | 36 / 41 mm | 0 | 36 mm |
+
+Verdict: no wall incident in 48 releases at −2 cm, smallest margin over touching 5.5 mm. The −59 mm extreme is one
+release in about 160 on record (p5 −45 mm); at this slot it leaves the centre 6 mm inside the wall's inner face: the
+object scrapes the wall and falls inside. The release point stays; the bench takes `drop_shift` per variant.
