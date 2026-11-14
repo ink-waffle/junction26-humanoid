@@ -193,7 +193,7 @@ class GraspServo:
                  cancelled: Cancelled) -> Pick | Hover | None:
         """Background: measure at the hover, correct the target, then hover again (servo, step not small yet) or plan the pick from here."""
         began = time.monotonic()
-        measured = self._measure(obs, state, arm_q)
+        measured = self._safely_measured(obs, state, arm_q)
         state.looks += 1
         if measured.step is not None and measured.refused in ("", "measure only"):
             state.measured = state.correction + measured.step
@@ -208,11 +208,20 @@ class GraspServo:
         hover = self._hover_again(state, arm_q, hand_q) if again and not cancelled() else None
         return hover if hover is not None else self._final_pick(state, arm_q, hand_q)
 
+    def _safely_measured(self, obs: Mapping[str, Any], state: Hovering, arm_q: np.ndarray) -> Measured:
+        """`_measure`; a look that raises counts as a failed one, so the pick still goes on from the hover."""
+        try:
+            return self._measure(obs, state, arm_q)
+        except Exception:
+            log.exception("servo: the hover look failed")
+            nothing = HoverLook(None, None, None, 0.0, math.nan, 0.0, 0.0, 0, math.nan, "error", 0.0)
+            return Measured(nothing, None, np.full(3, math.nan), np.zeros(3), None, "error")
+
     def _measure(self, obs: Mapping[str, Any], state: Hovering, arm_q: np.ndarray) -> Measured:
         """Hand and object at the hover in the arm frame: the step that puts the commanded grasp on the object, if it is believable."""
         pick, target = state.pick, state.pick.target.detection
         top = target.top + state.correction
-        look = self.measurer.measure(obs, self._camera(), pick.side, replace(target, top=top), self._bins())
+        look = self.measurer.measure(obs, self._camera(), pick.side, target, self._bins())   # the object stays where the camera saw it
         commanded = grasp_point(self.planner, pick.grasp, pick.side, arm_q)
         measured_hand = grasp_point(self.planner, pick.grasp, pick.side, np.asarray(obs["arm_q"], float))
         tracking = (commanded - measured_hand) * bool(self.cfg["track_offset"])
