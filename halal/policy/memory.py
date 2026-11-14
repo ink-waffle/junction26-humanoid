@@ -19,9 +19,9 @@ class Attempts:
         self._unplanned.append(np.array(xy, float))
 
     def follow(self, old_xy: np.ndarray, new_xy: np.ndarray) -> None:
-        """The object tried at `old_xy` now lies at `new_xy`: what was tried on it counts there too."""
+        """The object tried at `old_xy` now lies at `new_xy`: no fewer tries count there than did at the old spot."""
         for spots in (self._picked, self._unplanned):
-            spots.extend([np.array(new_xy, float)] * self._near(spots, old_xy))
+            spots.extend([np.array(new_xy, float)] * max(self._near(spots, old_xy) - self._near(spots, new_xy), 0))
 
     def picks(self, xy: np.ndarray) -> int:
         """Picks started so far on the object at `xy`."""

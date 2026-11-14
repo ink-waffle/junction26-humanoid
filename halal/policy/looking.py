@@ -89,11 +89,11 @@ class Looker:
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
-        """A failed grasp pushes its object a few centimetres: the nearest untried detection of that colour inherits its attempts."""
+        """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""
         missed, attempts = situation.missed, situation.attempts
         if missed is None:
             return
-        moved = [det.top[:2] for det in detections if det.color == missed.detection.color and not attempts.picks(det.top[:2])]
+        moved = [det.top[:2] for det in detections if det.color == missed.detection.color]
         nearest = min(moved, key=lambda xy: float(np.linalg.norm(xy - missed.xy)), default=None)
         if nearest is not None and float(np.linalg.norm(nearest - missed.xy)) < self.settings["displaced_radius"]:
             attempts.follow(missed.xy, nearest)
