@@ -117,6 +117,17 @@ def fit_plane(points: np.ndarray, tolerances: tuple[float, ...]) -> PlaneFit:
     return PlaneFit(normal, offset, len(keep), float(np.sqrt(np.mean(residual ** 2))))
 
 
+def levelness(points: np.ndarray, up: np.ndarray) -> float:
+    """|cos| between `up` and the normal of the plane through points (N, 3): 1 for a level patch, 0 for a wall face."""
+    spread = np.linalg.svd(points - points.mean(axis=0), full_matrices=False)[2]
+    return float(abs(spread[2] @ up))
+
+
+def plan_depth(points: np.ndarray) -> float:
+    """Smaller standard deviation (m) of points (N, 3) seen from above: next to nothing for a vertical sheet."""
+    return float(np.sqrt(max(np.linalg.eigvalsh(np.cov(points[:, :2].T))[0], 0.0)))
+
+
 @dataclass(frozen=True)
 class LineFit:
     """Line `value = intercept + slope * along` and the support it was fitted on."""
