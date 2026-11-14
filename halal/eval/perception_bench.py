@@ -6,10 +6,14 @@
     --looks 2 every frame is shown twice, 0.2 s apart (a robot standing still)
     --depth typical --depth-seed 0   the depth image as a RealSense D435i would deliver it (bench.d435: mild | typical | bad)
     --shift real                     the table re-rendered where the real recordings have it (bench.shifts)
+    --still   only frames in which the arms stand where the frame before had them: the looks of a policy, episode by episode
+    A set recorded from a displaced sim carries `scene.json` ({"offsets": {"counter": [x, y, z], "bins": [x, y]}, "boxes":
+    {"wall_height": h}}, as halal/ops/real_sim.yaml): ground truth and the layout figures then use that placement.
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 import time
@@ -30,7 +34,7 @@ from aaltonomous.scene.scene import Scene, shape_polygon
 from halal import config
 from halal.eval.depth_sensor import LEVELS, ArmPixels, degrade
 from halal.eval.scene_shift import Displacement, displaced
-from halal.perception import SHAPES, Detector, ObjectDetection, make_detector
+from halal.perception import SHAPES, Detector, ObjectDetection, SceneLayout, make_detector, scene_layout
 from halal.perception.color import turned
 
 REPO = Path(__file__).resolve().parents[2]
@@ -155,7 +159,20 @@ def make_truth(obj: Mapping[str, Any], scene: Scene, camera: Pinhole, depth: np.
     return Truth(obj["name"], obj["color"], obj["shape"], top, apex, view)
 
 
-def load_frame(path: Path, scene: Scene, nominal: Pinhole, cfg: Mapping[str, Any]) -> Frame:
+def placed(scene: Scene, placement: Mapping[str, Any]) -> tuple[Scene, Displacement]:
+    """The scene as a recorded set had it (its `scene.json`), and the same as a displacement of the scene file's."""
+    counter, bins = np.asarray(placement["offsets"]["counter"], float), np.asarray(placement["offsets"]["bins"], float)
+    cfg = copy.deepcopy(scene.cfg)
+    cfg["counter"]["mat_origin_in_pelvis"] = (scene.origin + counter).tolist()
+    cfg["bins"]["centers"] = {name: [c[0] + bins[1], c[1] + bins[0]] for name, c in cfg["bins"]["centers"].items()}
+    cfg["bins"]["wall_height"] = placement["boxes"]["wall_height"]
+    table = np.eye(4)
+    table[:3, 3] = counter
+    return Scene(cfg), Displacement(table, {name: bins for name in cfg["bins"]["centers"]})
+
+
+def load_frame(path: Path, scene: Scene, nominal: Pinhole, cfg: Mapping[str, Any], move: Displacement | None = None) -> Frame:
+    """One recorded frame; `scene` is the scene as it stood when recorded, `move` its displacement from the scene file."""
     data = np.load(path)
     meta = json.loads(str(data["meta"]))
     obs = {k: data[k] for k in data.files if k != "meta"}
@@ -165,7 +182,7 @@ def load_frame(path: Path, scene: Scene, nominal: Pinhole, cfg: Mapping[str, Any
     state = [presence(scene, o, cfg) for o in meta["objects"]]
     truths = [make_truth(o, scene, camera, obs["head_depth"], cfg) for o, s in zip(meta["objects"], state) if s == "lying"]
     ignored = [np.asarray(o["pos"][:2], float) for o, s in zip(meta["objects"], state) if s == "unclear"]
-    return Frame(int(meta["seed"]), int(meta.get("tick", 0)), obs, truths, ignored, camera, dr)
+    return Frame(int(meta["seed"]), int(meta.get("tick", 0)), obs, truths, ignored, camera, dr, move=move)
 
 
 def armless_frames(scene: Scene, nominal: Pinhole, layouts: int, cfg: Mapping[str, Any]) -> list[Frame]:
@@ -243,6 +260,27 @@ def conditioned(frames: Sequence[Frame], scene: Scene, cfg: Mapping[str, Any], s
     return [sensed(frame, arms, cfg["d435"], depth, seed) for frame in frames] if depth else list(frames)
 
 
+def still(frames: Sequence[Frame], tolerance: float) -> list[Frame]:
+    """The frames of each episode whose arm and hand joints stand where its previous recorded frame had them."""
+    ordered = sorted(frames, key=lambda f: (f.seed, f.tick))
+    joints = [np.r_[f.obs["arm_q"], f.obs["hand_q"]] for f in ordered]
+    return [f for k, f in enumerate(ordered) if k and ordered[k - 1].seed == f.seed and np.abs(joints[k] - joints[k - 1]).max() < tolerance]
+
+
+def layout_row(frame: Frame, layout: SceneLayout, scene: Scene, wall_height: float) -> Row:
+    """One look's layout against where counter, bins and rims really stand (`scene`: the scene file's)."""
+    file, half = scene_layout(scene), np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2
+    truly = (lambda points, name=None: points) if frame.move is None else frame.move.moved
+    bins = {name: truly(np.r_[xy, scene.counter_z][None], name)[0] for name, xy in file.bins.items()}
+    band = scene.mat_to_pelvis([*np.mean(scene.layout_kwargs()["region"], axis=1), 0.0])
+    rims = [truly(np.r_[xy + half * signs, scene.counter_z + wall_height][None], name)[0, 2]
+            for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
+    return {"seed": frame.seed, "tick": frame.tick, "source": layout.source,
+            "bins_mm": [1e3 * float(np.linalg.norm(layout.bins[name] - bins[name][:2])) for name in file.bins],
+            "counter_mm": 1e3 * float(layout.counter_z - truly(band[None])[0, 2]),
+            "rim_mm": None if layout.rim_z is None else 1e3 * float(layout.rim_z - max(rims))}
+
+
 def in_split(seed: int, split: str, heldout_every: int) -> bool:
     heldout = seed % heldout_every == heldout_every - 1
     return split == "all" or heldout == (split == "heldout")
@@ -310,12 +348,15 @@ class Run:
     phantoms: list[float]
     runtimes: list[float]
     sources: list[str]
+    layouts: list[Row]            # per look: the layout the detector reported against the truth
     believed_absent_arms: int     # frames without arms in the image whose layout nevertheless came from the hands
 
 
-def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float, looks: int = 1, stale: bool = False) -> Run:
+def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: float, looks: int = 1, stale: bool = False,
+        wall_height: float | None = None) -> Run:
     """One detector per seed (= one episode), its frames in recording order, as the policy would look; the last look counts."""
-    out = Run([], [], [], [], 0)
+    out, scene = Run([], [], [], [], [], 0), Scene.load()
+    wall_height = scene.cfg["bins"]["wall_height"] if wall_height is None else wall_height
     detectors: dict[int, Detector] = {}
     ordered = sorted(frames, key=lambda f: (f.seed, f.tick))
     first = {f.seed: f for f in reversed(ordered)}
@@ -335,6 +376,7 @@ def run(detector_name: str, frames: Sequence[Frame], nominal: Pinhole, radius: f
         out.rows += rows
         out.phantoms += phantoms
         out.sources.append(detector.layout().source)
+        out.layouts.append(layout_row(frame, detector.layout(), scene, wall_height))
         out.believed_absent_arms += out.sources[-1] == "hands" and not frame.arms
     return out
 
@@ -427,7 +469,24 @@ def report(result: Run, cfg: Mapping[str, Any]) -> Row:
                    sources={s: result.sources.count(s) for s in sorted(set(result.sources))},
                    believed_absent_arms=result.believed_absent_arms)
     return {"overall": overall, "confusion": confusion(result.rows), "breakdowns": breakdowns(result.rows, cfg),
-            "confidence": confidence_table(result.rows, result.phantoms, cfg)}
+            "confidence": confidence_table(result.rows, result.phantoms, cfg), "layout": layout_report(result.layouts)}
+
+
+def layout_report(layouts: Sequence[Row]) -> list[str]:
+    """Per layout source: looks, bin centre, counter height and rim error (mm); and how often an episode changed its source."""
+    out, episodes = [], {}
+    for row in layouts:
+        episodes.setdefault(row["seed"], []).append(row["source"])
+    changes = {seed: [f"{a}>{b}" for a, b in zip(seq[:-1], seq[1:]) if a != b] for seed, seq in episodes.items()}
+    for source in sorted({row["source"] for row in layouts}):
+        rows = [row for row in layouts if row["source"] == source]
+        bins, counter = spread([v for row in rows for v in row["bins_mm"]]), spread([abs(row["counter_mm"]) for row in rows])
+        rim = [row["rim_mm"] for row in rows if row["rim_mm"] is not None]
+        out.append(f"layout by {source}: {len(rows)} looks  bins mm median {bins['median']:.1f} p95 {bins['p95']:.1f} max {bins['max']:.1f}  "
+                   f"looks with a bin over 30 mm off {sum(max(row['bins_mm']) > 30 for row in rows)}  counter mm median {counter['median']:.1f} "
+                   f"max {counter['max']:.1f}  rim mm, signed: " + (f"median {np.median(rim):+.1f} min {min(rim):+.1f} max {max(rim):+.1f}" if rim else "none"))
+    out.append("layout source changes inside an episode: " + (", ".join(f"seed {seed}: {' '.join(c)}" for seed, c in changes.items() if c) or "none"))
+    return out
 
 
 def line(label: str, s: Row) -> str:
@@ -459,6 +518,7 @@ def render(title: str, result: Row) -> str:
         f"{t}: " + " ".join(f"{d} {n}" for d, n in row.items() if n) for t, row in result["confusion"].items()))
     out.append("layout source per frame: " + ", ".join(f"{s} {n}" for s, n in o["sources"].items())
                + f"; hand fit believed although no arm is in the image: {o['believed_absent_arms']}")
+    out += result["layout"]
     c = result["confidence"]
     out.append("confidence from " + " ".join(f"{e:.1f}" for e in c["edges"]) + ": " + "; ".join(
         f"{g} {h}" for g, h in c["histogram"].items()))
@@ -484,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--depth", choices=LEVELS, help="deliver the depth image as a RealSense D435i would, at this severity")
     ap.add_argument("--depth-seed", type=int, default=0)
     ap.add_argument("--shift", choices=sorted(config.load()["perception"]["bench"]["shifts"]), help="re-render the table displaced")
+    ap.add_argument("--still", action="store_true", help="only frames whose joints stand where the frame before had them")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
@@ -491,18 +552,21 @@ def main(argv: list[str] | None = None) -> int:
     head = Calibration.load().cams[CAMERA]
     nominal = Pinhole(head.K, head.T_pelvis_optical)
     scene, label = Scene.load(), args.frames.name if args.frames else "armless"
+    placement = args.frames / "scene.json" if args.frames else None
+    there, move = placed(scene, json.loads(placement.read_text())) if placement and placement.exists() else (scene, None)
     frames = armless_frames(scene, nominal, args.armless, cfg) if args.armless else [
-        load_frame(p, scene, nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
+        load_frame(p, there, nominal, cfg, move) for p in sorted(args.frames.glob("seed_*.npz"))
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
     frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
     frames = [rotated(frame, args.rotate) for frame in frames] if args.rotate else frames
+    frames = still(frames, cfg["still_tolerance"]) if args.still else frames
     frames = conditioned(frames, scene, cfg, args.shift, args.depth, args.depth_seed)
-    passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
+    passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale, there.cfg["bins"]["wall_height"])
     result = report(passed, cfg)
     print(render(f"{args.detector} on {label} [{args.split}]", result))
     args.out.mkdir(parents=True, exist_ok=True)
     label = "_".join(filter(None, [label, args.shift, args.depth]))
-    (args.out / f"{args.detector}_{label}_{args.split}.json").write_text(json.dumps({**result, "rows": passed.rows}, indent=1))
+    (args.out / f"{args.detector}_{label}_{args.split}.json").write_text(json.dumps({**result, "rows": passed.rows, "layouts": passed.layouts}, indent=1))
     return 0
 
 

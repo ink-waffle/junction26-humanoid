@@ -162,6 +162,7 @@ perception:
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
   bench:                      # halal.eval.perception_bench
+    still_tolerance: 0.02     # --still: joints this close (rad) to the previous recorded frame's make a frame a look
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
     heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
     resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
