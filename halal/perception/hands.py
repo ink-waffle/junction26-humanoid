@@ -71,9 +71,14 @@ class HandFit:
     visible: int            # visible model points
 
     @property
+    def clear_share(self) -> float:
+        """Share of the visible model clear of the floor gate: 1 for arms held up, a third or less for hands lying on the table."""
+        return self.clear / max(self.visible, 1)
+
+    @property
     def settled(self) -> float:
         """Share of the whole visible model with depth on it: low hands are under the floor gate, so other starts are still tried."""
-        return self.coverage * self.known * (self.clear / max(self.visible, 1))
+        return self.coverage * self.known * self.clear_share
 
 
 class HandReference:
