@@ -7,3 +7,18 @@ perception:
 motion:
   finger_yaw_weight: 3.0      # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
   finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
+
+policy:
+  time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
+  time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
+  chunk_ticks: 10             # ticks per reply while a trajectory runs
+  hold_ticks: 6               # ticks per reply while the planner works
+  settle_s: 0.3               # hold after every motion before the head image is used
+  max_attempts: 2             # picks started on one spot before the object is left alone
+  same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
+  min_detection_confidence: 0.5
+  min_instruction_confidence: 0.5
+  relocate: true              # cross-body fallback: put the object where an arm that reaches the bin can take it
+  background_nice: 10         # niceness of the planning thread (Linux)
+  gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often
