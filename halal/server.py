@@ -33,8 +33,8 @@ class SortServer(Policy):
         parsed = parse_instruction(instruction)
         confident = parsed.confidence >= self.settings["min_instruction_confidence"]
         self.sorter.reset(parsed.bin_for if confident else leave_everything)
-        log.info("reset task=%s seed=%s instruction=%r mapping=%s confidence=%.2f parser=%s", task, seed, instruction,
-                 parsed.mapping, parsed.confidence, parsed.parser)
+        log.info("reset task=%s seed=%s instruction=%r mapping=%s confidence=%.2f acting=%s parser=%s notes=%s", task,
+                 seed, instruction, parsed.mapping, parsed.confidence, confident, parsed.parser, list(parsed.notes))
 
     def act(self, obs: Mapping[str, Any]) -> dict[str, Any]:
         return self.sorter.act(obs)
