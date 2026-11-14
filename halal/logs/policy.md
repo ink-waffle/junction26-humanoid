@@ -65,7 +65,9 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v5 | 5a4d3187fcf0 | fe03f4c | – | – | – | – | pre-check only | superseded by v6 before it ran |
 | v6 | ec29a3c0ad75 | 58573f1 | – | 6/6, 6/6 then stopped | – | – | pre-check pass | v4 + perception 47e63f3 + release check after grasps deeper than 0.6 + motion 44bc3a4; replaced after 5 min: v4's unseen leg had a cube wedge at depth 0.30 |
 | v7 | 5a8d69474d2e | 88aacba | 3/3, 5/5 then stopped | 2/3, 2/3 then stopped | – | – | pre-check pass | release check after every grasp; the check found a triangle still in the hand in both known episodes (0.096, like its carry score) and three plain reopenings did not free it: arm retired with the object in it |
-| v8 | 550b70a8b003 | 2a1155c | running | running | queued | – | pre-check pass | v7 + staggered reopening after the check's close + hand-aware grasps (`candidate_grasps(hand=...)`) |
+| v8 | 550b70a8b003 | 2a1155c | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +6.50 ± 0.87, 26/28 (1 time limit) | **+20.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 166) | v7 + hand-aware grasps (`candidate_grasps(hand=...)`) + a late-finger opening at the end of the check; nothing in a wrong bin or off the counter; the unseen leg is its second run (`v8-image-a2`), the first was killed by a container name clash after 2 episodes |
+| v9 | b06b10e1cb9a | 7dee1dd | running | running | running | – | pre-check pass | v8 + release check started during the retreat + three picks for a toppled object |
+| v10 | – | 513e266 | – | – | – | – | mock suites pass | v9 + motion's staggered release (main 2120e4f) + finger-by-finger reopening before every re-check + last check back home before an arm is retired + hand opens on the way home + release slots sideways only |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -185,4 +187,38 @@ could not release it with three plain reopenings and retired the arm with the ob
 no −1). So the check sees the problem and plain reopening is no remedy.
 v8: the reopening after such a close starts one finger 0.25 s late (`policy.reopen_stagger_s`, the motion
 engineer's finding: staggered opening took wedged-in-hand from 16/24 to 0/24 in his sweep).
-Verdict: pending v8.
+Verdict (v8, three legs + seeds 1010–1015 of the known leg, 30 episodes, ~110 releases): the check found an object
+still in the hand 4 times (triangle at depth 0.80 twice, a cube at 0.30 whose lift score was 0.079 instead of the
+usual 0.16–0.19, a cube picked without a shape at 0.75). The score at the check equals the carry score (0.095 /
+0.097) or decays slowly (0.079 → 0.066 → 0.051 → 0.047). All 4 objects ended in the correct bin, no −1. But:
+- v8 never opened late-finger-first before a re-check: after a positive read the hand opened with a plain ramp,
+  closed and was read again; the staggered opening came only after the last read, with the arm already retired.
+  Three positive reads per incident are three plain openings; whether the one staggered opening or the move home
+  freed the object the logs cannot tell.
+- Retiring the arm is what cost points: unseen seed 1002 lost two red objects that only the retired left arm
+  reached (retired at t = 17 s, "no plan" for the remaining 100 s), seed 1008 a toppled triangle. 3 objects lost
+  to retirement, none to the wedge.
+- Cost of the check: 57 ticks (1.9 s) per pick in v8, 43 (1.45 s) when it starts during the retreat (v9).
+
+v10: (1) motion's staggered release at the first opening (`motion.release_stagger_s` 0.25: 118/118 out of the
+hand within the open phase in the grasp bench); (2) a positive read is followed by thumb and one finger opening
+fully, a rest (`policy.reopen_pause_s`), then the last finger, an open hold, a close and the next read: 3 reads
+above the bin; (3) after the third positive read the hand opens the same way, the arm goes home and the hand is
+read once more there: only a positive read at home retires the arm; (4) after an empty read the hand opens during
+the move home if that keeps the plan's own clearance (always, in the mock: 5–12 cm), so the check costs ~21
+ticks (0.7 s) per pick; (5) every release logs its verdict. Mock (object kept for the first n openings): n = 1
+freed at the first re-check; n = 3 freed before the way home, arm kept, 3/3; n ≥ 4 arm retired. 0 clips.
+Verdict: pending v10.
+
+### Release slots with the staggered release (v10)
+The staggered release lands objects −27..+118 mm ahead of the release point and −48..+63 mm outward (motion's
+bench, n = 119): two slots cannot be separated forward any more. Slots now differ sideways only: side bins 0 and
+4 cm outward, centre bin ±2 cm (±3.5 cm would leave 4 mm to the side wall for an outward throw).
+
+### Two evaluators on one sim (14.11, 09:28 UTC, my mistake)
+`halal.eval.proxy --port P` serves leg i on P + i and `serve_image.sh` names its container `halal-eval-<port>`
+and removes that name on exit: a second run whose ports overlap a running one removes the running leg's
+container, and a second evaluator on a sim makes both episodes garbage (a calibration close read both hands as
+soft, bias 0.34 / 0.56 rad). Runs now start through `/data/scratch/policy/run_legs.sh`, which refuses a sim that
+has a client, a port in use and an existing container name. Discount: `v8-image-a_1114_090854` unseen leg (2 clean
+episodes, 6 crashed), `v8-seeds1008-c` seeds 1008 and 1009.
