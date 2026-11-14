@@ -74,3 +74,31 @@ Reading: at +6 cm the side bins work either way in sim. The rise buys 2 cm of in
 higher is 90 mm wide against 66 mm, well inside the 204 mm box, and no object touched a rim (contact starts under
 22.5 mm). No verdict on the config value yet: the centre bin (where main loses plans at +6), +8 cm, the rim releases at
 +10 / +12 and the soft hand are still running.
+
+## Sweeps r1 (centre bin, +6 cm) and r2 (side bins, +8 cm), stock hand
+
+Same sim settings as above with the bins as stated; centre bin: one arm at a time, release at y 0 (no slot shift),
+4 picks per shape and cell; side bins at +8: 12 per shape.
+
+| bins, bin | config | planned | binned | inset, rise | landing minus release point, x | centre to wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|---|
+| +6, centre | rise list | 12/12 | 12/12 | 5 cm, +6 cm | −25…+66 mm (median +13) | 25 mm | 0 |
+| +6, centre | today | 12/12 | 12/12 | 4 cm, 0 | −12…+33 mm (median +5) | 28 mm | 0 |
+| +8, side | rise list | 36/36 | 36/36 | 4 cm, +6 cm | −17…+62 mm (median +5) | 23 mm | 0 |
+
+- +8 cm side bins: main plans nothing there (offline 0/16); with the rise every pick planned and was binned. The
+  smallest margin at the rim is 0.5 mm over touching: an inset of 4 cm is the edge of contact-free, as expected from
+  an object 45 mm wide.
+- From 6 cm higher the landing spread is 80–90 mm wide (60–65 mm at the nominal height), median still within 13 mm of
+  the release point: objects do not fly on.
+
+## v18's centre-box refusals in the real-look sim (offline, 14.11)
+
+Run `rs18-all-soft` (bins +6 cm, counter +0.02, soft hands): five objects bound for the centre box got "no plan for
+any of N targets" for the rest of their episodes, in the same millisecond as the look and without a per-arm reason.
+Cause: v18's `reaches_bin` answered for `self.near_inset` as the previous plan left it. After a side-bin pick (inset
+5 cm, release x 0.513 as in the log) it is False for both arms on the centre box, which only reaches insets 3–4 cm
+there, so the policy's arm filter left no arm and `plan_pick` was never called. With `plan_pick` called directly v18
+plans all 24 cells (6 objects × 2 arms × 2 centre slots; 6–11 s per far-slot call). Main since a7b7c93: the filter
+stays True; rise `[0.0]` plans 12/24 (each arm's near slot, inset 4 cm; the far slot is refused by the landing rule at
+inset 3 cm), the rise list 24/24 (insets 4–6 cm), 18 s for the 24 calls against 106 s.
