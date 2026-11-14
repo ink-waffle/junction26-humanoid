@@ -64,7 +64,7 @@ class PickChooser:
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
                hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target], list[Target]]:
-        """The first target whose plan stays clear of the other objects, the failed ones, and those whose options could not even be built; a target with a neighbour in the way waits."""
+        """The first target whose plan stays clear of the other objects, the failed ones, and those without any option; a target with a neighbour in the way waits."""
         start = PlanStart(released, hands, arm_q, hand_q, cancelled)
         unplannable: list[Target] = []
         waiting: list[Target] = []
@@ -97,19 +97,21 @@ class PickChooser:
         return target.attempts, grasp_kind(target.detection) in self.settings["last_kinds"], self._distance_to_bin(target)
 
     def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles, broken: list[Target]) -> tuple[Pick | None, bool]:
-        """`_first_plan`; whatever one target's data breaks on the way counts as no plan and puts it in `broken`, so the other targets keep their turn."""
+        """`_first_plan` over the target's options; a target without options (no arm in use reaches its bin, or its data breaks them) goes to `broken`, the other targets keep their turn."""
         try:
-            return self._first_plan(target, start, obstacles)
+            options = self._options(target, start.released.get(target.bin_name, 0), start.hands)
+            if not options:
+                log.info("no plan for %s: no arm in use reaches the %s bin with a grasp", target, target.bin_name)
+                broken.append(target)
+            return self._first_plan(target, options, start, obstacles)
         except Exception:
             log.exception("no options for %s", target)
             broken.append(target)
             return None, False
 
-    def _first_plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
-        """The first arm, grasp and release slot with a plan; none, and True, if that plan would touch a neighbouring object."""
-        options = self._options(target, start.released.get(target.bin_name, 0), start.hands)
-        if not options:
-            log.info("no plan for %s: no arm in use reaches the %s bin with a grasp", target, target.bin_name)
+    def _first_plan(self, target: Target, options: list[tuple[str, Grasp, Shift]], start: PlanStart,
+                    obstacles: Obstacles) -> tuple[Pick | None, bool]:
+        """The first of the arm, grasp and release slot options with a plan; none, and True, if that plan would touch a neighbouring object."""
         for side, grasp, shift in options:
             if start.cancelled():
                 break

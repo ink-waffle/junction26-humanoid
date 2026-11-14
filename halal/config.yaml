@@ -390,7 +390,8 @@ policy:
   max_attempts: 5             # picks started on one spot before the object is left alone
   retry_offsets: [[0.0, 0.0], [0.005, 0.0], [-0.005, 0.0], [0.0, 0.005], [0.0, -0.005]]   # pelvis xy added to the grasp point on the n-th pick of an object
   blob_attempts: 3            # the same for a toppled object: a prism lying on a side, or a coloured blob whose outline no shape fits (`visible` 0)
-  broken_target_looks: 3      # looks in which building a target's grasp options raised before it is left alone for the episode: it must not hold up `done`
+  broken_target_looks: 3      # looks (camera fixed, not nominal) in which a target had no grasp option (no arm in use reaches its bin, or building them raised) before it is left alone: it must not hold up the episode
+  clear_look_every: 3         # looks in a row from home in which no target had a plan before one is taken with the arms out of the way: a hand at home can spoil an object's colour
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   detect_deadline_s: 5.0      # a detector call (0.03-0.1 s; a whole look 0.8 s under three sims) left behind after this long; doubles with every miss
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
