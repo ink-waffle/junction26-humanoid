@@ -34,6 +34,7 @@ pregrasp, 91-98 % at the grasp), so the look is taken from beside the object.
 | s2-servo | servo2-servo 5cab02c49bc1 (d7ec748) | 15/15 | +3.75 | 0 | 157.7 | PASS | 11 corrected and held, 1 refused -> open loop from the hover, held; 1 cross-body no hover |
 | s3-measure | servo3-measure 69925dc52e42 (32024af) | 15/15 | +3.75 | 0 | 139.0 | PASS | 14 hovered, 8 believable, 3 refused (rms), all held; 1 no hover |
 | s3-servo | servo3-servo 34443d4b8b17 (32024af) | 15/15 | +3.75 | 0 | 169.6 | PASS | 16 looks applied, 3 refused (rms: the cylinder misread among them), 5 on visible; all held; 1 no hover |
+| s4-measure | servo4-measure 28dd119f2754 (e944ede, v26 base) | 15/15 | +3.75 | 0 | 168.2 | PASS | measure path identical to ca14b09 |
 
 - Believable corrections median 12-15 mm, max 21 mm. Of that, the arm hangs under its command at the hover: tracking
   (commanded minus measured grasp point) about (+3, +1, +7) mm; the object in the arm frame differs from the scene camera by
@@ -65,3 +66,7 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
   20 such looks ("too large"); 6 more missed the top face because the hover, planned beside the believed object, stood over
   the real one. 8f70397: the arm-fit turn is capped on its own (`servo.max_turn_correction` 8 cm). e944ede: a first look that
   only missed the top face, with its arm fit believed, hovers again beside the turned target.
+- ca14b09: with a correction over 3 cm the replan from the hover counted the target's own uncorrected detection as a
+  neighbour ("hand would touch the object at" its old position) and fell back to open loop (seen in the first r4 episode:
+  37 mm applied, look 2 converged at 1.9 mm, then no plan). The corrected plan now keeps clear of the other objects moved by
+  the same correction. servo5-* is built from it.
