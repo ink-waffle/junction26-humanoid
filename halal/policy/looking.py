@@ -85,7 +85,7 @@ class Looker:
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
         pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
-                                                cancelled)
+                                                [det.top for det in detections], cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
     def _neighbours(self, det: ObjectDetection, everything: list[ObjectDetection]) -> int:
