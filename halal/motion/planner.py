@@ -18,6 +18,7 @@ from aaltonomous.scene.scene import Scene
 from halal import config
 from halal.motion import sequence
 from halal.motion.grasps import Grasp, right_hand
+from halal.motion.obstacles import distance, outline, top_of
 from halal.perception import SceneLayout
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
@@ -27,13 +28,14 @@ HELD_PHASES = ("lift", "carry")
 NEAR_OBJECTS_PHASES = ("descend", "close")
 OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
+DIGIT_SAMPLES = np.linspace(0.0, 1.0, 5)
 
 
 class PickPlanner(Planner):
     drop_shift = np.zeros(2)
     near_inset = 0.0
     low = False
-    obstacles: Sequence[np.ndarray] = ()
+    obstacles: Sequence[Any] = ()
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -51,10 +53,10 @@ class PickPlanner(Planner):
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
                   place_xy: tuple[float, float] | None = None, squeeze: float | None = None,
-                  obstacles: Sequence[np.ndarray] = ()) -> Plan:
-        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (tops of other objects)."""
+                  obstacles: Sequence[Any] = ()) -> Plan:
+        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline)."""
         self.drop_shift = np.asarray(drop_shift, float)
-        self.obstacles = [np.asarray(o, float) for o in obstacles if np.linalg.norm(np.subtract(o[:2], det.top[:2])) > self.motion["obstacles"]["radius"]]
+        self.obstacles = [o for o in obstacles if np.linalg.norm(top_of(o)[:2] - det.top[:2]) > self.motion["obstacles"]["radius"]]
         insets = [0.0] if place_xy is not None else self._reachable_insets(side, bin_name)
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
@@ -259,30 +261,31 @@ class PickPlanner(Planner):
     def _clear_of_obstacles(self, plan: Plan, side: str) -> Plan:
         """Fail a plan whose fingers or thumb, while down among the objects, come too close to another object."""
         limits = self.motion["obstacles"]
-        reach = limits["radius"] + limits["finger_radius"] + limits["margin"]
         for obstacle in self.obstacles if plan.ok else ():
-            if self.digit_gap(plan, side, obstacle) < reach:
+            if self.digit_gap(plan, side, obstacle) < limits["finger_radius"] + limits["margin"]:
                 plan.ok = False
-                plan.reason = f"hand would touch the object at ({obstacle[0]:+.3f},{obstacle[1]:+.3f})"
+                plan.reason = "hand would touch the object at ({:+.3f},{:+.3f})".format(*top_of(obstacle)[:2])
                 break
         return plan
 
-    def digit_gap(self, plan: Plan, side: str, obstacle: np.ndarray) -> float:
-        """Smallest horizontal distance (m) from an object's centre to a digit point below its top during descend and close; inf if none comes down."""
-        ceiling, gap = obstacle[2] + self.motion["obstacles"]["margin"], np.inf
+    def digit_gap(self, plan: Plan, side: str, obstacle: Any) -> float:
+        """Smallest horizontal distance (m) from a digit's centre line, while below an obstacle's top during descend and close, to its outline; inf if none comes down."""
+        limits = self.motion["obstacles"]
+        corners, radius = outline(obstacle, self.height, limits["radius"])
+        ceiling, gap = top_of(obstacle)[2] + limits["margin"], np.inf
         for name, first, stop in plan.phases:
             for tick in range(first, stop, OBSTACLE_CHECK_EVERY) if name in NEAR_OBJECTS_PHASES else ():
                 points = self._digit_points(side, plan.arm[tick], plan.hand[tick])
                 low = points[points[:, 2] < ceiling]
                 if len(low):
-                    gap = min(gap, float(np.linalg.norm(low[:, :2] - obstacle[:2], axis=1).min()))
+                    gap = min(gap, float(distance(low[:, :2], corners).min()) - radius)
         return gap
 
     def _digit_points(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray) -> np.ndarray:
-        """Joint, middle and tip of each distal finger link (index, middle, thumb) in the pelvis frame, (9, 3)."""
+        """Points along each distal finger link (index, middle, thumb) from its joint to its tip in the pelvis frame, (15, 3)."""
         points = self.kin.hand_points(side, arm_q, hand_q)
         joints, tips = points[2:5], points[5:8]
-        return np.vstack([joints, (joints + tips) / 2, tips])
+        return np.vstack([joints + f * (tips - joints) for f in DIGIT_SAMPLES])
 
     def _is_straight(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray, name: str) -> bool:
         """Whether the joint-space move q0 -> q1 keeps the grasp point near the line p0 -> p1."""

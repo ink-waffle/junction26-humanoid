@@ -474,3 +474,94 @@ comes, candidates as the policy gets them; the bench records the planned digit g
 Verdict: the check works and stays at 47 mm for objects of unknown shape and heading. What it rejects needlessly are
 flat sides and cylinders; the footprint (shape and yaw of the neighbour) would say which. Gap scan with cube, cylinder
 and triangle neighbours: sweep 26.
+
+## Sweep 24: the policy's first side-bin slot, 2 cm inward of the release point, against the walls
+
+Question from full episodes: slots that keep two objects of one bin apart put the first one 2 cm inward (65 mm from
+the inner side wall); the landing box (inward y down to −59 mm in the grippy-light corner) says an object could
+reach that wall. Stock sim, grippy-light corner, side bins, candidates; new metric: distance of the object's centre
+to the nearest inner wall when its bottom passes the rim (under 22.5 mm it touches the rim).
+
+| release point | shape | binned | centre to wall passing the rim, min / p5 | touches the rim | at rest, min |
+|---|---|---|---|---|---|
+| slot −2 cm | cube | 12/12 | 37 / 40 mm | 0 | 37 mm |
+| | cylinder | 12/12 | 28 / 38 mm | 0 | 28 mm |
+| | triangle | 24/24 | 28 / 29 mm | 0 | 28 mm |
+| default (85 mm from the side wall) | cube | 11/12 | 45 / 46 mm | 0 | 45 mm |
+| | cylinder | 12/12 | 49 / 50 mm | 0 | 49 mm |
+| | triangle | 12/12 | 36 / 41 mm | 0 | 36 mm |
+
+Verdict: no wall incident in 48 releases at −2 cm, smallest margin over touching 5.5 mm. The −59 mm extreme is one
+release in about 160 on record (p5 −45 mm); at this slot it leaves the centre 6 mm inside the wall's inner face: the
+object scrapes the wall and falls inside. The release point stays; the bench takes `drop_shift` per variant.
+
+## Obstacles as outlines (offline; sim evidence: sweep 26, queued)
+
+`plan_pick(..., obstacles=...)` now takes detections as well as bare top points. A detection is kept off by its
+outline (square for a cube with a yaw, triangle with the apex along its yaw, circle of half its size for a cylinder;
+circle of `motion.obstacles.radius` when the shape or yaw is unknown or the prism is lying); digit centre lines, now
+sampled at five points per distal link, stay `finger_radius + margin` = 17 mm from it. Bare tops behave exactly as
+before (47 mm from the centre). Offline over 40 layouts (169 targets, every neighbour present): the blind first plan
+passes within 13 mm of a neighbour's true outline (touching) in 20 % of the picks; targets left without a plan: 17 %
+with bare tops, 12 % with detections; planning time unchanged (0.4 s mean, 4.6 s worst). The bench passes
+`avoid: footprint` and records the planned clearance to the neighbour's true outline (`neighbour_clear_mm`).
+Not yet used by the policy (it passes tops) and not yet measured in sim.
+
+## Objects close to a bin's near wall (offline; sim cell: sweep 27, queued)
+
+Policy episode: a cube that came to rest 3.2 cm (centre) before the centre bin was refused 47 times ("hand −0.4 cm
+above a bin rim during descend"). The preshaped fingers come down ~4 cm ahead of the object along the finger heading:
+with the fingers forward that is on the wall. The default hints do include an inward direction, but only as a weak
+preference (weight 0.3) that the IK does not follow there. Offline, cube at 2.5–5 cm before the walls, cage:
+
+| centre before the wall | default hints | fingers 90° inward, grasp point at 0.6 of the height | 90° outward, same |
+|---|---|---|---|
+| 5 cm | 4/6 (the rest plan at 60° inward) | | |
+| 4 cm | 0/6 | centre bin 5/5, side bins 0/5 (the IK flips the hand) | side bins 7/7 |
+| 3 cm | 0/6 | centre bin 5/5 | side bins 5/5, between the bins 0/2 |
+| 2.5 cm | 0/6 | centre bin 2/5 | 2/7 |
+
+At 90° the hand is tilted 22–36° (reach), so with the grasp point at mid-height the closed fingertips are 8–9 mm above
+the counter when the lift starts and the organiser's check (12 mm) refuses the plan; 4.5 mm higher it passes.
+Strategies can now fix their headings (`inward_headings_deg: [90, -90]`, tried in that order, not filtered by the
+natural-heading range; `_check_finger_yaw` rejects the one the arm cannot turn to). Not in the candidates yet: a
+tilted hand at that heading has never held an object in sim (sweep 27: `side` at the wall, `side_mid` in the middle
+of the table, `reference` = today's candidates).
+
+## Sweep 23: prisms lying on a rectangular side (23a, 23b; 23d / 23e queued)
+
+Why: on the real table the foam prism lies on a side in most first frames, and in sim a triangle toppled by a failed
+grasp lies the same way. Perception reports it as `shape="triangle", lying=True`, yaw = ridge direction, top = ridge
+centre. Sim prism: 52 mm across the ridge, 45 mm along it, ridge 45 mm high (real: 45 x 45, ridge ~39 mm).
+
+Bench: variant key `topple_deg` tips the upright prism with a scripted closed-hand push through its upper third, from
+the vertex nearest that direction towards the opposite face, and reads the true pose back; the ridge ends up along
+the push. From x 0.30 it worked 8/8; from x 0.265 (sweep 23b) 60 % of the pushes did not plan and the prism stayed
+upright, so only records with `lying` true count below.
+
+Geometry: along the ridge the two end faces are vertical and 45 mm apart like a cube's, but triangular: 26 mm wide at
+mid-height, narrower than the 40 mm between the fingertips, so a centred cage straddles them. Across the ridge the
+45 mm long sloped faces span the fingertips like a cube face, but they lean 30° inward: the squeeze pushes the roof
+down and the fingers up the slope, friction only (needs µ > 0.58).
+
+Lying and planned picks, 23a = soft-hand sim (smoke), 23b = stock sim (80 picks; sweeps 23d / 23e,
+from x 0.29 on both sims, are queued and land in `runs/grasp/` on the instance):
+
+| grasp | stock | soft | what happens |
+|---|---|---|---|
+| unknown-shape cage, default hints, 0.75 (the policy's fallback, `cage_lying`) | 1/5 | | |
+| cage along the ridge, 0.30 | 0/4 | 0/3 | grip signal 0.00–0.19: the fingers straddle the end face |
+| organiser pinch along the ridge | 0/5 | | grip signal 0 |
+| cage across the ridge, 0.45 / 0.60 / 0.60 with the grasp point at 0.4 of the height / 0.80 | 0/2, 1/1, 0/3, 2/2 | 0/2 at 0.60 | soft: grip reads firm (0.25–0.33), the roof stays on the counter |
+| pinch along the ridge, thumb swung opposite one finger (`thumb_0` −0.63), 0.30 | 2/5 | | |
+| the same with the grasp point at 0.4 of the height | 4/5 | | |
+| the same with the thumb at half its swing (−0.315) | 2/3 | | |
+
+The opposed pinch: object under one finger (`point_in_palm` z 0.0285), preshape `[-0.63, -0.5, 1.5, -0.4 x4]`, closed
+`[-0.63, 0.1, 1.01, -1.0, -0.6, -1.0, -0.6]` (thumb tip at palm x 65 mm, z 28.5 mm), squeeze axis
+`[0.46, 1.0, -1.23, 0, 0, 0, 0]` (46 mm per rad at constant height and z).
+
+Verdict so far: nothing is confirmed (n ≤ 5 per cell). The opposed pinch holds 8 of 13 over its three variants, best
+with the lower grasp point (4/5); across the ridge only the deepest closure held (0.80: 2/2, shallower 1/6). The
+opposed pinch depends on `thumb_0`, which on the real hand did not follow below −0.26 in one of the organisers' recordings.
+`candidate_grasps(..., lying=True)` therefore still returns the unknown-shape cage.
