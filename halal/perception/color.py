@@ -49,13 +49,16 @@ class ColorClassifier:
     def __init__(self, cfg: Mapping[str, Any]) -> None:
         self.cfg = cfg
 
-    @staticmethod
-    def white_balance(counter_rgb: np.ndarray) -> np.ndarray:
-        """Per-channel gains that make the counter neutral; ones when there are no counter pixels."""
+    def white_balance(self, counter_rgb: np.ndarray) -> np.ndarray:
+        """Per-channel gains that make a grey counter neutral; ones without counter pixels or on a coloured counter (wood)."""
         if not len(counter_rgb):
             return np.ones(3)
         grey = np.median(counter_rgb, axis=0).astype(float) + 1e-6
-        return grey.mean() / grey
+        return grey.mean() / grey if self.grey(grey) else np.ones(3)
+
+    def grey(self, colour: np.ndarray) -> bool:
+        """True for a counter colour (median RGB) pale enough to be the white reference: the sim mat or drop 2's table, not wood."""
+        return float(chromas(colour)) <= self.cfg["grey_chroma"]
 
     def dark_share(self, samples: np.ndarray, counter_rgb: np.ndarray) -> float:
         """Share of an object's RGB samples (N, 3) that are dark against the bare counter's brightness: 1 for a black object."""

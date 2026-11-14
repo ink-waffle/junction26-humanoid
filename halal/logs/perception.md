@@ -803,6 +803,84 @@ believed before and after, 3.6 to 4.4 mm. All clean sets including `motion`: ide
 and bad depth. The limit exists to refuse a fit that walked off; the other checks (coverage, pixels on the model, rms) did not
 need it in any frame here.
 
+### Real robot, first runs (`halal/logs/robot.md`): white balance on wood, coverage under the floor gate
+
+**H14. No white balance on a counter that is not grey** (`topface.color.grey_chroma`, robot.md fix 4). The robot's table is light
+wood. The colour stage divided by the bare counter's median colour, and on wood that turned the orange cylinder of run 1 into
+"yellow" at confidence 1.00 (look 2). The camera's own white balance already gets the foam right there. Now the gains are ones when
+the counter's median colour has a chroma above 0.15. The detector logs the counter colour and its decision once per episode and on
+every change ("bare counter RGB [..], chroma 0.32: not grey, colours as the camera gives them").
+
+| counter (median colour of the detector's bare-counter pixels) | chroma |
+|---|---|
+| sim mat: `dr_train` / `lookpose` / `lowhands` / `closedhands` / `movinghands` / `motion`, every frame, max | 0.046 / 0.034 / 0.046 / 0.050 / 0.025 / 0.034 |
+| `realsim_looks` (bare table, real colours), every 3rd frame | p95 0.070, max 0.090 |
+| drop 2 table, 48 first frames, no chroma pre-filter (table minus foam, tape, hand, forearm) | min 0.007, median 0.043, max 0.100 |
+| robot wood, frozen run-1 picture: x 0.18 to 0.38 through the nominal camera, objects and hands masked / the analyst's patch | 0.25 / 0.32 |
+
+Frozen run-1 picture, five objects by full silhouette, the detector's colour stage (hue deg, family, confidence):
+
+| | orange cube | orange cylinder | yellow cube | purple cubes |
+|---|---|---|---|---|
+| no white balance | 25.8 red 1.00 | 25.2 red 1.00 | 51.7 yellow 1.00 | 219.2, 217.3 blue 1.00 |
+| balanced on the wood, 154/132/104 (before) | 30.6 red 1.00 | **43.1 yellow 1.00** | 63.0 yellow 1.00 | 223.1, 222.1 blue 1.00 |
+| balanced on the counter region, 158/151/119 (before) | 26.7 red | 27.0 red | 53.7 yellow | 225.7, 224.3 blue |
+| now (either counter) | as "no white balance" | | | |
+
+Sim: every bench of the matrix below identical to the digit (the gains cannot change below 0.15). Drop 2 (`drop2_colours`, cached
+first-frame PNGs): identical, purple 44/44, orange 81/81, yellow 62/62, `--sweep` included. Left as it was: `real_replay`'s RGB-only
+colour stage balances on pale pixels (chroma < 0.15 by construction), so on wood its blob colours still differ from the detector's.
+
+**H15. Hand-fit coverage judged on the model points clear of the counter** (`HandFit.clear`, robot.md fix 5). With the hands lying on
+the table (real episode start), the floor gate (6.5 cm) drops their depth pixels while the model points still counted, so coverage
+could not exceed 0.42 to 0.54. Coverage and `known` are now taken over the visible model points that, imaged by the fitted camera,
+would pass the same gate. The "arms:" line also gives how many points that was, and the turn (deg) and shift (mm) of the fit; the
+calibration bench and `real_replay` report the same. The restart rule (`settled_coverage`) still goes by the whole visible model
+(`HandFit.settled`). A first version that restarted on the clear share stopped low hands after the first start, and the kept fit
+got worse (emulation below, gate 0.11: 2.1 / 2.3 / 2.5 -> 4.5 / 9.8 / 11.3 mm).
+
+Sim, hands above the gate: the matrix (`dr_train` all `--looks 2`, `lookpose`, `lowhands` clean / bad / `--shift real --depth typical`,
+`closedhands`, `movinghands`, `motion`, `dr_train` dev `--shift real` typical and bad, `--armless 10` clean / typical / bad, and the
+calibration bench on `dr_train` dev clean / real typical / real bad, held-out real bad, `lowhands` clean and real bad, `closedhands`,
+`movinghands`) is identical to the digit. One exception: `lowhands --shift real --depth bad`, where the raised table reaches under the
+fingers in 2 of 20 frames: coverage and known move in the fourth decimal, same decisions. `--armless`: believed 0 of 40 at every
+level. `motion`, calibration bench on all 1017 frames: 5 of 929 fits have a clear share under 0.99, same 813 believed.
+
+Low hands, emulated: `lowhands` (lowest hand point 8.0 cm, hand median 11.6 cm above the counter) with the floor gate raised. A
+gate of 0.11 to 0.14 m is the hands 4.5 to 7.5 cm lower against the 6.5 cm gate. That is still milder than the robot's start:
+there the forearms are out of view and the clear share was 0.16 to 0.39. Band error mm, median / p95 / max:
+
+| gate, depth | clear share | believed before -> after | believed fits after | nominal |
+|---|---|---|---|---|
+| 0.11 clean | 0.80 | 20 -> 20 | 2.1 / 2.3 / 2.5 (identical fits) | 17.2 / 22.1 / 24.9 |
+| 0.12 clean | 0.86 | 18 -> 20 | 4.9 / 13.4 / 15.1 | |
+| 0.13 clean | 0.69 | 0 -> 20 | 11.8 / 19.9 / 23.8 | |
+| 0.14 clean | 0.52 | 0 -> 20 | 17.0 / 34.8 / 35.6 | |
+| 0.12 typical | 0.85 | 1 -> 14 | 4.2 / 13.7 / 14.3 | |
+| 0.13 typical | 0.69 | 0 -> 16 | 14.6 / 18.4 / 21.3 | |
+| 0.14 typical | 0.53 | 0 -> 20 | 18.6 / 36.3 / 37.2 | |
+| 0.13 bad | 0.72 | 5 -> 20 | 15.0 / 25.3 / 25.6 | |
+| 0.14 bad | 0.54 | 3 -> 19 | 17.2 / 25.2 / 27.8 | |
+
+So a fit on evidence cut by the gate is weak (the fits themselves are identical before and after; only acceptance changed), and on
+the sim's own small camera error it is no better than nominal: of the 92 fits newly believed at gates 0.11 to 0.14 (clean and
+typical), 35 are worse than nominal (by up to 16 mm), with a median gain of 2 to 3 mm. With a real-sized head error it pays.
+The calibration stages were handed a head pose turned 3 deg about the optical x axis (`Camera(K, T @ E)`, nominal then 38 / 47 / 51
+mm off at the band). +3 deg is the sign the robot's hand outline shows: the model sits 30 px below the real fist. Results there:
+99 newly believed, 14 worse than nominal (by up to 9 mm), median gain 17 to 19 mm. At -3 deg: 66 newly believed, none worse,
+median gain 17 to 18 mm. At gate 0.14 and +3 deg the believed fits are still 39 to 43 mm off (nominal 38 to 51). Tried and dropped:
+fitting only the model points clear of the gate (consistent truncation). It made the fits worse (gate 0.12 clean: 10.2 / 20.7 /
+36.9 mm).
+
+What this means for the robot's three fits (robot.md; their clear shares are from FK through the nominal camera, so estimates):
+A (palms only, 171 to 0 clear points) still fails spread and inliers. B (964 visible, about 376 clear) now passes every guard, at an
+accuracy the emulation puts anywhere from a few mm to the nominal error. C (right arm at home): coverage becomes about 0.74 to 0.96
+and passes, so C is now stopped by inliers alone (0.33 against 0.5), plus turn if it moved more than 10 deg. The "arms:" line now
+says how far. Home fits under a real-sized error are fine: `dr_train` dev, head pose turned +3 / -3 / +5 / -5 deg, clean and typical,
+table as recorded and `--shift real`: believed 90 of 90 everywhere, band 2.8 to 4.8 mm median, max 7.9 mm at 3 deg and 15 mm at
++5 deg. In `lowhands` at +3 deg even the unchanged fit (gate 0.065) is believed only 16 of 20 clean and 2 of 20 typical (coverage
+rejects fits that did not converge, 17 to 39 mm). So leaving the table before fitting (robot.md fix 1) stays the better order.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
@@ -833,11 +911,13 @@ Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-ou
 
 ## Next
 
-1. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
+1. Consensus of the arm fits (H6) takes the first fit while there are only one or two: a fit from the start pose (low hands, H15)
+   then outranks a later one from home. Preferring the fit with the larger clear share would likely fix it; not tried.
+2. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
    first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
-2. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
+3. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
    actuator lag showing in the render but not in `hand_q`): not investigated beyond the measurement above.
-3. Not done: the red < yellow < blue cluster-order check. In sim every object has its own ±7° hue shift, so two reds
+4. Not done: the red < yellow < blue cluster-order check. In sim every object has its own ±7° hue shift, so two reds
    differ by up to 14° and cluster order adds nothing to the basins; "all three colours present" holds at the first
    look only. It would be a policy-level rule for the first look.
-4. Sub-millimetre gains available in sim only: the true principal point (−1.4 mm); not taken, it is a sim fact.
+5. Sub-millimetre gains available in sim only: the true principal point (−1.4 mm); not taken, it is a sim fact.

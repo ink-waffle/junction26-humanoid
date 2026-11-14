@@ -90,17 +90,22 @@ class SelfCalibration:
         if fit is None:
             LOG.info("arms: too little of them in view")
             return None
-        checks = self.hand_checks(fit, camera)
-        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth, pixels on model %.2f, spread %.1f mm: %s",
-                 fit.points, 1e3 * fit.rms, fit.coverage, fit.known, fit.inliers, 1e3 * fit.spread.max(),
+        checks, (turn, shift) = self.hand_checks(fit, camera), self.displacement(fit, camera)
+        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth (judged on %d of %d visible points, those clear "
+                 "of the counter), pixels on model %.2f, spread %.1f mm, camera turned %.1f deg, shifted %.0f mm: %s", fit.points, 1e3 * fit.rms,
+                 fit.coverage, fit.known, fit.clear, fit.visible, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
                  "trusted" if all(checks.values()) else f"rejected {checks}")
         return fit.camera if all(checks.values()) else None
 
+    @staticmethod
+    def displacement(fit: HandFit, start: Camera) -> tuple[float, float]:
+        """How far a hand fit moved the camera from the pose it started at: turn (deg) and shift (m)."""
+        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ start.T[:3, :3].T).as_rotvec()))
+        return float(turn), float(np.linalg.norm(fit.camera.T[:3, 3] - start.T[:3, 3]))
+
     def hand_checks(self, fit: HandFit, start: Camera) -> dict[str, bool]:
         """Every test a hand fit must pass to be believed, by name."""
-        c = self.cfg["hands"]
-        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ start.T[:3, :3].T).as_rotvec()))
-        shift = np.linalg.norm(fit.camera.T[:3, 3] - start.T[:3, 3])
+        c, (turn, shift) = self.cfg["hands"], self.displacement(fit, start)
         return {"rms": fit.rms <= c["max_rms"], "spread": fit.spread.max() <= c["max_spread"], "coverage": fit.coverage >= c["min_coverage"],
                 "inliers": fit.inliers >= c["min_inliers"], "turn": turn <= c["max_turn_deg"], "shift": shift <= c["max_shift"]}
 
