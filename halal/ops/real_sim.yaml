@@ -1,5 +1,5 @@
 # Dev-only real-look sim (halal/ops/real_sim.py). Features are switched by REAL_SIM=<comma list | all> at sim start:
-#   lying, colours, boxes, table, offsets.   Another file with the same keys: REAL_SIM_CONFIG=<path>.
+#   lying, colours, boxes, table, offsets, camera.   Another file with the same keys: REAL_SIM_CONFIG=<path>.
 # The words of the real robot are an evaluator matter: python -m halal.eval.proxy --evaluator halal.eval.real_eval.
 
 lying:
@@ -25,6 +25,10 @@ table:                             # bare glossy table instead of the printed gr
 offsets:                           # pelvis frame, metres, added to the scene file's placement
   counter: [0.0, 0.0, 0.01]        # counter, mat, objects and boxes together (real: z +0.00 to +0.02)
   bins: [0.06, 0.0]                # the box row on top of that (real: 5 to 10 cm farther)
+
+camera:                            # true head camera = calibration.yaml pose moved in its own optical frame (realdata B7)
+  rotation_deg: [-7.4, -1.9, -0.4] # rotation vector about optical x, y, z; rotation-only fit: [-2.2, -1.8, -1.4], no translation
+  translation: [0.0, -0.04, 0.0]
 
 words: {red: orange, blue: purple} # canonical family -> the word the real instructions use
 fixed_mapping: {yellow: left, blue: center, red: right}   # the real sort_fixed rule, canonical families
