@@ -30,6 +30,7 @@ NEAR_OBJECTS_PHASES = ("descend", "close")
 OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
 DIGIT_SAMPLES = np.linspace(0.0, 1.0, 5)
+LEG_SAMPLES = np.linspace(0.0, 1.0, 15)
 TOUCHING = "hand would touch"                      # start of a failed plan's reason when another object is in the hand's way
 LANDING = "release would land on a bin wall"    # reason when no release point keeps its landing box inside the bin
 
@@ -68,10 +69,11 @@ class PickPlanner(Planner):
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
-            releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name, det)
-            tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
-            for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
-                if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, releases[0][0])):
+            releases = iter([(0.0, 0.0)]) if place_xy is not None else self._reachable_releases(side, bin_name, det)
+            tried, furthest = False, None   # a plan that was tried and failed keeps its reason: the policy reads it
+            for (self.near_inset, rise), self.low in ((release, low) for release in releases for low in self._sequences(place_xy)):
+                furthest = self.near_inset if furthest is None else furthest
+                if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, furthest)):
                     plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
@@ -211,19 +213,28 @@ class PickPlanner(Planner):
 
     def reaches_bin(self, side: str, bin_name: str, det: Any = None) -> bool:
         """Whether this arm can hold the grasp point over one of the bin's release points (those for this object, when given)."""
-        return bool(self._reachable_releases(side, bin_name, det))
+        return self._reaches_any(side, bin_name, self._release_insets(bin_name, det))
 
-    def _reachable_releases(self, side: str, bin_name: str, det: Any) -> list[tuple[float, float]]:
-        """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first; the rim insets instead for an object that may go in over the rim of a bin beyond both arms' reach."""
+    def _reachable_releases(self, side: str, bin_name: str, det: Any) -> Iterator[tuple[float, float]]:
+        """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first, found as they are asked for."""
+        return self._reached(side, bin_name, self._release_insets(bin_name, det))
+
+    def _release_insets(self, bin_name: str, det: Any) -> Sequence[float]:
+        """The bin's `near` insets; the rim insets for an object that may go in over the rim of a bin beyond both arms' reach."""
         insets = self.motion["drop_inset"]
-        if self._may_go_over_rim(det) and self._beyond_reach(bin_name):
-            return self._reached(side, bin_name, insets["rim"]["near"])
-        return self._reached(side, bin_name, insets["near"])
+        return insets["rim"]["near"] if self._may_go_over_rim(det) and self._beyond_reach(bin_name) else insets["near"]
 
-    def _reached(self, side: str, bin_name: str, insets: Sequence[float]) -> list[tuple[float, float]]:
-        """The insets this arm reaches, each with its lowest rise."""
-        rises = {inset: self._lowest_rise(side, bin_name, inset) for inset in insets}
-        return [(inset, rise) for inset, rise in rises.items() if rise is not None]
+    def _reaches_any(self, side: str, bin_name: str, insets: Sequence[float]) -> bool:
+        """Whether this arm reaches one of the insets at some rise (as `_lowest_rise` decides it), the nearest inset and the highest rise asked first."""
+        rises = self.motion["release_rise"]
+        return any(self._reaches(side, bin_name, inset, rise) for inset in reversed(insets) for rise in (rises[-1], rises[0]))
+
+    def _reached(self, side: str, bin_name: str, insets: Sequence[float]) -> Iterator[tuple[float, float]]:
+        """The insets this arm reaches, each with its lowest rise, checked one at a time as they are asked for."""
+        for inset in dict.fromkeys(insets):
+            rise = self._lowest_rise(side, bin_name, inset)
+            if rise is not None:
+                yield inset, rise
 
     def _may_go_over_rim(self, det: Any) -> bool:
         """Whether the object is an upright shape that rolls or slides into the bin from a release on its near rim."""
@@ -231,7 +242,7 @@ class PickPlanner(Planner):
 
     def _beyond_reach(self, bin_name: str) -> bool:
         """Whether neither arm reaches any of the bin's `near` insets."""
-        return not any(self._reached(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
+        return not any(self._reaches_any(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
 
     def _lowest_rise(self, side: str, bin_name: str, inset: float) -> float | None:
         """The lowest configured rise from which this arm reaches that release point (reach grows with the height); None if the highest does not."""
@@ -254,8 +265,19 @@ class PickPlanner(Planner):
             key = (side, *np.round([*self.kin.offset[side], *np.ravel(points)], 3))
             cache = self.__dict__.setdefault("_reach", {})
             if key not in cache:
-                cache[key] = all(self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
+                cache[key] = self._within_arm_length(side, points) and all(
+                    self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
         return cache[key]
+
+    def _within_arm_length(self, side: str, points: Sequence[np.ndarray]) -> bool:
+        """Whether every point lies within the arm's fully stretched length (+ IK tolerance) of its shoulder: beyond it no IK can succeed."""
+        joints = [self.kin.model.getJointId(name) for name in self.kin.spec.arm_names[ArmKinematics.sl(side)]]
+        self.kin._fk(np.zeros(14))
+        origins = [self.kin.data.oMi[j].translation for j in joints]
+        palm = self.kin.data.oMf[self.kin.palm[side]]
+        hand = np.linalg.norm(palm.translation + palm.rotation @ self.kin.offset[side] - origins[-1])
+        stretched = sum(float(np.linalg.norm(b - a)) for a, b in zip(origins, origins[1:])) + hand + self.cfg["ik"]["pos_tol"]
+        return all(float(np.linalg.norm(p - origins[0])) <= stretched for p in points)
 
     @contextmanager
     def _released_from(self, rise: float) -> Iterator[None]:
@@ -289,7 +311,7 @@ class PickPlanner(Planner):
         with self._heading_free(name in BIN_PHASES):
             if name == "carry":
                 reason = plan.reason
-                carry = self._joint_carry(side, q0, p0, p1, self.release_height() - self.release_rise, name, plan)
+                carry = self._carry(side, q0, p0, p1, plan)
                 if carry is not None:
                     return carry
                 plan.reason = reason
@@ -297,6 +319,76 @@ class PickPlanner(Planner):
         if waypoints and len(waypoints) > 1 and self._is_straight(side, p0, p1, q0, waypoints[-1], name):
             return [waypoints[-1]]
         return waypoints
+
+    def _carry(self, side: str, q0: np.ndarray, p0: np.ndarray, p1: np.ndarray, plan: Plan) -> list | None:
+        """Joint-space carry above the bin; through the corridor in front of the boxes when the direct one takes the held object over another box."""
+        floor = self.release_height() - self.release_rise
+        direct = self._joint_carry(side, q0, p0, p1, floor, "carry", plan)
+        if direct is None or not self._needs_corridor(side, [q0, *direct], plan.target_bin):
+            return direct
+        return self._corridor_carry(side, q0, p0, p1, floor, plan.target_bin) or direct
+
+    def _needs_corridor(self, side: str, path: list[np.ndarray], target: str) -> bool:
+        """Whether the corridor is on and this joint path to a bin takes the held object near another box."""
+        bins = self.scene.cfg["bins"]["centers"]
+        return self.motion["carry_corridor"]["enabled"] and target in bins and not self._off_other_bins(side, path, target)
+
+    def _corridor_carry(self, side: str, q0: np.ndarray, p0: np.ndarray, p1: np.ndarray, floor: float, target: str) -> list | None:
+        """The shortest joint path in front of the boxes until in line with the target box (else its release point), then to `p1`, keeping the held object off the other boxes and above `floor`; None if none does."""
+        x = self._corridor_x(target)
+        corners = [np.r_[x, y, p1[2]] for y in (self._target_edge_y(p0[1], target), p1[1])]
+        paths = [path for corner in corners for path in (self._joint_legs(side, q0, [corner, p1]), self._stepped(side, q0, [p0, corner, p1]))
+                 if path and self._stays_above(side, path, floor) and self._off_other_bins(side, path, target)]
+        return min(paths, key=_length)[1:] if paths else None
+
+    def _joint_legs(self, side: str, q0: np.ndarray, points: list[np.ndarray]) -> list[np.ndarray] | None:
+        """Joint waypoints from `q0` with one joint move to each of `points`; None if an IK fails."""
+        path = [q0]
+        for p in points:
+            q, ok = self.kin.solve(side, p, path[-1], top_down=True, extra_seeds=[self.home[ArmKinematics.sl(side)]])[:2]
+            if not ok:
+                return None
+            path.append(q)
+        return path
+
+    def _target_edge_y(self, y: float, target: str) -> float:
+        """The y of the target box's outer footprint nearest `y`."""
+        half = float(self.scene.cfg["bins"]["outer_size"][0]) / 2
+        centre = self.bin_xy(target)[1]
+        return float(np.clip(y, centre - half, centre + half))
+
+    def _stepped(self, side: str, q0: np.ndarray, points: list[np.ndarray]) -> list[np.ndarray] | None:
+        """Joint waypoints from `q0` along the straight lines through `points` (the first is where `q0` holds the grasp point), IK seeded continuously; None if one fails."""
+        path, step = [q0], self.motion["carry_corridor"]["step"]
+        for a, b in zip(points, points[1:]):
+            for f in np.linspace(0.0, 1.0, max(1, int(np.ceil(np.linalg.norm(b - a) / step))) + 1)[1:]:
+                q, ok = self.kin.solve(side, a + f * (b - a), path[-1], top_down=True, restarts=False)[:2]
+                if not ok:
+                    return None
+                path.append(q)
+        return path
+
+    def _corridor_x(self, target: str) -> float:
+        """Grasp point x of the corridor: the nearest near wall of the other boxes, less the corridor clearance."""
+        depth = float(self.scene.cfg["bins"]["outer_size"][1])
+        walls = [self.bin_xy(name)[0] - depth / 2 for name in self.scene.cfg["bins"]["centers"] if name != target]
+        return min(walls) - self.motion["carry_corridor"]["clearance"]
+
+    def _stays_above(self, side: str, path: list[np.ndarray], floor: float) -> bool:
+        """Whether the grasp point keeps above `floor` along the joint polyline."""
+        return all(self.kin.grasp_pose(side, q)[0][2] >= floor for q in _sampled(path))
+
+    def _off_other_bins(self, side: str, path: list[np.ndarray], target: str) -> bool:
+        """Whether the grasp point along the joint polyline keeps the corridor clearance (or its starting gap, if smaller) from every box but `target`."""
+        others = [name for name in self.scene.cfg["bins"]["centers"] if name != target]
+        gaps = [min(self._bin_gap(self.kin.grasp_pose(side, q)[0], name) for name in others) for q in _sampled(path)]
+        return min(gaps) >= min(gaps[0], self.motion["carry_corridor"]["clearance"]) - 1e-6
+
+    def _bin_gap(self, p: np.ndarray, name: str) -> float:
+        """Horizontal distance (m) from pelvis point `p` to the bin's outer footprint, negative inside it."""
+        bins = self.scene.cfg["bins"]
+        d = np.abs(self.scene.pelvis_to_mat(p)[:2] - np.asarray(bins["centers"][name], float)) - np.asarray(bins["outer_size"], float) / 2
+        return float(np.linalg.norm(np.maximum(d, 0.0)) or d.max())
 
     @contextmanager
     def _heading_free(self, free: bool) -> Iterator[None]:
@@ -483,3 +575,13 @@ class PickPlanner(Planner):
         if error > self.motion["finger_yaw_tolerance"]:
             plan.ok, plan.reason = False, f"fingers {np.degrees(error):.0f} deg off the requested heading"
         return plan
+
+
+def _length(path: list[np.ndarray]) -> float:
+    """Arc length of a joint polyline as the time scaling measures it: the largest joint move per leg, summed."""
+    return float(sum(np.abs(b - a).max() for a, b in zip(path, path[1:])))
+
+
+def _sampled(path: list[np.ndarray]) -> list[np.ndarray]:
+    """Joint configurations along each leg of a joint polyline."""
+    return [a + f * (b - a) for a, b in zip(path, path[1:]) for f in LEG_SAMPLES]

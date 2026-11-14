@@ -862,6 +862,38 @@ triggered (the sim arm's error at the cut must be measured first and stay under 
 show the effect. Worst case of a wrong correction: the close runs up to `max_lift` higher on a 45 mm object, still
 on it; a lag-only trigger costs `settle_s` per pick.
 
+## Planner: hover pose for the closed-loop grasp correction (offline, `halal.motion.hover`)
+
+Before the descent the hand waits beside and above the grasp point (`motion.hover.offsets`, [forward, outward, up],
+first that passes) with the plan's finger heading and preshape, so the head camera sees hand and object together and
+the hand→object vector corrects the grasp point (servo workstream). From the pregrasp straight above, the hand hides
+0–98 % of the top face (51–99 % half way down, 91–98 % at the grasp: `team/notes/servo/occlusion.py`).
+Checks: IK; lowest hand point ≥ `min_low` (floor gate 6.5 cm + 1 cm); hidden share ≤ `max_hidden` (FK hand surface
+against the nominal camera, top-face points outside the image count as hidden); the move from the start pose keeps
+both hands an object height + `over_object_clearance` above the counter and off the bin rims, directly or through
+the plan's pregrasp; 0 dry-run clips.
+
+12 layouts (seeds 1000–1011), every object × bin × arm that reaches the bin, first candidate planned from home with
+the other objects as obstacles; then the hover and `plan_pick` from the hover pose:
+
+| hand, boxes | plans | hover | arm on the object's side | cross-body arm | (object, bin) pairs, either arm | re-plan from hover |
+|---|---|---|---|---|---|---|
+| soft, nominal | 166 | 134 (81 %) | 88/88 | 46/78 | 113/129 (88 %) | 134/134 |
+| stiff, nominal | 170 | 138 (81 %) | 88/88 | 50/82 | 116/132 (88 %) | 138/138 |
+| soft, boxes +6 cm | 172 | 136 (79 %) | 88/88 | 48/84 | 114/132 (86 %) | 136/136 |
+| stiff, boxes +6 cm | 174 | 138 (79 %) | 88/88 | 50/86 | 116/134 (87 %) | 138/138 |
+
+- Offsets used (soft, nominal): [0, +5, +7] 96, [0, +6, +7] 16, [0, −5, +7] (inward) 14, [3, +4, +7] 8. Hidden mean 1.2 %,
+  max 7.4 %; lowest hand point 8.6–8.9 cm above the counter. The hover keeps the plan's finger heading exactly.
+- Time (nominal): start → hover 1.62 s mean, p95 3.0 s (the long ones stop at the pregrasp: the direct joint move
+  swings the preshaped fingers down to 1.2 cm over the counter); plan from the hover 9.07 s against 9.82 s from home;
+  extra per pick 0.87 s mean, p95 3.4 s, plus the look at the hover. Boxes +6 cm: 0.79 s mean, p95 2.8 s.
+- Planning: `plan_hover` 42 ms mean, 250 ms max; re-plan from the hover 0.1 s mean (0.4 s with far boxes), 1.2 s max.
+- Every miss is a cross-body pick (left arm at y ≤ −0.10, right arm at y ≥ +0.12). Not IK or occlusion (the inward
+  offset hides 0 %): even the joint move from home to the plan's own pregrasp passes 3.6–4.6 cm over the counter,
+  under the 6 cm transit check. Those picks stay open-loop. The open-loop plan's own `to_pregrasp` is only checked
+  at `counter_clearance` (2 cm), so it can pass that low near the robot today.
+
 ## Sweeps rr1, rr2, rr1b: the lying prism in the cross-body reach hole (right arm at y +0.18 to the right box)
 
 Symptom (real-look sim, `realsim.md` rs21 and rs22, trial 7): a red prism lying at pelvis (+0.27, +0.18), bound for
@@ -934,3 +966,83 @@ no options (`_depth` KeyError: `cage_lying` had `{triangle: 0.75}` only). Now `c
 shape key, and `_depth` falls back to `unknown`. Over every strategy and candidate list x shape (cube, cylinder,
 triangle, None) x hand x side x yaw x lying, 72 combinations raised before and none after. The other 280 give identical
 Grasp objects.
+
+## Planner: carry corridor in front of the boxes (offline; `motion.carry_corridor`, default off)
+
+Why: real-look sim v24, soft hands: a lying prism at pelvis y −0.12, left arm, `ridge_opposed`, bound for the left box,
+held after the lift (0.627), slipped 1 s into the cross-body carry and fell into the CENTRE box (−1 instead of 0).
+Lying prisms slipped in the carry about once per 8-episode leg there; the real pads are less grippy, so every shape.
+
+What: `_carry` plans today's joint-space carry first. Only if its held object (grasp point, sampled along the joint
+path) comes within `clearance` (4 cm) of another box's outer footprint, it is replaced by the shortest of four paths
+(by joint arc length, as the time scaling measures it): corner in front of the boxes (x = nearest other box's near
+wall − `clearance`) at the target box's near side edge or at the release y, each as two joint moves or as IK steps
+every `step` (4 cm) along straight legs. A path counts only if the object keeps `clearance` from every other box (or
+its start gap, if smaller) and the grasp point stays above the carry floor. None passes: today's carry (0 in the
+bench). Not routed: the low sequence's rising carry (off), the organiser's fallback carries after a failed joint carry,
+counter placements.
+
+Offline: 4 `plan_bench` layouts, every object (+ each upright triangle again lying, ridges 0, ±60°) × bin × the arms
+that reach it, first candidate grasp that plans, look pose → home, the policy's first release slot. "Over a box" =
+object centre within 3 cm of a non-target box's outer footprint during lift or carry.
+
+| boxes | hand | plans | over another box today → corridor | centre inside another box today | plans changed | pick time added, mean / max | dry-run clips | plans lost |
+|---|---|---|---|---|---|---|---|---|
+| +0 | stiff | 124 | 48 → 0 (19 lying) | 31 | 57 | +0.54 / +2.90 s | 0 | 0 |
+| +0 | soft | 124 | 48 → 0 | 31 | 57 | +0.52 / +2.87 s | 0 | 0 |
+| +6 | stiff | 124 | 48 → 0 (15 lying) | 34 | 50 | +0.22 / +1.53 s | 0 | 0 |
+| +6 | soft | 124 | 48 → 0 | 34 | 50 | +0.23 / +1.53 s | 0 | 0 |
+| +10 | stiff | 93 | 32 → 0 (13 lying) | 11 | 34 | +0.15 / +0.83 s | 0 | 0 |
+| +10 | soft | 93 | 32 → 0 | 11 | 34 | +0.15 / +0.80 s | 0 | 0 |
+| +12 | stiff | 36 | 6 → 0 | 0 | 9 | +0.05 / +0.47 s | 0 | 0 |
+| +12 | soft | 36 | 5 → 0 | 1 | 9 | +0.06 / +0.47 s | 0 | 0 |
+
+- Every crossing plan is the one the policy runs: a side box from its own arm (the only arm that reaches it), object
+  anywhere from the middle of the band to the far side. Centre-box plans from the near arm never cross.
+- Over all 300 changed plans: +0.31 s mean, median +0.07, p90 +0.83, max +2.9 (object at |y| 0.16 bound for the far
+  side box: the corridor pose is cramped, joint arc 2-3 rad against 0.7-1.0). The 9 plans per set with a 3-4 cm gap
+  are routed too; none with a gap ≥ 4 cm changed.
+- Smallest gap to another box along a changed plan: 4.0-10.8 cm with the corridor, −5.4 (inside) to +4.0 cm today. The realsim case (lying prism, y
+  −0.105, left box, soft): centre 3.0-3.6 cm inside the centre box today → 4.7 cm outside, +0.5-1.1 s.
+- Corner spikes of the joint path (second difference of the commanded arm in the carry): median / max 17 / 51 rad/s²
+  today → 20 / 35 (+0 stiff), same elsewhere: no harder than today's carry→lower corner.
+- Reach: nothing lost at +10 / +12; the corridor point is nearer the body than the release point.
+- Planning: +0.24 s per affected planner call (0.57 → 0.81 s mean, max 4.2 → 4.7 s, Mac under load); others unchanged.
+- Off (default): 682/682 plans byte-identical to the tree before (arm and hand rows, ok, reason).
+
+Proposal: turn it on. A slip on the way then lands on the counter (0) instead of a wrong box (−1), at ~0.3 s per
+affected pick, about half of the side-box picks. Not measured in physics: the longer sideways leg could change the
+slip rate itself (spikes no worse offline); one realsim soft leg with it on should show no new carry losses. A slip in
+the corridor lands 4-7 cm in front of the box row, still pickable (`policy.bin_clearance` 3 cm).
+
+## Planner: planning time at far boxes (offline; realsim rs24-robot6edgefar-rest, boxes +10 cm)
+
+Symptom (realsim, v24, boxes +10 cm, soft, resting start): every standing object reached its box, but 3 of 4 episodes
+hit the time limit; from a release to the next look 6-20 s (nominal boxes 0.6-4.7 s), with "arm cannot reach" refusals.
+
+Where the time went (offline: the policy's `PickChooser.choose` on the 8 looks of seeds 1000, 1001 and 1003 as the server
+log has them, boxes moved +10 cm and the counter 2 cm in y, 1.5 mm of look-to-look jitter on bins and object heights;
+cProfile): 200 of 217 s in `_reachable_releases` -> `_reaches` -> IK, 786 reach questions, 425 of them computed. 358
+computed answers were "no", each 0.25-0.5 s (all 3 orientation weights × 6 seeds fail); 165 of those points lie beyond
+the stretched arm. Half the questions came from the policy's arm filter (`reaches_bin`), half from `plan_pick`; the
+cache rarely hits across looks or grasps (its key holds the grasp's point in the palm, the release heights from the
+detected object and the bins as seen at that look).
+
+Changes (16a6d3f), none changes an answer:
+- No IK for a point farther from the shoulder than the stretched arm (sum of the joint-to-joint distances + the last
+  joint to the grasp point + `ik.pos_tol`, from the URDF; 0.573 + 0.006 m): IK cannot succeed there.
+- `_reachable_releases` yields (inset, rise) one at a time, so `plan_pick` stops asking once a release plans.
+- `reaches_bin` and the rim gate only need "some inset reaches": asked from the nearest inset and the highest rise
+  first (the same condition `_lowest_rise` uses: the lowest or the highest rise reaches), one IK when it does.
+
+| boxes | 8 looks, before → after (Mac under load) | median look | pick and refusal reasons per look |
+|---|---|---|---|
+| +10 cm | 135.2 → 56.6 s | 16.9 → 7.2 s | identical in all 8 |
+| +0 (nominal) | 46.5 → 36.7 s | 3.3 → 2.9 s | identical in all 8 |
+
+754/754 bench plans byte-identical (arm and hand rows, ok, reason; the corridor bench's layouts, boxes +0/+6/+10/+12,
+stiff and soft). Left at +10: refusals that need every inset to fail inside the arm's length (the centre box's far slot
+for the cross arm: 2-4 s), and whole plans that fail late (a hand over a box rim during the descent for an object just in
+front of a box: 2-4 s each, the same at nominal boxes). Not done: a cache across looks keyed coarser than a millimetre
+(would change answers at the reach boundary), planning the retreat once (it starts from the end of each candidate's own
+lower phase, so it is not shared).
