@@ -174,7 +174,7 @@ class Bench:
         trace = self._execute(picks)
         evaluate.settle(self.scene_client, 8.0, float(self.scene.cfg["success"]["at_rest_speed"]))
         outcomes = {o["name"]: o["outcome"] for o in self.scene_client.evaluate("sort_fixed", dict(FIXED_MAPPING))["outcomes"]}
-        final = {o["name"]: o["pos"] for o in self.scene_client.state()["objects"]}
+        final = {o["name"]: o for o in self.scene_client.state()["objects"]}
         np.savez_compressed(self.out / "traces" / f"episode_{index:04d}.npz", **trace)
         return [self._record(index, seed, p, k, trace, outcomes, final, dr) for k, p in enumerate(picks)]
 
@@ -268,7 +268,7 @@ class Bench:
 
     # ------------------------------------------------------------------ summary of one pick
     def _record(self, index: int, seed: int, pick: Pick, slot: int, trace: Mapping[str, np.ndarray],
-                outcomes: Mapping[str, str], final: Mapping[str, list[float]], dr: Mapping[str, Any]) -> dict[str, Any]:
+                outcomes: Mapping[str, str], final: Mapping[str, Mapping[str, Any]], dr: Mapping[str, Any]) -> dict[str, Any]:
         record: dict[str, Any] = {"episode": index, "seed": seed, **asdict(pick.case), "object": pick.name,
                                   "true_pos": pick.true_pos.round(4).tolist(), "true_yaw": pick.true_yaw,
                                   "seen_yaw": pick.detection.yaw, "grasp": pick.grasp.name if pick.grasp else None,
@@ -286,7 +286,8 @@ class Bench:
         if pick.name is None:
             return {**record, "outcome": None, "failure": "empty"}
         record.update(self._object_metrics(pick, slot, marks, trace))
-        record["outcome"], record["final_pos"] = outcomes[pick.name], np.round(final[pick.name], 4).tolist()
+        record["outcome"], record["final_pos"] = outcomes[pick.name], np.round(final[pick.name]["pos"], 4).tolist()
+        record["final_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.name]["quat_xyzw"]))), 1)
         record["failure"] = self._failure(record)
         return record
 
