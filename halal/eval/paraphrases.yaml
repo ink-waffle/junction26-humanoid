@@ -1,0 +1,1142 @@
+# Held-out paraphrase templates for sort_language. Loader, renderer and validator: paraphrases.py.
+# text:    {c0} {c1} {c2} colours and {b0} {b1} {b2} bins, in any permutation; {C0} / {B0} are capitalised.
+# mapping: key = colour slot | cube | cylinder | triangle | <colour slot>/<shape> | default
+#          value = bin slot, or a literal bin when the text fixes it ("from left to right").
+#          Resolution per object: colour/shape -> colour -> shape -> default -> no key = leave it on the table.
+# words:   optional surface form of a canonical colour or bin, applied to the slots at render time.
+# split:   dev failures are shown to the parser author, test is hidden. Near-duplicates share a split.
+
+# ============================================================ color_full / dev
+- id: full-go-in-plain
+  split: dev
+  category: color_full
+  text: "The {c0} objects go in the {b0} bin, the {c1} objects go in the {b1} bin, and the {c2} objects go in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-task-header-colons
+  split: dev
+  category: color_full
+  text: "Task: sort by colour. {C0}: {b0} bin. {C1}: {b1} bin. {C2}: {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-polite-could-you
+  split: dev
+  category: color_full
+  text: "Could you put anything {c0} into the {b0} box, {c1} things into the {b1} one and whatever is {c2} into the {b2} one?"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-belongs-anything
+  split: dev
+  category: color_full
+  text: "Anything {c0} belongs in the {b0} bin; anything {c1} belongs in the {b1} bin; anything {c2} belongs in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-your-job-is
+  split: dev
+  category: color_full
+  text: "Your job is to sort the objects by colour. {C0} ones go {b0}, {c1} ones go {b1} and {c2} ones go {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-fill-bin-with
+  split: dev
+  category: color_full
+  text: "Fill the {b0} bin with the {c0} objects, the {b1} bin with the {c1} objects and the {b2} bin with the {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-numbered-list
+  split: dev
+  category: color_full
+  text: "1) {c0} objects: {b0} bin 2) {c1} objects: {b1} bin 3) {c2} objects: {b2} bin"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-send-bare
+  split: dev
+  category: color_full
+  text: "Send {c0} to {b0}, {c1} to {b1} and {c2} to {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-store-parts-tray
+  split: dev
+  category: color_full
+  text: "Store the {c0} parts in the {b0} tray, the {c1} parts in the {b1} tray and the {c2} parts in the {b2} tray."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-gather-everything-basket
+  split: dev
+  category: color_full
+  text: "Gather everything {c0} in the {b0} basket, everything {c1} in the {b1} basket and everything {c2} in the {b2} basket."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-in-bin-put-ones
+  split: dev
+  category: color_full
+  text: "In the {b0} bin put the {c0} ones, in the {b1} bin the {c1} ones, and in the {b2} bin the {c2} ones."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-if-then
+  split: dev
+  category: color_full
+  text: "If an object is {c0}, put it in the {b0} bin; if it is {c1}, put it in the {b1} bin; if it is {c2}, put it in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-shapes-alike-if
+  split: dev
+  category: color_full
+  text: "Cubes, cylinders and triangles alike: if it is {c0} it goes {b0}, if it is {c1} it goes {b1}, if it is {c2} it goes {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-context-orange-one
+  split: dev
+  category: color_full
+  text: "The bins are orange. {C0} objects go into the {b0} one, {c1} objects into the {b1} one and {c2} objects into the {b2} one."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-semicolon-pairs
+  split: dev
+  category: color_full
+  text: "{C0} objects: {b0} bin; {c1} objects: {b1} bin; {c2} objects: {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-everything-that-is-needs
+  split: dev
+  category: color_full
+  text: "Everything that is {c0} needs to go into the {b0} bin, everything that is {c1} into the {b1} bin, and everything that is {c2} into the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-things-to-the-side
+  split: dev
+  category: color_full
+  text: "{C0} things to the {b0}, {c1} things to the {b1}, {c2} things to the {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-typo-yelow
+  split: dev
+  category: color_full
+  text: "pls sort: {c0} ones in the {b0} bin, {c1} ones in the {b1} one, {c2} ones in the {b2} one"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {yellow: yelow}
+
+- id: full-bullet-lines
+  split: dev
+  category: color_full
+  text: "Sorting rule:\n- {c0}: {b0} bin\n- {c1}: {b1} bin\n- {c2}: {b2} bin"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-destination-for
+  split: dev
+  category: color_full
+  text: "The destination for {c0} objects is the {b0} bin, for {c1} objects the {b1} bin, and for {c2} objects the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-lets-tidy-up
+  split: dev
+  category: color_full
+  text: "Let's tidy up. All the {c0} goes {b0}, all the {c1} goes {b1}, all the {c2} goes {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-clear-the-table
+  split: dev
+  category: color_full
+  text: "I need you to clear the table. {C0} items get dropped in the {b0} bin, {c1} items in the {b1} bin, and {c2} items in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-parenthesised-bins
+  split: dev
+  category: color_full
+  text: "{C0} ({b0} bin), {c1} ({b1} bin), {c2} ({b2} bin)."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-vaiski-please
+  split: dev
+  category: color_full
+  text: "Väiski, please sort the objects. {C0} ones are for the {b0} box, {c1} ones for the {b1} box, {c2} ones for the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-should-contain-only
+  split: dev
+  category: color_full
+  text: "After sorting, the {b0} bin should contain only {c0} objects, the {b1} bin only {c1} objects and the {b2} bin only {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-table-rows
+  split: dev
+  category: color_full
+  text: "colour | bin\n{c0} | {b0}\n{c1} | {b1}\n{c2} | {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-end-up-elliptic
+  split: dev
+  category: color_full
+  text: "{C0} objects end up in the {b0} bin, {c1} in the {b1} and {c2} in the {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-imagine-labels
+  split: dev
+  category: color_full
+  text: "Imagine a label on each bin: '{c0}' on the {b0} one, '{c1}' on the {b1} one, '{c2}' on the {b2} one. Sort the objects to match."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-shape-does-not-matter
+  split: dev
+  category: color_full
+  text: "Shape does not matter here, only colour. {C0} pieces get the {b0} bin, {c1} pieces the {b1} bin, {c2} pieces the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-first-then-finally
+  split: dev
+  category: color_full
+  text: "First move the {c0} objects into the {b0} bin, then the {c1} objects into the {b1} bin, and finally the {c2} objects into the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-see-they-go
+  split: dev
+  category: color_full
+  text: "See the {c0} objects? They go in the {b0} bin. The {c1} ones go in the {b1} bin, and the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-mixed-structure-belong
+  split: dev
+  category: color_full
+  text: "{C0} objects go in the {b0} bin. The {b1} bin is where the {c1} ones belong, and put the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-sort-by-color-us
+  split: dev
+  category: color_full
+  text: "Sort by color. {C0} shapes go in the {b0} bin, {c1} shapes in the {b1} bin, and {c2} shapes in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-pair-with
+  split: dev
+  category: color_full
+  text: "Pair {c0} with the {b0} bin, {c1} with the {b1} bin and {c2} with the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-enumerated-preamble
+  split: dev
+  category: color_full
+  text: "On the counter you will find red, yellow and blue objects and three bins: left, center and right. {C0} objects belong in the {b0} bin, {c1} objects in the {b1} bin, {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-make-sure-land
+  split: dev
+  category: color_full
+  text: "Make sure the {c0} objects land in the {b0} bin, the {c1} objects in the {b1} bin and the {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-put-away-live
+  split: dev
+  category: color_full
+  text: "Time to put things away: the {c0} ones live in the {b0} bin, the {c1} ones in the {b1} bin, and the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-title-case-mid-sentence
+  split: dev
+  category: color_full
+  text: "Put {C0} in {B0}, {C1} in {B1} and {C2} in {B2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+# ============================================================ color_full / test
+- id: full-arrow-ascii
+  split: test
+  category: color_full
+  text: "{c0} -> {b0}, {c1} -> {b1}, {c2} -> {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-arrow-unicode-lines
+  split: test
+  category: color_full
+  text: "{C0} items → {b0} box\n{C1} items → {b1} box\n{C2} items → {b2} box"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-should-end-up
+  split: test
+  category: color_full
+  text: "All {c0} objects should end up in the {b0} bin, all {c1} objects in the {b1} bin, and all {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-equals-pairs
+  split: test
+  category: color_full
+  text: "{c0} = {b0}, {c1} = {b1}, {c2} = {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-bin-colon-colour
+  split: test
+  category: color_full
+  text: "{B0}: {c0}. {B1}: {c1}. {B2}: {c2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-question-can-you
+  split: test
+  category: color_full
+  text: "Can you sort these for me? I need {c0} in the {b0} bin, {c1} in the {b1} bin and {c2} in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-i-want-pieces
+  split: test
+  category: color_full
+  text: "I want the {c0} pieces in the {b0} container, the {c1} pieces in the {b1} container and the {c2} pieces in the {b2} container."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-three-sentences-items
+  split: test
+  category: color_full
+  text: "{C0} items go into the {b0} bin. {C1} items go into the {b1} bin. {C2} items go into the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-passive-to-be-placed
+  split: test
+  category: color_full
+  text: "{C0} objects are to be placed in the {b0} bin, {c1} objects in the {b1} bin, and {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-toss-stuff
+  split: test
+  category: color_full
+  text: "Toss the {c0} stuff in the {b0} bin, the {c1} stuff in the {b1} bin, and the {c2} stuff in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-deliver-each
+  split: test
+  category: color_full
+  text: "Deliver each {c0} item to the {b0} box, each {c1} item to the {b1} box and each {c2} item to the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-collect-blocks-crate
+  split: test
+  category: color_full
+  text: "Collect the blocks, whatever their shape: all the {c0} ones in the {b0} crate, all the {c1} ones in the {b1} crate and all the {c2} ones in the {b2} crate."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-bin-takes
+  split: test
+  category: color_full
+  text: "The {b0} bin takes the {c0} objects, the {b1} bin takes the {c1} objects and the {b2} bin takes the {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-whenever-pick-up
+  split: test
+  category: color_full
+  text: "Whenever you pick up a {c0} object, drop it in the {b0} bin. A {c1} one goes in the {b1} bin and a {c2} one in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-context-five-take-time
+  split: test
+  category: color_full
+  text: "There are up to five objects on the table. Each {c0} one has to be moved to the {b0} bin, each {c1} one to the {b1} bin and each {c2} one to the {b2} bin. Take your time."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-every-piece-placed
+  split: test
+  category: color_full
+  text: "Every {c0} piece should be placed in the {b0} box, every {c1} piece in the {b1} box, and every {c2} piece in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-by-colour-ones-belong
+  split: test
+  category: color_full
+  text: "Sort the items by colour: the {c0} ones belong in the {b0} bin, the {c1} ones in the {b1} bin and the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-spelling-centre
+  split: test
+  category: color_full
+  text: "The {c0} objects have to go to the {b0} bin, the {c1} objects to the {b1} bin and the {c2} objects to the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: centre}
+
+- id: full-typo-midle
+  split: test
+  category: color_full
+  text: "{c0} objects into the {b0} bin, {c1} objects into the {b1} bin and {c2} objects into the {b2} bin please"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: midle}
+
+- id: full-where-does-everything-go
+  split: test
+  category: color_full
+  text: "Where does everything go? {C0} in the {b0} bin, {c1} in the {b1} bin, {c2} in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-contraction-dont-mix
+  split: test
+  category: color_full
+  text: "Don't mix the colours up: {c0}'s for the {b0} bin, {c1}'s for the {b1} bin and {c2}'s for the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-bin-holding
+  split: test
+  category: color_full
+  text: "By the end I'd like to see the {b0} bin holding the {c0} objects, the {b1} bin holding the {c1} objects, and the {b2} bin holding the {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-each-colour-own-bin
+  split: test
+  category: color_full
+  text: "Each colour has its own bin: {b0} for {c0}, {b1} for {c1}, {b2} for {c2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-according-to-colour
+  split: test
+  category: color_full
+  text: "Pick up each object and place it according to its colour: {c0} in the {b0} bin, {c1} in the {b1} bin, {c2} in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-slash-pairs
+  split: test
+  category: color_full
+  text: "Colour/bin pairs: {c0}/{b0}, {c1}/{b1}, {c2}/{b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-those-that-are
+  split: test
+  category: color_full
+  text: "Objects that are {c0} go to the {b0} bin, those that are {c1} to the {b1} bin, and those that are {c2} to the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-think-of-as
+  split: test
+  category: color_full
+  text: "Think of the {b0} bin as the {c0} bin, the {b1} bin as the {c1} bin and the {b2} bin as the {c2} bin, and sort the objects accordingly."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-what-goes-where
+  split: test
+  category: color_full
+  text: "Here is what goes where. {B0} bin: {c0} objects. {B1} bin: {c1} objects. {B2} bin: {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-what-id-like
+  split: test
+  category: color_full
+  text: "What I'd like: every {c0} thing transferred to the {b0} bin, every {c1} thing to the {b1} bin, and every {c2} thing to the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-so-that-is-in
+  split: test
+  category: color_full
+  text: "Please sort the objects so that {c0} is in the {b0} bin, {c1} is in the {b1} bin and {c2} is in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-terse-pairs
+  split: test
+  category: color_full
+  text: "{c0} {b0}, {c1} {b1}, {c2} {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-terse-bin-first
+  split: test
+  category: color_full
+  text: "{b0} bin {c0}, {b1} bin {c1}, {b2} bin {c2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-as-for-same-idea
+  split: test
+  category: color_full
+  text: "As for the {c0} objects, put them in the {b0} bin. The {c1} ones go in the {b1} bin. Same idea for {c2}: {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-colour-means
+  split: test
+  category: color_full
+  text: "An object's colour decides its bin. {C0} means {b0}, {c1} means {b1}, {c2} means {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-mixed-structure-gets
+  split: test
+  category: color_full
+  text: "The {b0} bin gets the {c0} objects. {C1} objects go to the {b1} bin. Whatever is {c2} goes into the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-testing-today-thanks
+  split: test
+  category: color_full
+  text: "We are testing colour sorting today. Please place {c0} pieces in the {b0} bin, {c1} pieces in the {b1} bin and {c2} pieces in the {b2} bin. Thanks!"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-bin-is-where
+  split: test
+  category: color_full
+  text: "The {b0} bin is where {c0} objects go; the {b1} bin is where {c1} objects go; the {b2} bin is where {c2} objects go."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: full-bin-assignment
+  split: test
+  category: color_full
+  text: "Bin assignment: {c0} objects are assigned to the {b0} bin, {c1} objects to the {b1} bin, {c2} objects to the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+# ============================================================ color_respectively / dev
+- id: resp-respectively-go-to
+  split: dev
+  category: color_respectively
+  text: "The {c0}, {c1} and {c2} objects go to the {b0}, {b1} and {b2} bins respectively."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: resp-left-to-right-colon
+  split: dev
+  category: color_respectively
+  text: "Left to right: {c0}, {c1}, {c2}."
+  mapping: {c0: left, c1: center, c2: right}
+
+- id: resp-in-that-order-put
+  split: dev
+  category: color_respectively
+  text: "Put {c0}, {c1} and {c2} objects into the {b0}, {b1} and {b2} bin, in that order."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+- id: resp-right-to-left-assign
+  split: dev
+  category: color_respectively
+  text: "Assign the colours to the bins from right to left: {c0}, {c1}, {c2}."
+  mapping: {c0: right, c1: center, c2: left}
+
+- id: resp-match-up-lists
+  split: dev
+  category: color_respectively
+  text: "Match them up in order. Colours: {c0}, {c1}, {c2}. Bins: {b0}, {b1}, {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: resp-from-left-to-right-take
+  split: dev
+  category: color_respectively
+  text: "From left to right, the bins take {c0}, {c1} and {c2} objects."
+  mapping: {c0: left, c1: center, c2: right}
+
+# ============================================================ color_respectively / test
+- id: resp-bins-are-for-respectively
+  split: test
+  category: color_respectively
+  text: "Bins {b0}, {b1}, {b2} are for {c0}, {c1}, {c2} respectively."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: resp-along-the-bins-from-left
+  split: test
+  category: color_respectively
+  text: "Going along the bins from the left, the colours are {c0}, then {c1}, then {c2}."
+  mapping: {c0: left, c1: center, c2: right}
+
+- id: resp-same-order-map
+  split: test
+  category: color_respectively
+  text: "Colours {c0}, {c1}, {c2} map to bins {b0}, {b1}, {b2}, in the same order."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+- id: resp-respectively-fronted
+  split: test
+  category: color_respectively
+  text: "Respectively, the {b0}, {b1} and {b2} bins should receive the {c0}, {c1} and {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: resp-slash-tuple
+  split: test
+  category: color_respectively
+  text: "{C0} / {c1} / {c2} -> {b0} / {b1} / {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: resp-right-end-to-left-end
+  split: test
+  category: color_respectively
+  text: "Starting at the right bin and ending at the left bin, the colours are {c0}, {c1}, {c2}."
+  mapping: {c0: right, c1: center, c2: left}
+
+# ============================================================ bin_synonym / dev
+- id: syn-middle-anything-box
+  split: dev
+  category: bin_synonym
+  text: "The {b0} box is for anything {c0}; anything {c1} goes in the {b1} box and anything {c2} in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+- id: syn-central-container
+  split: dev
+  category: bin_synonym
+  text: "Take all {c0} items to the {b0} container, all {c1} items to the {b1} container and all {c2} items to the {b2} container."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: central}
+
+- id: syn-one-in-the-middle
+  split: dev
+  category: bin_synonym
+  text: "There are three bins. {C0} objects go into {b0}, {c1} objects into {b1} and {c2} objects into {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "the left one", center: "the one in the middle", right: "the right one"}
+
+- id: syn-left-hand-right-hand
+  split: dev
+  category: bin_synonym
+  text: "The {c0} objects belong in the {b0} bin. The {c1} ones belong in the {b1} bin. The {c2} ones belong in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "left-hand", center: middle, right: "right-hand"}
+
+- id: syn-bin-on-the-left
+  split: dev
+  category: bin_synonym
+  text: "Put {c0} objects in the bin {b0}, {c1} objects in the bin {b1} and {c2} objects in the bin {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "on the left", center: "in the middle", right: "on the right"}
+
+- id: syn-bin-on-your-left
+  split: dev
+  category: bin_synonym
+  text: "The bin {b0} is for {c0} objects, the one {b1} is for {c1} objects, and the one {b2} is for {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "on your left", center: "in the middle", right: "on your right"}
+
+- id: syn-ordinal-from-left
+  split: dev
+  category: bin_synonym
+  text: "Counting from the left, {c0} objects go in the {b0} bin, {c1} objects in the {b1} bin and {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: first, center: second, right: third}
+
+- id: syn-ordinal-from-right
+  split: dev
+  category: bin_synonym
+  text: "Number the bins starting from the right. {C0} goes into the {b0} one, {c1} into the {b1} one, {c2} into the {b2} one."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {right: first, center: second, left: third}
+
+- id: syn-furthest-to-the-left
+  split: dev
+  category: bin_synonym
+  text: "{C0}: the bin {b0}. {C1}: the bin {b1}. {C2}: the bin {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "furthest to the left", center: "in the middle", right: "furthest to the right"}
+
+- id: syn-middle-three-sentences
+  split: dev
+  category: bin_synonym
+  text: "Anything {c0} goes into the {b0} bin. Anything {c1} goes into the {b1} bin. Anything {c2} goes into the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+# ============================================================ bin_synonym / test
+- id: syn-middle-arrows
+  split: test
+  category: bin_synonym
+  text: "{c0} -> {b0}\n{c1} -> {b1}\n{c2} -> {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+- id: syn-middle-id-like
+  split: test
+  category: bin_synonym
+  text: "I'd like the {c0} objects in the {b0} bin, the {c1} ones in the {b1} bin and the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: middle}
+
+- id: syn-centre-sort-by-colour
+  split: test
+  category: bin_synonym
+  text: "Sort by colour, please: {c0} in the {b0} bin, {c1} in the {b1} bin, {c2} in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {center: centre}
+
+- id: syn-leftmost-rightmost
+  split: test
+  category: bin_synonym
+  text: "The {b0} bin collects the {c0} objects, the {b1} bin the {c1} objects and the {b2} bin the {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: leftmost, center: middle, right: rightmost}
+
+- id: syn-left-most-centre
+  split: test
+  category: bin_synonym
+  text: "{C0} things go in the {b0} box. {C1} things go in the {b1} box. {C2} things go in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "left-most", center: centre, right: "right-most"}
+
+- id: syn-numbered-1-2-3
+  split: test
+  category: bin_synonym
+  text: "The bins are numbered 1 to 3 from left to right. {C0} objects go in bin {b0}, {c1} objects in bin {b1}, {c2} objects in bin {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "1", center: "2", right: "3"}
+
+- id: syn-letters-a-b-c
+  split: test
+  category: bin_synonym
+  text: "Call the bins A, B and C, going from left to right. Bin {b0} is for {c0} objects, bin {b1} for {c1} objects and bin {b2} for {c2} objects."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "A", center: "B", right: "C"}
+
+- id: syn-abbreviations-l-m-r
+  split: test
+  category: bin_synonym
+  text: "L = left bin, M = middle bin, R = right bin. {c0}={b0}, {c1}={b1}, {c2}={b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "L", center: "M", right: "R"}
+
+- id: syn-far-left-far-right
+  split: test
+  category: bin_synonym
+  text: "Kindly move the {c0} pieces to the {b0} bin, the {c1} pieces to the {b1} bin and the {c2} pieces to the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "far left", center: middle, right: "far right"}
+
+- id: syn-left-side-right-side
+  split: test
+  category: bin_synonym
+  text: "Everything {c0} goes to the {b0}, everything {c1} to the {b1}, and everything {c2} to the {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {left: "left side", center: middle, right: "right side"}
+
+# ============================================================ color_rest / dev
+- id: rest-everything-else
+  split: dev
+  category: color_rest
+  text: "{C0} objects go in the {b0} bin and {c1} objects in the {b1} bin. Everything else goes in the {b2} bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+  words: {center: centre}
+
+- id: rest-the-rest-two-bins
+  split: dev
+  category: color_rest
+  text: "Put the {c0} ones in the {b0} bin. The rest go in the {b1} bin."
+  mapping: {c0: b0, default: b1}
+
+- id: rest-both-share
+  split: dev
+  category: color_rest
+  text: "{C0} and {c1} both go in the {b0} bin, {c2} goes in the {b1} bin."
+  mapping: {c0: b0, c1: b0, c2: b1}
+
+- id: rest-two-mentioned-only
+  split: dev
+  category: color_rest
+  text: "{C0} pieces go into the {b0} box. {C1} pieces go into the {b1} box."
+  mapping: {c0: b0, c1: b1}
+
+- id: rest-remaining-bin
+  split: dev
+  category: color_rest
+  text: "{C0} objects in the {b0} bin, {c1} objects in the {b1} bin, everything else in the remaining bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+
+- id: rest-everything-one-bin
+  split: dev
+  category: color_rest
+  text: "Put everything in the {b0} bin, no matter the colour."
+  mapping: {default: b0}
+
+- id: rest-other-two-colours
+  split: dev
+  category: color_rest
+  text: "{C0} goes {b0}; the other two colours go {b1}."
+  mapping: {c0: b0, default: b1}
+
+- id: rest-named-in-brackets
+  split: dev
+  category: color_rest
+  text: "{C0} things go in the {b0} bin, {c1} things in the {b1} bin, and the rest (that is, {c2}) in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: rest-left-over
+  split: dev
+  category: color_rest
+  text: "Start with {c0}: {b0} bin. Then {c1}: {b1} bin. Anything left over goes in the {b2} bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+
+# ============================================================ color_rest / test
+- id: rest-remaining-colour
+  split: test
+  category: color_rest
+  text: "{C0} goes in the {b0} bin and {c1} in the {b1} bin. The remaining colour goes in the {b2} bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+
+- id: rest-whatever-remains
+  split: test
+  category: color_rest
+  text: "Bring the {c0} objects to the {b0} bin and the {c1} objects to the {b1} bin; whatever remains goes into the {b2} bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+
+- id: rest-any-other-colour
+  split: test
+  category: color_rest
+  text: "{C0} things belong in the {b0} bin. Any other colour belongs in the {b1} bin."
+  mapping: {c0: b0, default: b1}
+
+- id: rest-share-together
+  split: test
+  category: color_rest
+  text: "The {b0} bin is for {c0} and {c1} objects together. {C2} objects get the {b1} bin to themselves. Leave the other bin empty."
+  mapping: {c0: b0, c1: b0, c2: b1}
+
+- id: rest-one-colour-only
+  split: test
+  category: color_rest
+  text: "Only the {c0} objects matter right now: get them into the {b0} bin."
+  mapping: {c0: b0}
+
+- id: rest-all-other-objects
+  split: test
+  category: color_rest
+  text: "{C0} objects go in the {b0} bin. All other objects go in the {b1} bin."
+  mapping: {c0: b0, default: b1}
+  words: {center: middle}
+
+- id: rest-two-colours-today
+  split: test
+  category: color_rest
+  text: "Today we only sort two colours. {C0} objects go to the {b0} bin and {c1} objects go to the {b1} bin."
+  mapping: {c0: b0, c1: b1}
+
+- id: rest-two-mentioned-thanks
+  split: test
+  category: color_rest
+  text: "Please get the {c0} things into the {b0} bin and the {c1} things into the {b1} bin, thanks."
+  mapping: {c0: b0, c1: b1}
+
+- id: rest-the-others
+  split: test
+  category: color_rest
+  text: "The {c0} ones are for the {b0} bin and the {c1} ones for the {b1} bin; put the others in the {b2} bin."
+  mapping: {c0: b0, c1: b1, default: b2}
+
+# ============================================================ color_leave / dev
+- id: leave-do-not-touch
+  split: dev
+  category: color_leave
+  text: "Sort the {c0} objects into the {b0} bin and the {c1} objects into the {b1} bin. Do not touch the {c2} ones."
+  mapping: {c0: b0, c1: b1}
+
+- id: leave-on-table-first
+  split: dev
+  category: color_leave
+  text: "Leave {c0} on the table. {C1} goes in the {b0} bin and {c2} in the {b1} bin."
+  mapping: {c1: b0, c2: b1}
+
+- id: leave-everything-else-alone
+  split: dev
+  category: color_leave
+  text: "{C0} objects go in the {b0} bin. Leave everything else alone."
+  mapping: {c0: b0}
+
+- id: leave-not-part-of-task
+  split: dev
+  category: color_leave
+  text: "The {c0} objects are not part of this task, so keep your hands off them. Sort the others: {c1} to the {b0} bin, {c2} to the {b1} bin."
+  mapping: {c1: b0, c2: b1}
+
+# ============================================================ color_leave / test
+- id: leave-arrow-leave-it
+  split: test
+  category: color_leave
+  text: "{c0} -> {b0}, {c1} -> {b1}, {c2} -> leave it"
+  mapping: {c0: b0, c1: b1}
+
+- id: leave-only-sort-stay
+  split: test
+  category: color_leave
+  text: "Only sort the {c0} and {c1} objects: {c0} into the {b0} bin, {c1} into the {b1} bin. The {c2} ones stay where they are."
+  mapping: {c0: b0, c1: b1}
+
+- id: leave-ignore
+  split: test
+  category: color_leave
+  text: "Ignore the {c0} objects. The {c1} ones belong in the {b0} bin and the {c2} ones in the {b1} bin."
+  mapping: {c1: b0, c2: b1}
+  words: {center: middle}
+
+- id: leave-dont-move-two
+  split: test
+  category: color_leave
+  text: "Don't move anything {c0} or {c1}. {C2} objects go into the {b0} bin."
+  mapping: {c2: b0}
+
+- id: leave-must-remain-on-counter
+  split: test
+  category: color_leave
+  text: "All {c0} and {c1} objects go in the {b0} bin; {c2} objects must remain on the counter."
+  mapping: {c0: b0, c1: b0}
+
+# ============================================================ negation / dev
+- id: neg-nothing-may-go
+  split: dev
+  category: negation
+  text: "Every object has to end up in a bin. {C0} goes in the {b0} bin and {c1} in the {b1} bin. Nothing {c2} may go in the {b0} or the {b1} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: neg-takes-everything-not
+  split: dev
+  category: negation
+  text: "The {b0} bin takes everything that is not {c0} or {c1}. {C0} goes in the {b1} bin and {c1} in the {b2} bin."
+  mapping: {c0: b1, c1: b2, default: b0}
+
+- id: neg-not-there-instead
+  split: dev
+  category: negation
+  text: "Do not put {c0} objects in the {b0} bin; they go in the {b1} bin instead. The {b0} bin is for {c1} objects, and {c2} objects go in the {b2} bin."
+  mapping: {c0: b1, c1: b0, c2: b2}
+
+- id: neg-unless
+  split: dev
+  category: negation
+  text: "Unless an object is {c0}, put it in the {b0} bin. {C0} objects go in the {b1} bin."
+  mapping: {c0: b1, default: b0}
+
+- id: neg-not-same-bin-goes-with
+  split: dev
+  category: negation
+  text: "The {c0} and {c1} objects do not go in the same bin: {c0} goes in the {b0} bin and {c1} in the {b1} bin. {C2} goes with {c1}."
+  mapping: {c0: b0, c1: b1, c2: b1}
+
+# ============================================================ negation / test
+- id: neg-isnt-anything
+  split: test
+  category: negation
+  text: "Anything that isn't {c0} goes in the {b0} bin. {C0} things go in the {b1} bin."
+  mapping: {c0: b1, default: b0}
+
+- id: neg-contrast-not-the-other
+  split: test
+  category: negation
+  text: "The {c0} objects go in the {b0} bin, not the {b1} one. The {c1} objects go in the {b1} bin, and the {c2} ones in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: neg-must-not-elimination
+  split: test
+  category: negation
+  text: "Each colour gets its own bin and nothing is left on the table. {C0} must not go in the {b0} or the {b1} bin, and {c1} must not go in the {b0} bin."
+  mapping: {c0: b2, c1: b1, default: b0}
+
+- id: neg-nowhere-but
+  split: test
+  category: negation
+  text: "Sort all the objects. The {c0} ones go nowhere but the {b0} bin, the {c1} ones nowhere but the {b1} bin, and the {c2} ones nowhere but the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: neg-everything-except
+  split: test
+  category: negation
+  text: "Everything goes in the {b0} bin except the {c0} objects, which go in the {b1} bin."
+  mapping: {c0: b1, default: b0}
+
+# ============================================================ shape / dev
+- id: shape-go-in-basic
+  split: dev
+  category: shape
+  text: "Cubes go in the {b0} bin, cylinders in the {b1} bin and triangles in the {b2} bin."
+  mapping: {cube: b0, cylinder: b1, triangle: b2}
+
+- id: shape-cylinders-vs-others
+  split: dev
+  category: shape
+  text: "Put every cylinder in the {b0} bin. Cubes and triangular prisms go in the {b1} bin."
+  mapping: {cylinder: b0, cube: b1, triangle: b1}
+
+- id: shape-round-cubes-prisms
+  split: dev
+  category: shape
+  text: "The round ones go in the {b0} bin, the cubes in the {b1} bin and the prisms in the {b2} bin."
+  mapping: {cylinder: b0, cube: b1, triangle: b2}
+
+- id: shape-only-cubes
+  split: dev
+  category: shape
+  text: "All the cubes should be moved to the {b0} bin; leave the other shapes on the table."
+  mapping: {cube: b0}
+
+- id: shape-not-a-cube
+  split: dev
+  category: shape
+  text: "The cubes go in the {b0} bin. Everything that is not a cube goes in the {b1} bin."
+  mapping: {cube: b0, default: b1}
+
+- id: shape-share-together
+  split: dev
+  category: shape
+  text: "Cylinders and triangles belong together in the {b0} bin; cubes go in the {b1} bin."
+  mapping: {cylinder: b0, triangle: b0, cube: b1}
+
+# ============================================================ shape / test
+- id: shape-arrows
+  split: test
+  category: shape
+  text: "Sort by shape. Cube -> {b0}, cylinder -> {b1}, triangle -> {b2}."
+  mapping: {cube: b0, cylinder: b1, triangle: b2}
+
+- id: shape-not-colour
+  split: test
+  category: shape
+  text: "Sort by shape, not colour: triangles into the {b0} bin, cubes into the {b1} bin, cylinders into the {b2} bin."
+  mapping: {triangle: b0, cube: b1, cylinder: b2}
+
+- id: shape-colour-irrelevant
+  split: test
+  category: shape
+  text: "Colour is irrelevant this time. Cylinders belong in the {b0} bin, cubes in the {b1} bin and triangles in the {b2} bin."
+  mapping: {cylinder: b0, cube: b1, triangle: b2}
+  words: {center: middle}
+
+- id: shape-wedges-rest
+  split: test
+  category: shape
+  text: "Wedges go to the {b0} bin, everything else to the {b1} bin."
+  mapping: {triangle: b0, default: b1}
+
+- id: shape-extruded
+  split: test
+  category: shape
+  text: "The objects are extruded circles, squares and triangles. Circles go in the {b0} bin, squares in the {b1} bin and triangles in the {b2} bin."
+  mapping: {cylinder: b0, cube: b1, triangle: b2}
+
+- id: shape-dont-touch-triangles
+  split: test
+  category: shape
+  text: "Use the {b0} bin for cubes and the {b1} bin for cylinders. Don't touch the triangles."
+  mapping: {cube: b0, cylinder: b1}
+
+- id: shape-adjectives
+  split: test
+  category: shape
+  text: "Place the triangle-shaped objects in the {b0} bin, the cylindrical objects in the {b1} bin and the cube-shaped objects in the {b2} bin."
+  mapping: {triangle: b0, cylinder: b1, cube: b2}
+
+# ============================================================ color_shape / dev
+- id: mix-cubes-other-rest
+  split: dev
+  category: color_shape
+  text: "{C0} cubes go in the {b0} bin, all other {c0} objects in the {b1} bin, and everything else in the {b2} bin."
+  mapping: {c0/cube: b0, c0: b1, default: b2}
+
+- id: mix-two-pairs-leave-rest
+  split: dev
+  category: color_shape
+  text: "Put the {c0} cylinders in the {b0} bin and the {c1} cubes in the {b1} bin. Leave the rest on the table."
+  mapping: {c0/cylinder: b0, c1/cube: b1}
+
+- id: mix-cubes-regardless
+  split: dev
+  category: color_shape
+  text: "All cubes go in the {b0} bin regardless of colour. Of the remaining objects, the {c0} ones go in the {b1} bin and the others in the {b2} bin."
+  mapping: {cube: b0, c0/cylinder: b1, c0/triangle: b1, default: b2}
+
+- id: mix-colour-except-triangles
+  split: dev
+  category: color_shape
+  text: "Sort by colour, with one exception. {C0} goes in the {b0} bin, {c1} in the {b1} bin and {c2} in the {b2} bin, but any triangle goes in the {b0} bin whatever its colour."
+  mapping: {c0: b0, c1: b1, c2: b2, c1/triangle: b0, c2/triangle: b0}
+
+- id: mix-single-triangle
+  split: dev
+  category: color_shape
+  text: "The {c0} triangle goes in the {b0} bin. Every other object goes in the {b1} bin."
+  mapping: {c0/triangle: b0, default: b1}
+
+- id: mix-not-cubes
+  split: dev
+  category: color_shape
+  text: "{C0} things that are not cubes go in the {b0} bin. All cubes go in the {b1} bin. Everything else stays put."
+  mapping: {c0/cylinder: b0, c0/triangle: b0, cube: b1}
+
+# ============================================================ color_shape / test
+- id: mix-except-cylinders
+  split: test
+  category: color_shape
+  text: "{C0} objects go in the {b0} bin, except {c0} cylinders, which go in the {b1} bin. Nothing else should be moved."
+  mapping: {c0: b0, c0/cylinder: b1}
+
+- id: mix-only-cubes-by-colour
+  split: test
+  category: color_shape
+  text: "Only the cubes get sorted: {c0} cubes into the {b0} bin, {c1} cubes into the {b1} bin, {c2} cubes into the {b2} bin. Leave cylinders and triangles where they are."
+  mapping: {c0/cube: b0, c1/cube: b1, c2/cube: b2}
+
+- id: mix-cylinders-then-colour
+  split: test
+  category: color_shape
+  text: "Cylinders go in the {b0} bin. Cubes and triangles are sorted by colour: {c0} ones in the {b1} bin, {c1} ones in the {b2} bin, and {c2} ones stay on the table."
+  mapping: {cylinder: b0, c0/cube: b1, c0/triangle: b1, c1/cube: b2, c1/triangle: b2}
+
+- id: mix-unless-cubes
+  split: test
+  category: color_shape
+  text: "{C0} and {c1} objects go in the {b0} bin. {C2} objects go in the {b1} bin unless they are cubes; {c2} cubes go in the {b2} bin."
+  mapping: {c0: b0, c1: b0, c2: b1, c2/cube: b2}
+
+- id: mix-pairs-default
+  split: test
+  category: color_shape
+  text: "Put {c0} cubes and {c1} cylinders in the {b0} bin. Everything else goes in the {b1} bin."
+  mapping: {c0/cube: b0, c1/cylinder: b0, default: b1}
+
+# ============================================================ noisy / dev
+- id: noisy-long-preamble
+  split: dev
+  category: noisy
+  text: "Hello Väiski! Welcome to the finals. In front of you are a handful of small objects and three orange bins; the judges are watching, but accuracy matters more than speed. For this run, {c0} objects go into the {b0} bin, {c1} objects into the {b1} bin and {c2} objects into the {b2} bin. Good luck!"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-hedging
+  split: dev
+  category: noisy
+  text: "Okay, so, hmm, I think we want the {c0} ones over in the {b0} bin, and then the {c1} ones, yeah, those should go in the {b1} bin, which I guess leaves the {c2} ones for the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-emoji
+  split: dev
+  category: noisy
+  text: "🤖 sorting time!! {c0} 👉 {b0} bin, {c1} 👉 {b1} bin, {c2} 👉 {b2} bin ✅"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-no-punctuation
+  split: dev
+  category: noisy
+  text: "ok robot listen {c0} ones in the {b0} bin {c1} ones in the {b1} bin and {c2} ones in the {b2} bin thats it go"
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-repeat
+  split: dev
+  category: noisy
+  text: "{C0} goes {b0}. {C1} goes {b1}. {C2} goes {b2}. Once more so it sticks: {b0} is {c0}, {b1} is {c1}, {b2} is {c2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-hands-distractor
+  split: dev
+  category: noisy
+  text: "Use your left or your right hand, whichever is closer to the object, and do not rush. The sorting rule: {c0} objects in the {b0} bin, {c1} objects in the {b1} bin, {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+# ============================================================ noisy / test
+- id: noisy-parentheticals
+  split: test
+  category: noisy
+  text: "Put the {c0} objects (there may be one or two of them) in the {b0} bin. The {b1} bin (they all look the same, by the way) is for {c1}. And {c2}? That goes in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-all-caps
+  split: test
+  category: noisy
+  text: "ATTENTION ROBOT. SORT BY COLOUR. {c0} OBJECTS GO IN THE {b0} BIN, {c1} OBJECTS GO IN THE {b1} BIN, {c2} OBJECTS GO IN THE {b2} BIN."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: RED, yellow: YELLOW, blue: BLUE, left: LEFT, center: CENTER, right: RIGHT}
+
+- id: noisy-self-correction
+  split: test
+  category: noisy
+  text: "{C0} objects go in the {b1} bin. Sorry, typo: I meant the {b0} bin. {C1} objects go in the {b1} bin and {c2} objects go in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-orange-grey-distractor
+  split: test
+  category: noisy
+  text: "The bins are orange and the counter is grey, but never mind that. What matters is the colour of each object: {c0} belongs in the {b0} bin, {c1} in the {b1} bin, {c2} in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-interleaved-facts
+  split: test
+  category: noisy
+  text: "{C0} objects go in the {b0} bin. By the way, each object is about 4.5 cm across. {C1} objects go in the {b1} bin. You have 120 seconds in total. {C2} objects go in the {b2} bin. Do not knock anything off the counter."
+  mapping: {c0: b0, c1: b1, c2: b2}
+
+- id: noisy-heavy-typos
+  split: test
+  category: noisy
+  text: "plese sort teh objcts, {c0} ones in teh {b0} bin , {c1} ones in the {b1} bin adn {c2} ones in {b2} bin"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {right: rigth}
