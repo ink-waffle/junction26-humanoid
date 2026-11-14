@@ -30,7 +30,7 @@ class SceneLayout:
     """Where the fixed scene parts are this episode (pelvis frame, m); scene-file values until perception knows better."""
     counter_z: float                    # counter height under the middle of the object band
     bins: Mapping[str, np.ndarray]      # "left" | "center" | "right" -> centre xy of the bin footprint
-    source: str                         # "scene": the file's, camera anchored to them | "hands": as seen | "nominal": the file's, unchecked
+    source: str                         # what fixed the camera. "scene": the file's layout | "hands", "nominal": as that camera sees it
     rim_z: float | None = None          # highest bin rim seen (pelvis z); None = not measured, counter_z + wall height
 
 

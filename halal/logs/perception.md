@@ -196,7 +196,7 @@ object pushed to x < ~0.20 is gone for the head camera; the head cannot tilt.
 - Object mostly under a hand: centre up to 2.5 cm off, flagged by `visible` < 0.3 or 0 (blob). `lowhands` seed 2407
   (yellow triangle, blob, 22.7 mm); `dr_train` seeds 2017, 2005, 2009 (8–16 % visible, within 5 mm there).
 - Toppled object: colour and a rough centre only (`motion` seed 2206, yellow triangle; ~1 cm).
-- Cylinder cut by the lower image border: shape None; one case in 1891 decided shapes still wrong (`motion` seed 2202).
+- Cylinder cut by the lower image border: shape None (the one wrong case of `motion` seed 2202 went with H10).
 - Hue rotated by ±30° or more: wrong colours at high confidence (stress test only).
 - Object pushed towards the robot beyond x ≈ 0.20: outside the head image, not detected.
 - A hand fit taken while fingers move would be biased by up to 15 mm; prevented by the stillness rule, which needs two looks.
@@ -686,6 +686,30 @@ measured on the true table up to typical depth and the smallest displacement tri
 `motion` and the table as recorded under typical depth: identical. Cost: at bad depth on the true table 4 of 90 looks now go by
 the hands (camera part p95 4.1 -> 5.4, max 6.2 -> 16.9). In sim 6 mm of the disagreement is the principal point; on the real
 robot a displacement under about 1 cm in the direction the hands cannot tell still goes by the scene file.
+
+**H10. No shape for an outline that is partly seen as not top face** (`topface.max_seen_empty`). First finding of the real-look
+sim frames (`realsim_looks`, seed 1001): a yellow cylinder knocked onto its side lay against a cube for 38 recorded frames and
+came back as an upright `triangle`, `visible` 0.7, centre within 5 mm. The strip of its back that lies within the depth
+tolerance of the top plane is 26 x 45 mm, and the triangle outline is what fits a strip best. What tells it from a flat top:
+the outline cells not seen as top face are SEEN (the back curving away), not hidden. Share of the outline seen as not top,
+detections with a right shape: at most 0.076 over `dr_train`, `motion`, `lowhands`, `lookpose`, `realsim_looks`, clean to
+typical depth (1900 shapes; bad depth: p95 0.19, max 0.26); the 38 lying-cylinder frames: 0.22 to 0.34; the one wrong shape
+left in `motion` (a cylinder cut by the image border, called a triangle): 0.38. Above 0.15 the shape (and yaw) is now None.
+`realsim_looks` (3 seeds so far): shape right of decided 0.925 -> 1.000. `motion`: the one wrong shape is gone (464 cylinders
+right, 1 -> 0 wrong), everything else of every clean set identical. Cost: at bad depth about one decided shape in eight
+(held-out, real, bad: decided 0.552 -> 0.524), none up to typical. A lying cylinder is thus an object of unknown shape with a
+good centre; it is not named as lying.
+
+**H11. On the nominal pose the layout is what that camera sees, not the scene file's.** When neither the scene anchor nor the
+hands fix the camera (every first look on a displaced table, and every look if the hand fit fails), bins used to be taken from
+the scene file. On a displaced table that left the far part of the real boxes outside the excluded footprints, and their
+cardboard insides (the yellow family) came back as `yellow` blobs at full colour confidence: `realsim_looks`, first looks,
+typical depth: 2 per look at x 0.68. Bins, counter height and rim are now found by geometry whenever the source is not
+"scene"; objects and bins then share the nominal camera's error instead of differing by the table's displacement.
+First looks, `dr_train` dev, `--shift real`: precision clean 0.989 -> 1.000, typical 0.887 -> 1.000 (44 phantoms -> 0; `left7`
+typical 0.958 -> 1.000); bins 67.9 mm (98 to 119 with the lateral offset) -> 11.7 / 21.4 / 30.1 (the nominal camera's own 11 mm
+included), counter 15.0 -> 6.6 (max 18); `rim_z` reported there too: +12.7 median, -4.0 to +33 (so on the nominal pose it can
+be a few mm low). Recall, xy and every clean set: unchanged. A look anchored to the scene file still gets the file's layout.
 
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 

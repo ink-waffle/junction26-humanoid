@@ -115,11 +115,11 @@ class TopFaceDetector:
         return bool(waited and same and np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"])
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
-        """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
-        if self.pose.source != "hands":
-            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source)
+        """Counter height and bins: the scene file's when the camera is anchored to it, else as this camera sees them."""
+        if self.pose.source == "scene":
+            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, "scene")
         bins = self.bins.find(depth, camera, counter)
-        return SceneLayout(counter.z_at(self.band_centre), bins, "hands", self.bins.rim_z(depth, camera, counter, bins))
+        return SceneLayout(counter.z_at(self.band_centre), bins, self.pose.source, self.bins.rim_z(depth, camera, counter, bins))
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
@@ -250,7 +250,7 @@ class TopFaceDetector:
         odd = abs(tall - self.scene.object_height()) >= c["size_snap"] and not measured   # an unexpected size needs a well seen top
         if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb) or odd:
             return Draft(ObjectDetection(color="red", top=best.centre, confidence=0.0))
-        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
+        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"] and best.seen_empty <= c["max_seen_empty"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
         size = tall if measured else None
         seen = ObjectDetection(color="red", top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
