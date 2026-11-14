@@ -64,6 +64,13 @@ Baseline and oracle (sort_fixed)
   (`_OraclePlanner`): reading them is encouraged, importing privileged perception into the policy is forbidden.
 - The left arm can pick objects as far right as y = −0.17 and still reach the left bin (and vice versa), with tilt.
 
+Organiser statements (challenge channel, Sat night)
+- Finals instructions: colour comes first; shape-based instructions may be tested if several teams handle colour;
+  no negation.
+- Real runner hand gains are kp 1.5 / kd 0.2, fixed for every team. Real pad friction is unmeasured and expected to
+  be lower than the sim's 1.2 / 1.0: prefer grasps that hold by geometry, not by friction alone.
+- Under training DR the organiser baseline sorts ~50 % of objects on our seeds (nominal: ~75 %).
+
 Real data
 - `zupermiez/g1_pick_cube` on Hugging Face (on the instance: `/data/drops/g1_pick_cube`): 20 teleop episodes of
   "pick up cube", 30 fps, three RGB cameras, 28-dim state and action in our joint order, no depth, no labels.
