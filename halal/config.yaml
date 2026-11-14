@@ -281,6 +281,10 @@ motion:
   carry_dip: 0.005            # the rising carry may sink this far below the lift height
   carry_margin: 0.03          # held object's bottom above a bin rim at carry height
   rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
+  carry_corridor:             # a carry that would take the held object over another box goes in front of the boxes until in line with its own box (else its release point), then over it: a slip lands on the counter, not in a wrong box; today's carry when that does not plan
+    enabled: false
+    clearance: 0.04           # held object's centre stays this far from the outer footprint of every other box (half-diagonal of a lying prism 34 mm, + 6 mm); the corridor runs this far in front of their near walls
+    step: 0.04                # grasp point spacing of the joint waypoints along the corridor's straight legs (one joint move from 30 cm sideways bulges 4 cm towards the boxes)
   min_wall_height: 0.07       # bin walls count as at least this tall for carry, release and rim checks (real boxes measure 0.07, the scene file says 0.06)
   min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
   obstacles:                  # other objects the fingers must stay off while they are down among them (descend, close)
