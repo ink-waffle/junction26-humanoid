@@ -250,7 +250,7 @@ class TopFaceDetector:
         odd = abs(tall - self.scene.object_height()) >= c["size_snap"] and not measured   # an unexpected size needs a well seen top
         if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb) or odd:
             return Draft(ObjectDetection(color="red", top=best.centre, confidence=0.0))
-        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
+        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"] and best.seen_empty <= c["max_seen_empty"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
         size = tall if measured else None
         seen = ObjectDetection(color="red", top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,

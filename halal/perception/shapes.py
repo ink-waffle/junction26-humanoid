@@ -37,6 +37,11 @@ class OutlineFit:
         return self.seen / self.area
 
     @property
+    def seen_empty(self) -> float:
+        """Fraction of the outline seen as not top face: next to none on a flat top, a third on the back of a lying cylinder."""
+        return (self.seen - self.score) / self.area
+
+    @property
     def yaw_contrast(self) -> float:
         """Outline fraction the fit loses at the worst yaw."""
         return (self.score - self.worst_yaw_score) / self.area

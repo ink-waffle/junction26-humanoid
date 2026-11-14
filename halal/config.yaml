@@ -104,6 +104,7 @@ perception:
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
     min_confidence: 0.05      # below this the colour is not named: the detection has `color` None
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
+    max_seen_empty: 0.15      # outline fraction seen as not top face, above it shape is None (flat tops <= 0.08, a lying cylinder 0.22 to 0.34)
     min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
     size_range: [0.045, 0.055]   # object heights (= edge lengths) looked for; real foam cubes measure 0.046 in drop 2
     size_snap: 0.0025         # a top this close to the scene file's object height IS that height (sim reads 0.0439 for 0.045)
