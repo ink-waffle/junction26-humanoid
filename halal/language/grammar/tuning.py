@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 # Search over segmentations of the mention sequence.
-BEAM_WIDTH = 32
-MAX_CANDIDATES = 12
+BEAM_WIDTH = 32                  # partial readings kept per position ...
+BEAM_FULL_UNTIL = 12             # ... for up to this many mentions; longer texts get a proportionally narrower beam
+MAX_CANDIDATES = 6               # complete readings interpreted per search pass
 MAX_UNIT_SPAN = 12
+ASIDE_RETRY_BELOW = 0.9          # below this confidence, text in parentheses is dropped and the parse retried
 
 # Costs of a reading (lower is better). A mention left unpaired costs more than any awkward pairing.
 UNPAIRED_OBJECT = 10.0           # a colour or shape that never gets a bin

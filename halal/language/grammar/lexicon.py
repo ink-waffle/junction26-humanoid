@@ -29,6 +29,7 @@ class Tag(Enum):
     SAME = auto()            # "the same bin", "the opposite side"; value: same | opposite
     COMPANION = auto()       # "blue goes with yellow", "red joins blue"
     CORRECTION = auto()      # "sorry, I meant", "actually", "make that"
+    EXCLUSIVE = auto()       # "each colour gets its own bin", "one colour per bin"
     ORDINAL = auto()         # value: rank counted along the row of bins
     BREAK = auto()           # sentence boundary
     COMMA = auto()
@@ -195,6 +196,20 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
        for preposition in ("of", "in") for quantifier in ("any", "every", "all", "whatever", "whichever")
        for noun in ("colour", "colours", "color", "colors", "shape", "shapes")},
     ("make", "sure"): (Tag.LINK, ""),
+    ("its", "own"): (Tag.EXCLUSIVE, ""),
+    ("their", "own"): (Tag.EXCLUSIVE, ""),
+    ("a", "different"): (Tag.EXCLUSIVE, ""),
+    ("different", "bins"): (Tag.EXCLUSIVE, ""),
+    ("separate", "bins"): (Tag.EXCLUSIVE, ""),
+    ("one", "colour", "per"): (Tag.EXCLUSIVE, ""),
+    ("one", "color", "per"): (Tag.EXCLUSIVE, ""),
+    ("nowhere", "but"): (Tag.LINK, ""),
+    ("nowhere", "except"): (Tag.LINK, ""),
+    ("nowhere", "else", "but"): (Tag.LINK, ""),
+    ("nowhere", "other", "than"): (Tag.LINK, ""),
+    ("nothing", "but"): (Tag.FILL, ""),
+    ("nothing", "except"): (Tag.FILL, ""),
+    ("nothing", "other", "than"): (Tag.FILL, ""),
 }
 MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 

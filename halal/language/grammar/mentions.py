@@ -159,14 +159,20 @@ def _bin_noun_end(tokens: list[Token], position: int) -> int:
 
 
 def _retag_punctuation(mentions: list[Mention], tokens: list[Token]) -> None:
-    """':' and '?' right after a mention pair it with what follows; elsewhere they end an introduction."""
-    inside = {index for mention in mentions for index in range(mention.start, mention.end)}
+    """':' and '?' after a mention pair it with what follows, elsewhere they end an introduction; 'red/left' pairs."""
+    owner = {index: mention for mention in mentions for index in range(mention.start, mention.end)}
     for index, token in enumerate(tokens):
         if token.text in (":", "?"):
             before = index - 1
             while before >= 0 and tokens[before].tag is Tag.COMMA:
                 before -= 1
-            token.tag = Tag.ARROW if before in inside else Tag.BREAK
+            token.tag = Tag.ARROW if before in owner else Tag.BREAK
+        elif token.text == "/":
+            after = index + 1
+            while after < len(tokens) and tokens[after].tag is Tag.FILL:
+                after += 1
+            if index - 1 in owner and after in owner and not _same_kind(owner[index - 1], owner[after]):
+                token.tag = Tag.ARROW
 
 
 def _issues(tokens: list[Token]) -> tuple[Issue, ...]:
@@ -423,7 +429,7 @@ def _apply_except(mentions: list[Mention], tokens: list[Token], position: int) -
     for index in _forward_target(mentions, tokens, position, frozenset({Tag.BREAK})):
         mention = mentions[index]
         if isinstance(mention, BinMention):
-            mention.negated = True
+            mention.negated = not mention.negated       # "must not go anywhere except the left bin" is positive
         elif mention.negated is Negation.NONE:
             mention.negated = Negation.WHOLE
 

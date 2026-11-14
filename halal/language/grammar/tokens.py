@@ -27,6 +27,7 @@ _CONTRACTIONS = (
     (re.compile(r"'ll\b"), " will"),
     (re.compile(r"'ve\b"), " have"),
 )
+_ASIDE = re.compile(r"\([^()]*\)|(?<=\S) [–—-]{1,2} [^–—\n.;!?()]*? [–—-]{1,2} (?=\S)")
 _WORD = re.compile(r"[^\W\d_]+|\d+(?:st|nd|rd|th)?|[.;!?,:=→()&/+#]")
 _SEPARATORS = (Tag.BREAK, Tag.COMMA, Tag.CLAUSE)
 _OPPOSITE = {"left": "right", "right": "left"}
@@ -55,6 +56,11 @@ def tag(text: str) -> list[Token]:
     for rule in _CONTEXT_RULES:
         tokens = rule(tokens)
     return tokens
+
+
+def without_asides(text: str) -> str:
+    """Text without parenthesised spans and spans between paired dashes."""
+    return _ASIDE.sub(" ", text)
 
 
 def normalise(text: str) -> str:
