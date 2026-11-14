@@ -670,3 +670,15 @@ mock world with the boxes really 6 cm farther the mock shows no arms, the source
 releases at the file's x 0.463 (a cube on the counter in front of its box), the newer tree's detector puts the row at
 x 0.56 and the releases at 0.508–0.518. `far_bins.py` must not shift the layout itself on such a tree (`SEEN=1`
 in `far_one.py` uses the detector's own layout).
+
+v19 soft-hand leg (sim `a`, 17:50–18:14 UTC): +3.88 ± 0.78, 31/31, done 8, 0 clips, hz 30.0, rt_hz min 126, gate PASS,
+soft 16/16, 0 empty picks, lift scores 0.311–0.559, 7 same-bin pairs all flat (smallest gap 45 mm). v19 equals v18 on
+all four legs.
+
+### v20 (built 17:51 UTC for the robot retry; legs from 18:13)
+Image b7468d515c78, commit a3498c7 = main 9a0dc50 (perception H10: no shape for a lying cylinder; H11: without a
+measured camera the layout is the bins as seen; soft cube `cage_deep`, soft lying list, motion's early obstacle
+rejection) + v19's policy side (`release_rise` list, arm choice, `TOUCHING` import, "no arm reaches" line). No policy
+change of its own. Why now: v18 on the real robot released in front of a box (no measured camera, so the scene
+file's bins). Mock on its tree: all suites clean; far-box world with source `nominal`: releases at x 0.508–0.518
+(v19 tree: 0.463); 8-object crowds at twice-priced planning 7/8 and 8/8 (v19 tree 5–6 of 8).
