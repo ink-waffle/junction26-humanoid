@@ -18,7 +18,7 @@ class ObjectDetection:
     top: np.ndarray
     shape: str | None = None    # None = not classified
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown
-    confidence: float = 1.0     # probability that this is a real object with this colour and shape
+    confidence: float = 1.0     # how sure the colour is (0..1); the pose rests on `visible`, the shape is None when unsure
     pixels: int = 0
     visible: float = 1.0        # fraction of the top face the camera saw; low = centre and yaw rest on little evidence
 

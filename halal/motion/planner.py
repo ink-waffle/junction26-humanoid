@@ -22,6 +22,7 @@ from halal.perception import SceneLayout
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
+THUMB = slice(0, 3)
 
 
 class PickPlanner(Planner):
@@ -34,6 +35,11 @@ class PickPlanner(Planner):
         """Planner on the organiser config with our overrides (or `cfg`), the scene file and the sim home pose."""
         cfg, spec = cfg or config.baseline_config(), JointSpec()
         return cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+
+    @property
+    def motion(self) -> dict[str, Any]:
+        """Our motion settings from config; each planner holds its own copy so that benchmarks can vary them."""
+        return self.__dict__.setdefault("_motion", dict(config.load()["motion"]))
 
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
@@ -49,13 +55,35 @@ class PickPlanner(Planner):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
-        return self._ending_at(plan, end)
+        return self._ending_at(self._thumb_first(plan, side), end)
 
-    @staticmethod
-    def _sequences(place_xy: tuple[float, float] | None) -> list[bool]:
+    def _sequences(self, place_xy: tuple[float, float] | None) -> list[bool]:
         """Whether to try our low sequence, per configured sequence in order; counter placements only have the organiser's."""
-        names = ["organiser"] if place_xy is not None else config.load()["motion"]["sequences"]
+        names = ["organiser"] if place_xy is not None else self.motion["sequences"]
         return [name == "low" for name in names]
+
+    def _thumb_first(self, plan: Plan, side: str) -> Plan:
+        """The plan with its release split: the thumb lets go, a pause, then the fingers; unchanged when the lead is 0."""
+        if not plan.ok or not self.motion["release_thumb_lead_s"]:
+            return plan
+        cols = ArmKinematics.sl(side)
+        first, stop = next((a, b) for name, a, b in plan.phases if name == "open")
+        opening = self._opening(plan.hand[first - 1, cols], plan.hand[stop - 1, cols])
+        parts = [(name, *((plan.arm[a:b], plan.hand[a:b]) if name != "open" else self._held(plan, first, cols, opening)))
+                 for name, a, b in plan.phases]
+        return self._assembled(plan, parts)
+
+    def _opening(self, closed: np.ndarray, release: np.ndarray) -> np.ndarray:
+        """One hand's rows (7 joints) from closed to release and the hold after: thumb first when a lead is configured."""
+        speed, dt, lead = self.cfg["motion"]["hand_max_vel"], self.dt, self.motion["release_thumb_lead_s"]
+        thumb_out = closed.copy()
+        thumb_out[THUMB] = release[THUMB]
+        stages = [(thumb_out, lead)] * bool(lead) + [(release, self.cfg["motion"]["open_hold_s"])]
+        rows, start = [], closed
+        for posture, hold in stages:
+            rows += [ramp(start, posture, speed, dt), np.repeat(posture[None], int(round(hold / dt)), 0)]
+            start = posture
+        return np.vstack(rows)
 
     def _plan_with(self, grasp: Grasp, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
                    place_xy: tuple[float, float] | None) -> Plan:
@@ -73,8 +101,7 @@ class PickPlanner(Planner):
         cut = max(stop for name, _, stop in plan.phases if name in ("close", "squeeze"))
         hold = np.repeat(closed[None], int(round(motion["close_hold_s"] / self.dt)), 0)
         deeper = np.vstack([ramp(plan.hand[cut - 1, cols], closed, motion["hand_max_vel"], self.dt), hold])
-        opening = np.vstack([ramp(closed, release, motion["hand_max_vel"], self.dt),
-                             np.repeat(release[None], int(round(motion["open_hold_s"] / self.dt)), 0)])
+        opening = self._opening(closed, release)
         parts = [(name, plan.arm[first:stop], plan.hand[first:stop]) for name, first, stop in plan.phases if stop <= cut]
         parts.append(("squeeze", *self._held(plan, cut - 1, cols, deeper)))
         for name, first, stop in plan.phases:
@@ -130,7 +157,7 @@ class PickPlanner(Planner):
 
     def _choose_near_inset(self, side: str, bin_name: str) -> bool:
         """Set the largest configured distance from the bin's near wall this arm reaches; False when none."""
-        for self.near_inset in config.load()["motion"]["drop_inset"]["near"]:
+        for self.near_inset in self.motion["drop_inset"]["near"]:
             if self.reaches_bin(side, bin_name):
                 return True
         return False
@@ -138,12 +165,12 @@ class PickPlanner(Planner):
     def drop_xy(self, name: str) -> np.ndarray:
         """Release point (pelvis xy): the point inside the bin's inset inner walls nearest the pelvis, plus the drop shift."""
         inner = self.scene.mat_to_pelvis(np.array(self.scene.bin_inner_box(name)))[:, :2]
-        inset = np.array([self.near_inset, config.load()["motion"]["drop_inset"]["side"]])
+        inset = np.array([self.near_inset, self.motion["drop_inset"]["side"]])
         low, high = inner.min(0) + inset, inner.max(0) - inset
         return np.clip(np.zeros(2), low, np.maximum(low, high)) + self.drop_shift
 
     def bin_clearance(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray, margin: float | None = None) -> float:
-        margin = config.load()["motion"]["bin_margin"] if margin is None else margin
+        margin = self.motion["bin_margin"] if margin is None else margin
         return super().bin_clearance(side, arm_q, hand_q, margin=margin)
 
     def _cartesian(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, name: str, plan: Plan) -> list | None:
@@ -178,12 +205,12 @@ class PickPlanner(Planner):
 
     def carry_height(self) -> float:
         """Grasp point height above a bin before lowering to the release height."""
-        clear_of_rim = float(self.scene.cfg["bins"]["wall_height"]) + self.height + config.load()["motion"]["carry_margin"]
+        clear_of_rim = float(self.scene.cfg["bins"]["wall_height"]) + self.height + self.motion["carry_margin"]
         return self.scene.counter_z + max(self.cfg["grasp"]["carry_height"], clear_of_rim)
 
     def object_clears_bins(self, p: np.ndarray) -> bool:
         """Whether an object held with its centre at p is above the rim of every bin it overlaps."""
-        bins, margin = self.scene.cfg["bins"], config.load()["motion"]["rim_clearance"]
+        bins, margin = self.scene.cfg["bins"], self.motion["rim_clearance"]
         reach = np.asarray(bins["outer_size"], float) / 2 + self.height / 2 + margin
         centre = self.scene.pelvis_to_mat(p)[:2]
         over = any(np.all(np.abs(centre - np.asarray(c, float)) <= reach) for c in bins["centers"].values())
@@ -198,7 +225,7 @@ class PickPlanner(Planner):
 
     def _is_straight(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray, name: str) -> bool:
         """Whether the joint-space move q0 -> q1 keeps the grasp point near the line p0 -> p1."""
-        tolerances = config.load()["motion"]["shortcut_tolerance"]
+        tolerances = self.motion["shortcut_tolerance"]
         tolerance = tolerances.get(name, tolerances["default"])
         p0, line = np.asarray(p0, float), np.asarray(p1, float) - np.asarray(p0, float)
         for f in np.linspace(0, 1, SHORTCUT_SAMPLES)[1:-1]:
@@ -222,7 +249,7 @@ class PickPlanner(Planner):
     def _counter_under(self, det: Any) -> Iterator[None]:
         """Plan against the counter height the detection implies (object top minus object height), not the scene file's."""
         nominal = self.scene
-        if config.load()["motion"]["counter_from_detection"]:
+        if self.motion["counter_from_detection"]:
             cfg = copy.deepcopy(nominal.cfg)
             cfg["counter"]["mat_origin_in_pelvis"][2] = float(det.top[2]) - self.height
             self.scene = Scene(cfg)
@@ -238,7 +265,7 @@ class PickPlanner(Planner):
         saved = (kin.hint, kin.w_hint, dict(kin.offset), dict(self.post), g["height_frac"])
         if grasp.finger_yaw is not None:
             kin.hint = np.array([np.cos(grasp.finger_yaw), np.sin(grasp.finger_yaw), 0.0])
-            kin.w_hint = config.load()["motion"]["finger_yaw_weight"]
+            kin.w_hint = self.motion["finger_yaw_weight"]
         if grasp.point_in_palm is not None:
             p = np.asarray(grasp.point_in_palm, float)
             kin.offset = {"left": p, "right": p * MIRROR_Y}
@@ -256,8 +283,8 @@ class PickPlanner(Planner):
 
     def _squeezed(self, closed: np.ndarray, grasp: Grasp, squeeze: float) -> np.ndarray:
         """Closed posture (14,) pushed `squeeze` rad further along the grasp's squeeze axis, kept inside the filter's range."""
-        axis = np.asarray(grasp.squeeze_axis or config.load()["motion"]["squeeze_axis"], float)
-        margin = config.load()["motion"]["hand_limit_margin"]
+        axis = np.asarray(grasp.squeeze_axis or self.motion["squeeze_axis"], float)
+        margin = self.motion["hand_limit_margin"]
         deeper = closed + squeeze * np.r_[axis, right_hand(axis)]
         return np.clip(deeper, self.spec.hand_lower + margin, self.spec.hand_upper - margin)
 
@@ -269,6 +296,6 @@ class PickPlanner(Planner):
         self.kin._fk(plan.arm[grasp_tick])
         x = self.kin.data.oMf[self.kin.palm[side]].rotation[:, 0]
         error = abs((np.arctan2(x[1], x[0]) - finger_yaw + np.pi) % (2 * np.pi) - np.pi)
-        if error > config.load()["motion"]["finger_yaw_tolerance"]:
+        if error > self.motion["finger_yaw_tolerance"]:
             plan.ok, plan.reason = False, f"fingers {np.degrees(error):.0f} deg off the requested heading"
         return plan

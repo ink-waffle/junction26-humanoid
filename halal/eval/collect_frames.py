@@ -2,6 +2,7 @@
 
     python -m halal.eval.collect_frames --name dr_train --seeds 2000 2200     (sim env vars select the instance)
     python -m halal.eval.collect_frames --name lookpose --seeds 2300 2315 --arm-q 0.2 0.7 ... (14 values: arms held there)
+    python -m halal.eval.collect_frames --name closedhands --seeds 2500 2510 --hand-q 0.0 -0.1 ... (14 values, obs order)
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ REPO = Path(__file__).resolve().parents[2]
 IMAGE_KEYS = ("head_rgb", "head_depth", "left_wrist_rgb", "right_wrist_rgb")
 SETTLE_TICKS = 25
 ARM_SPEED = 0.6
+HAND_SPEED = 1.5
 
 
 def hold(env: AaltoEnv, ticks: int) -> dict:
@@ -40,7 +42,15 @@ def move_arms(env: AaltoEnv, target: np.ndarray) -> None:
         env.step({"arm_q_target": arm, "hand_q_target": hand})
 
 
-def collect_seed(env: AaltoEnv, scene: SceneClient, seed: int, task: str, arm_q: np.ndarray | None) -> dict:
+def move_hands(env: AaltoEnv, target: np.ndarray) -> None:
+    """Ramp the hand command to `target` at HAND_SPEED rad/s per joint, arms as they are."""
+    arm = env.filter.arm_cmd.copy()
+    for hand in ramp(env.filter.hand_cmd.copy(), target, HAND_SPEED, env.dt):
+        env.step({"arm_q_target": arm, "hand_q_target": hand})
+
+
+def collect_seed(env: AaltoEnv, scene: SceneClient, seed: int, task: str, arm_q: np.ndarray | None,
+                 hand_q: np.ndarray | None) -> dict:
     evaluate.home_arms(env, scene)
     env.rng = np.random.default_rng(seed)
     dr = scene.randomize(seed).get("params")
@@ -48,6 +58,8 @@ def collect_seed(env: AaltoEnv, scene: SceneClient, seed: int, task: str, arm_q:
     env.reset()
     if arm_q is not None:
         move_arms(env, arm_q)
+    if hand_q is not None:
+        move_hands(env, hand_q)
     obs = hold(env, SETTLE_TICKS)
     objects = [o for o in scene.state()["objects"] if o["active"]]
     meta = {"seed": seed, "task": task, "instruction": env.instruction, "mapping": env.mapping, "layout": env.layout,
@@ -63,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--task", default="sort_language")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--arm-q", type=float, nargs=14, default=None, help="arm pose to look from (default: the sim home pose)")
+    ap.add_argument("--hand-q", type=float, nargs=14, default=None, help="hand posture to look with (default: open)")
     args = ap.parse_args(argv)
 
     evaluate.apply_instance_env()
@@ -74,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         for seed in range(args.seeds[0], args.seeds[1]):
             arm_q = None if args.arm_q is None else np.asarray(args.arm_q)
-            np.savez_compressed(out / f"seed_{seed:05d}.npz", **collect_seed(env, scene, seed, args.task, arm_q))
+            hand_q = None if args.hand_q is None else np.asarray(args.hand_q)
+            np.savez_compressed(out / f"seed_{seed:05d}.npz", **collect_seed(env, scene, seed, args.task, arm_q, hand_q))
             print(f"seed {seed} saved", flush=True)
     finally:
         env.close()

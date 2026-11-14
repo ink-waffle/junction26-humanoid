@@ -41,7 +41,8 @@ class ColorClassifier:
         """Per RGB sample (N, 3): index of the basin its hue is in, -1 when it is in none or too pale to say."""
         r, g, b = (samples * gains).T
         hue = np.degrees(np.arctan2(SQRT3 * (g - b), 2 * r - g - b)) % 360.0
-        vivid = (np.maximum(np.maximum(r, g), b) - np.minimum(np.minimum(r, g), b)) >= self.cfg["chroma_range"][0] * np.maximum(np.maximum(r, g), b)
+        bright, dark = np.maximum(np.maximum(r, g), b), np.minimum(np.minimum(r, g), b)
+        vivid = (bright - dark >= self.cfg["chroma_range"][0] * bright) & (bright >= self.cfg["min_value"])
         classes = np.full(len(samples), -1, np.int8)
         for index, (lo, hi) in enumerate(self.cfg["basins"].values()):
             classes[vivid & ((hue - lo) % 360.0 <= (hi - lo) % 360.0)] = index
@@ -52,8 +53,9 @@ class ColorClassifier:
         balanced = samples * gains
         spread = (balanced.max(axis=1) - balanced.min(axis=1)) / np.maximum(balanced.max(axis=1), 1.0)
         vivid = balanced[spread >= np.quantile(spread, 1.0 - self.cfg["vivid_fraction"])]
-        hue, chroma = hue_chroma(np.median(vivid, axis=0))
+        colour = np.median(vivid, axis=0)
+        hue, chroma = hue_chroma(colour)
         miss, name = min((outside(hue, basin), name) for name, basin in self.cfg["basins"].items())
         low, full = self.cfg["chroma_range"]
-        by_chroma = np.clip((chroma - low) / (full - low), 0.0, 1.0)
+        by_chroma = np.clip((chroma - low) / (full - low), 0.0, 1.0) * (colour.max() >= self.cfg["min_value"])
         return name, float(np.clip(1.0 - miss / self.cfg["taper_deg"], 0.0, 1.0) * by_chroma)
