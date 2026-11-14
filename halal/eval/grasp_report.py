@@ -17,6 +17,7 @@ JOINTS = ("thumb_0", "thumb_1", "thumb_2", "finger_0", "finger_1")
 HELD_MARKS = ("lift", "carry")
 TOPPLED_DEG = 45.0
 RELEASED_BELOW = 0.05
+NEIGHBOUR_MOVED_MM = 10.0
 
 
 def by_role(error: list[float]) -> list[float]:
@@ -105,6 +106,27 @@ def aftermath_table(picks: list[dict[str, Any]]) -> None:
               f"{shift[:, 0].mean():+5.0f} / {shift[:, 1].mean():+5.0f}   toppled {toppled}  off {gone}")
 
 
+def neighbour_table(picks: list[dict[str, Any]]) -> None:
+    """Picks beside a second object: target binned, and what happened to the neighbour (moved, toppled, off the counter)."""
+    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for pick in picks:
+        if "neighbour_shift_mm" in pick or pick["failure"] == "no_plan":
+            groups[pick["variant"]].append(pick)
+    if not any("neighbour_shift_mm" in p for group in groups.values() for p in group):
+        return
+    print(f"\npicks beside a neighbour: planned, target binned, neighbour shift median / max (mm), moved > {NEIGHBOUR_MOVED_MM:.0f} mm, toppled, off; both fine; grasps")
+    for variant, group in sorted(groups.items()):
+        done = [p for p in group if "neighbour_shift_mm" in p]
+        shifts = [p["neighbour_shift_mm"] for p in done] or [np.nan]
+        moved = [p["neighbour_shift_mm"] > NEIGHBOUR_MOVED_MM for p in done]
+        toppled = [p["neighbour_tilt_deg"] > TOPPLED_DEG for p in done]
+        fine = sum(p["failure"] == "ok" and not m and not t for p, m, t in zip(done, moved, toppled))
+        grasps = Counter(f"{p['grasp']}{'' if p['finger_yaw'] is None else ' %+.0f' % np.degrees(p['finger_yaw'])}" for p in done)
+        print(f"{variant:<18} {len(done):2d}/{len(group):<2d}  {sum(p['failure'] == 'ok' for p in done):2d}  {np.median(shifts):5.0f} / {max(shifts):4.0f}   "
+              f"{sum(moved):2d}  {sum(toppled):2d}  {sum(p.get('neighbour_outcome') == 'off' for p in done):2d}   {fine:2d}/{len(group):<2d}  "
+              + ", ".join(f"{name} x{count}" for name, count in grasps.most_common(4)))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("runs", type=Path, nargs="+")
@@ -115,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     finger_table(picks)
     aftermath_table(picks)
     landing_table(picks)
+    neighbour_table(picks)
     return 0
 
 
