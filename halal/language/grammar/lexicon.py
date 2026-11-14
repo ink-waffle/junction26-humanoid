@@ -8,6 +8,16 @@ SHAPES = ("cube", "cylinder", "triangle")
 BINS = ("left", "center", "right")
 DEFAULT_KEY = "default"
 
+# Perception tells three colour families apart; each lists its hues (sim red / real orange, sim blue / real purple).
+COLOUR_FAMILIES: dict[str, dict[str, str]] = {
+    "red": {"red": "red reds reddish crimson scarlet ruby maroon vermilion",
+            "orange": "orange oranges orangey orangish tangerine"},
+    "yellow": {"yellow": "yellow yellows yellowish golden gold lemon"},
+    "blue": {"blue": "blue blu blues bluish navy azure cobalt indigo",
+             "purple": "purple purples purplish violet lilac lavender mauve"},
+}
+HUES = {word: hue for hues in COLOUR_FAMILIES.values() for hue, words in hues.items() for word in words.split()}
+
 
 class Tag(Enum):
     """Role a token plays in a sorting instruction."""
@@ -50,7 +60,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
     **_entries(Tag.FILL, {"": (
         "the a an of this that some both either several many few two three four five six my your its their our "
         "small little big large tiny coloured colored shaped sized light dark bright pale plain wooden plastic "
-        "printed correct proper appropriate corresponding respective matching designated own orange identical far "
+        "printed correct proper appropriate corresponding respective matching designated own identical far "
         "near outer extreme furthest farthest very most just only simply always now please kindly finally lastly "
         "next again robot table counter desk workspace scene mat view perspective row line number nr what who "
         "instead there here way exactly single whole entire together respect regardless irrespective "
@@ -86,10 +96,9 @@ WORDS: dict[str, tuple[Tag, str]] = {
         "sides receptacle receptacles tub tubs bowl bowls compartment compartments slot slots spot position "
         "location area zone pile")}),
     **_entries(Tag.COLOUR, {
-        "red": "red reds reddish crimson scarlet ruby maroon vermilion",
-        "yellow": "yellow yellows yellowish golden gold lemon",
-        "blue": "blue blu blues bluish navy azure cobalt indigo",
-        "": "green purple pink black white grey gray brown violet magenta cyan turquoise teal silver beige"}),
+        **{family: " ".join(hues.values()) for family, hues in COLOUR_FAMILIES.items()},
+        "": ("green pink black white grey gray brown magenta fuchsia amber peach coral salmon cyan turquoise teal "
+             "silver beige")}),
     **_entries(Tag.SHAPE, {
         "cube": "cube cubes cubic cubical cuboid cuboids square squares squared",
         "cylinder": ("cylinder cylinders cylindrical round rounded circular circle circles disc discs disk disks "
@@ -193,6 +202,8 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("stay", "put"): (Tag.LEAVE, "backward"),
     ("stays", "put"): (Tag.LEAVE, "backward"),
     ("three", "sided"): (Tag.SHAPE, "triangle"),
+    **{(adjective, noun): (Tag.SHAPE, "triangle")
+       for adjective in ("triangular", "triangle") for noun in ("prism", "prisms")},
     ("point", "of", "view"): (Tag.FILL, ""),
     ("regardless", "of"): (Tag.UNIVERSAL, ""),
     ("regardless", "of", "whether"): (Tag.UNIVERSAL, "aside"),
@@ -226,13 +237,13 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
 MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 
 # Typo correction is limited to these words; common English words one edit away from them are never corrected.
-FUZZY_TARGETS = ("yellow", "blue", "cube", "cubes", "cylinder", "cylinders", "triangle", "triangles", "triangular",
-                 "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
+FUZZY_TARGETS = ("yellow", "blue", "orange", "purple", "cube", "cubes", "cylinder", "cylinders", "triangle",
+                 "triangles", "triangular", "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
 NOT_TYPOS = frozenset(
     "aright bellow bight blued bluer blur calender canter censer centers centred centres cinder cleft clue "
     "colander cuba cubed cubs cure cures cute deft diddle eight enter fellow fiddle fight flue fright glue "
-    "heft leftist lefts lefty lent lest loft lube meddle mellow middles muddle night piddle renter riddle "
-    "rightist righto rights righty rube sight tangle tenter tight tingle triage triangled triangulate weft "
+    "grange heft leftist lefts lefty lent lest loft lube meddle mellow middles muddle night piddle range renter "
+    "riddle rightist righto rights righty rube sight tangle tenter tight tingle triage triangled triangulate weft "
     "wright yellowy".split())
 
 NUMBERS = {"1": 1, "2": 2, "3": 3, "one": 1, "two": 2, "three": 3}
@@ -254,7 +265,11 @@ TRAVEL_WORDS = frozenset("going moving walking travelling traveling proceeding h
 NAMING_WORDS = frozenset("call called name named label labelled labeled denote denoted letter lettered".split())
 DEFINING_WORDS = frozenset({"=", ":", "is", "means", "denotes", "marks"})
 COLOUR_EMOJI = {"🔴": "red", "🟥": "red", "❤": "red", "🟡": "yellow", "🟨": "yellow", "💛": "yellow",
-                "🔵": "blue", "🟦": "blue", "💙": "blue"}
+                "🔵": "blue", "🟦": "blue", "💙": "blue", "🟠": "orange", "🟧": "orange", "🧡": "orange",
+                "🟣": "purple", "🟪": "purple", "💜": "purple"}
+BIN_COVERINGS = frozenset("tape taped duct cardboard wrapping".split())       # what a bin's colour is said of
+INDEFINITE = frozenset({"a", "an", "each", "every", "any", "one"})
+PLACING = frozenset({"on", "to", "at", "in"})                   # open a position after a noun: "the box on the left"
 STAY_WORDS = frozenset({"alone", "untouched", "behind", "out", "unsorted", "unmoved", "there", "where", "as"})
 INTENSIFIED = frozenset({"away", "now", "here", "after", "before"})
 PRONOUN_QUANTIFIERS = frozenset({"everything", "anything", "all", "everyone", "whatever"})
