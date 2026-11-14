@@ -23,6 +23,7 @@ class Grasp:
     height_frac: float | None = None                           # grasp height as a fraction of the object height
     squeeze_axis: tuple[float, ...] = ()                       # LEFT-order joint weights of a deeper squeeze; () = config default
     squeeze: float = 0.0                                       # default depth (rad along the squeeze axis past `closed`)
+    carry_acc: float | None = None                             # arm acceleration (rad/s^2) for lift and carry; None = the planner's
 
 
 def right_hand(left: np.ndarray) -> np.ndarray:
@@ -36,7 +37,13 @@ def candidate_grasps(shape: str | None, yaw: float | None, side: str, hand: str 
     motion = config.load()["motion"]
     names = motion["candidates"][shape or "unknown"]
     return [grasp for name in names
-            for grasp in strategy_grasps(name, for_hand(motion["grasps"][name], hand), shape, yaw, side)]
+            for grasp in strategy_grasps(name, for_hand(strategy_params(name), hand), shape, yaw, side)]
+
+
+def strategy_params(name: str) -> Mapping[str, Any]:
+    """A configured strategy's parameters on top of those of its `base` strategy, if it names one."""
+    grasps = config.load()["motion"]["grasps"]
+    return {**grasps.get(grasps[name].get("base"), {}), **grasps[name]}
 
 
 def for_hand(params: Mapping[str, Any], hand: str) -> Mapping[str, Any]:
@@ -68,7 +75,7 @@ def _grasp(name: str, params: Mapping[str, Any], shape: str | None, finger_yaw: 
                  point_in_palm=_optional_tuple(params.get("point_in_palm")),
                  postures={k: tuple(params[k]) for k in POSTURES if k in params},
                  height_frac=params.get("height_frac"), squeeze_axis=tuple(params.get("squeeze_axis", ())),
-                 squeeze=_depth(params.get("squeeze", 0.0), shape))
+                 squeeze=_depth(params.get("squeeze", 0.0), shape), carry_acc=params.get("carry_acc"))
 
 
 def _depth(squeeze: float | Mapping[str, float], shape: str | None) -> float:

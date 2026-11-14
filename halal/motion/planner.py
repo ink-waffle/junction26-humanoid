@@ -11,7 +11,7 @@ import numpy as np
 
 from aaltonomous.baselines.classical.config import hand_postures, home_arm
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
-from aaltonomous.baselines.classical.planner import Plan, Planner, ramp
+from aaltonomous.baselines.classical.planner import Plan, Planner, ramp, time_scale
 from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
@@ -23,6 +23,7 @@ from halal.perception import SceneLayout
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
+HELD_PHASES = ("lift", "carry")
 LATE_FINGER = slice(5, 7)
 
 
@@ -56,7 +57,20 @@ class PickPlanner(Planner):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
-        return self._ending_at(self._staggered_release(plan, side), end)
+        return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
+
+    def _carried_gently(self, plan: Plan, grasp: Grasp) -> Plan:
+        """The plan with lift and carry re-timed to the grasp's own arm acceleration; unchanged when the grasp sets none."""
+        if not plan.ok or grasp.carry_acc is None:
+            return plan
+        parts = []
+        for name, first, stop in plan.phases:
+            arm, hand = plan.arm[first:stop], plan.hand[first:stop]
+            if name in HELD_PHASES:
+                arm = time_scale(plan.arm[first - 1:stop], self.cfg["motion"]["arm_max_vel"], grasp.carry_acc, self.dt)
+                hand = np.repeat(hand[-1][None], len(arm), 0)
+            parts.append((name, arm, hand))
+        return self._assembled(plan, parts)
 
     def _sequences(self, place_xy: tuple[float, float] | None) -> list[bool]:
         """Whether to try our low sequence, per configured sequence in order; counter placements only have the organiser's."""
