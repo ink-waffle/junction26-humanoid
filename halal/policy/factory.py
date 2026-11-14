@@ -10,11 +10,11 @@ from halal.policy.sorter import SortPolicy
 
 
 def planner_config() -> dict[str, Any]:
-    """The organiser config with our overrides and the arm pose named by `policy.look_pose` as its home pose."""
+    """The organiser config with our overrides; its home pose becomes the pose named by `policy.look_pose`."""
     settings, cfg = config.load(), config.baseline_config()
     name = settings["policy"]["look_pose"]
     if name != "home":
-        cfg["home_arm_q"] = settings["poses"][name]
+        cfg["home_arm_q"] = settings["motion"][name]
     return cfg
 
 

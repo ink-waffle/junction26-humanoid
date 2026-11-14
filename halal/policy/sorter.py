@@ -15,7 +15,7 @@ from halal.perception import Detector, ObjectDetection
 from halal.policy.area import ObjectArea
 from halal.policy.background import Background, Cancelled
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
-from halal.policy.grip import CalibrationTrace, GripWindow, HandResponse, calibration_close, phase
+from halal.policy.grip import SIDES, CalibrationTrace, GripWindow, HandResponse, calibration_close, phase
 from halal.policy.memory import Attempts
 from halal.policy.picking import Pick, PickChooser, Target
 from halal.policy.release import ReleaseSlots
@@ -162,11 +162,12 @@ class SortPolicy:
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         arm_q, hand_q = self.stream.arm_cmd.copy(), self.stream.hand_cmd.copy()
         bin_for, attempts, released = self.bin_for, self.attempts, dict(self.released)
-        self.jobs.submit(lambda cancelled: self._look(obs, arm_q, hand_q, bin_for, attempts, released, cancelled))
+        squeeze = {side: self.settings["squeeze"][self._hand_class(side)] for side in SIDES}
+        self.jobs.submit(lambda cancelled: self._look(obs, arm_q, hand_q, bin_for, attempts, released, squeeze, cancelled))
         self.stage = Stage.LOOKING
 
-    def _look(self, obs: Mapping[str, Any], arm_q: np.ndarray, hand_q: np.ndarray, bin_for: BinFor,
-              attempts: Attempts, released: Mapping[str, int], cancelled: Cancelled) -> Look | None:
+    def _look(self, obs: Mapping[str, Any], arm_q: np.ndarray, hand_q: np.ndarray, bin_for: BinFor, attempts: Attempts,
+              released: Mapping[str, int], squeeze: Mapping[str, float], cancelled: Cancelled) -> Look | None:
         """Background job: detect, keep what is sortable, plan the next pick; None when the head frame is blank."""
         if not np.any(obs["head_rgb"]):
             return None
@@ -174,7 +175,7 @@ class SortPolicy:
         inside = [det for det in detections if self.area.contains(det.top[:2])]
         outside = [det for det in detections if not self.area.contains(det.top[:2])]
         targets = self._targets(inside, bin_for, attempts)
-        pick, unplannable = self.chooser.choose(targets, inside, released, arm_q, hand_q, cancelled)
+        pick, unplannable = self.chooser.choose(targets, inside, released, squeeze, arm_q, hand_q, cancelled)
         return Look(detections, outside, pick, unplannable)
 
     def _targets(self, detections: list[ObjectDetection], bin_for: BinFor, attempts: Attempts) -> list[Target]:
@@ -256,9 +257,13 @@ class SortPolicy:
             self.grip_proven = True
 
     def _empty_below(self, side: str) -> float:
-        """Grip score under which this hand holds nothing; an uncalibrated hand gets the value that never aborts wrongly."""
+        """Grip score under which this hand holds nothing."""
+        return self.settings["grip_threshold"][self._hand_class(side)]
+
+    def _hand_class(self, side: str) -> str:
+        """`stiff` or `soft` from the calibration close, `unknown` without one."""
         hand = self.hands.get(side)
-        return self.settings["grip_threshold"]["soft" if hand and not hand.stiff else "stiff"]
+        return "unknown" if hand is None else "stiff" if hand.stiff else "soft"
 
     def _abandon_pick(self, t: float, score: float) -> None:
         """The hand is empty: go back to the look pose if the way is clear, else let the plan run out unwatched."""

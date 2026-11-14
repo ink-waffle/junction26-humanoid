@@ -50,27 +50,28 @@ class PickChooser:
         self.planner, self.slots, self.relocate = planner, slots, relocate
 
     def choose(self, targets: Sequence[Target], obstacles: Sequence[ObjectDetection], released: Mapping[str, int],
-               arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
+               squeeze: Mapping[str, float], arm_q: np.ndarray, hand_q: np.ndarray,
+               cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
         """The first plannable target, nearest its bin first, and the targets before it that have no plan."""
         unplannable: list[Target] = []
         for target in sorted(targets, key=self._distance_to_bin):
-            pick = self._plan(target, obstacles, released.get(target.bin_name, 0), arm_q, hand_q, cancelled)
+            pick = self._plan(target, obstacles, released.get(target.bin_name, 0), squeeze, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
             unplannable.append(target)
         return None, unplannable
 
-    def _plan(self, target: Target, obstacles: Sequence[ObjectDetection], released: int, arm_q: np.ndarray,
-              hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
+    def _plan(self, target: Target, obstacles: Sequence[ObjectDetection], released: int, squeeze: Mapping[str, float],
+              arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
         try:
-            return (self._direct(target, released, arm_q, hand_q, cancelled)
+            return (self._direct(target, released, squeeze, arm_q, hand_q, cancelled)
                     or self._relocation(target, obstacles, arm_q, hand_q, cancelled))
         except Exception:
             log.exception("planning failed for %s", target)
             return None
 
-    def _direct(self, target: Target, released: int, arm_q: np.ndarray, hand_q: np.ndarray,
-                cancelled: Cancelled) -> Pick | None:
+    def _direct(self, target: Target, released: int, squeeze: Mapping[str, float], arm_q: np.ndarray,
+                hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
         det = target.detection
         shifts = self.slots.candidates(target.bin_name, released)
         attempts = [(side, grasp, shift) for shift in shifts for side in self._arms(target)
@@ -78,7 +79,8 @@ class PickChooser:
         for side, grasp, shift in attempts:
             if cancelled():
                 break
-            plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q, drop_shift=shift)
+            plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q, drop_shift=shift,
+                                          squeeze=squeeze[side])
             if plan.ok:
                 return Pick(target, side, grasp, plan)
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
