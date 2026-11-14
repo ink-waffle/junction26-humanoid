@@ -1,5 +1,7 @@
 # Halal policy settings. Units: m, rad, s. Organiser baseline values are changed only through `baseline_overrides`.
-baseline_overrides: {}        # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
+baseline_overrides:           # dotted keys on top of aaltonomous/baselines/classical/config.yaml (profile `sim`)
+  motion.close_hold_s: 0.45   # the real fingers need 0.3-0.4 s to reach 90 %; the sim hand lags by 0.1 s as well
+  motion.hand_max_vel: 2.0    # rad/s the real proximal and thumb joints can follow
 
 perception:
   detector: topface           # key of halal.perception.DETECTORS
@@ -78,8 +80,11 @@ motion:
   natural_heading_deg: 25     # finger heading an arm reaches most easily: forward, turned inward by this much
   max_heading_deviation_deg: 75   # headings further than this from the natural one are not tried
   counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
-  squeeze_axis: [0.0, 1.0, 0.0, -1.0, 0.0, -1.0, 0.0]   # LEFT order: `squeeze` rad moves thumb_1 and both finger_0 joints this much
+  squeeze_axis: [0.0, 1.0, -1.15, 0.0, 0.0, 0.0, 0.0]   # LEFT order, per rad of `squeeze`: the thumb tip advances 41 mm at constant height
   hand_limit_margin: 0.03     # squeezed postures stay this far inside the hand joint limits (the filter clamps at 0.02)
+  drop_inset:                 # release point inside a bin's inner walls (objects land within +-2 cm of it in sim)
+    near: [0.05, 0.04, 0.03]  # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
+    side: 0.07                # from the side walls
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
     default: 0.01

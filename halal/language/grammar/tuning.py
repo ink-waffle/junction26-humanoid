@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 # Search over segmentations of the mention sequence.
-BEAM_WIDTH = 64
-MAX_CANDIDATES = 24
+BEAM_WIDTH = 32
+MAX_CANDIDATES = 12
 MAX_UNIT_SPAN = 12
 
 # Costs of a reading (lower is better). A mention left unpaired costs more than any awkward pairing.
@@ -14,7 +14,8 @@ DESCRIPTIVE = 3.0                # unpaired mention in a sentence that names no 
 SKIPPED_PAIR = 3.0               # an explicit "red in the left bin" left unused in favour of another reading
 CONFLICT = 4.0                   # one object key sent to two different bins
 RUN_BROKEN = 6.0                 # arrow or "but" inside a list (a sentence break inside a list is never accepted)
-RUN_MIXED = 3.0                  # verb or preposition inside a list
+RUN_DIRECTED = 12.0              # "to" / "into" inside a list: the first item had a destination of its own
+RUN_MIXED = 3.0                  # other verb or preposition inside a list
 RUN_UNKNOWN = 2.0                # unknown word inside a list
 ACROSS_BREAK = 5.0               # objects and their bin in different sentences
 ACROSS_CLAUSE = 4.0              # objects and their bin on two sides of "but" / "while"
@@ -29,6 +30,9 @@ DEPOSIT_AFTER_LEAVE = 0.5        # "leave red in the left bin" read as a placeme
 QUANTIFIER_IN_LIST = 1.0         # "everything" listed beside specific groups
 LONE_EXCEPTION = 1.0             # "except blue: right" read as blue -> right
 ATTACHED = 1.5                   # "blue too" joins the previous bin
+AMENDED = 0.5                    # "sorry, I meant the right bin" replaces the bin of the previous clause
+COMPANION = 1.0                  # "blue goes with yellow": blue takes yellow's bin
+UNDECIDED = 4.0                  # "red in the left or the right bin": several bins for one group, none chosen
 NESTED = 2.0                     # "what is left after red went left goes right": one clause inside another
 AMBIGUITY_MARGIN = 1.0           # a different mapping this close in cost makes the parse ambiguous
 
@@ -51,7 +55,11 @@ F_ACROSS_CLAUSE = 0.7
 F_ACROSS_AND = 0.8
 F_ACROSS_COMMA = 0.95
 F_RUN_BROKEN = 0.6
+F_RUN_DIRECTED = 0.5
 F_RUN_MIXED = 0.8
+F_COMPANION = 0.9
+F_CORRECTED = 0.9                # a self-correction was applied
+F_CORRECTION_LOST = 0.45         # a correction marker was seen but nothing could be corrected
 F_RUN_UNKNOWN = 0.9
 F_NESTED = 0.8
 F_DESCRIPTIVE = 0.9

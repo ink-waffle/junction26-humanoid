@@ -46,6 +46,8 @@ def _issues(reading: Reading, meaning: Interpretation, mentions: list[Mention],
     issues = [issue for mention in mentions for issue in mention.issues]
     issues += [issue for unit in reading.units for issue in unit.issues]
     issues += meaning.issues
+    if any(mention.corrects for mention in mentions) and not any(unit.corrects for unit in reading.units):
+        issues.append(Issue("a correction marker was seen but nothing could be corrected", tuning.F_CORRECTION_LOST))
     close = [rival for _, rival in rivals
              if rival.mapping != meaning.mapping and rival.cost - meaning.cost < tuning.AMBIGUITY_MARGIN]
     if close:
