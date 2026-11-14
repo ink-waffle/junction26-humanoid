@@ -18,7 +18,11 @@ log = logging.getLogger(__name__)
 SIDES = ("left", "right")
 Obstacles = Sequence[np.ndarray]    # top centres (pelvis xyz) of every detection of the look; the planner skips the target's own
 TOUCHING = "hand would touch"       # how the planner's reason for a failed plan names an object in the hand's way
-SAME_SPOT = 0.03                    # an obstacle this close to the target is the target itself (the planner's own radius)
+
+
+def grasp_hints(det: ObjectDetection) -> tuple[str | None, float | None]:
+    """Shape and yaw a grasp is built for: none for a prism lying on a side, until motion's grasp for it is on main (then pass `lying`)."""
+    return (None, None) if det.lying else (det.shape, det.yaw)
 
 
 @dataclass(frozen=True)
@@ -27,7 +31,6 @@ class Target:
     detection: ObjectDetection
     bin_name: str
     attempts: int = 0
-    neighbours: int = 0         # other detections close enough to be knocked over by a grasp
 
     @property
     def xy(self) -> np.ndarray:
@@ -35,7 +38,7 @@ class Target:
 
     def __str__(self) -> str:
         d = self.detection
-        return f"{d.color} {d.shape or 'object'} at ({d.top[0]:+.3f},{d.top[1]:+.3f}) -> {self.bin_name}"
+        return f"{d.color} {'lying ' * d.lying}{d.shape or 'object'} at ({d.top[0]:+.3f},{d.top[1]:+.3f}) -> {self.bin_name}"
 
 
 @dataclass(frozen=True)
@@ -62,47 +65,58 @@ class PickChooser:
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
                hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
-        """The first plannable target and the failed ones before it; a target that only a neighbour blocks is not a failure while another can go."""
+        """The first target whose plan stays clear of the other objects, and the failed ones; a target with a neighbour in the way waits."""
         start = PlanStart(released, hands, arm_q, hand_q, cancelled)
         unplannable: list[Target] = []
-        blocked: list[Target] = []
+        waiting: list[Target] = []
         for target in sorted(targets, key=self._order):
             pick, touching = self._plan(target, start, obstacles)
             if pick is not None:
                 return pick, unplannable
-            (blocked if touching else unplannable).append(target)
-        pick = self._past_a_neighbour(blocked, start, obstacles)
-        return pick, unplannable if pick is not None else unplannable + blocked
+            (waiting if touching else unplannable).append(target)
+        pick = self._as_if_alone(waiting, start, obstacles)
+        return pick, unplannable if pick is not None else unplannable + waiting
 
-    def _past_a_neighbour(self, blocked: Sequence[Target], start: PlanStart, obstacles: Obstacles) -> Pick | None:
-        """Nothing can go and neighbours block some targets (objects that touch): the first plan that ignores a target's nearest neighbour."""
-        for target in blocked:
-            others = [top for top in obstacles if float(np.linalg.norm(top[:2] - target.xy)) > SAME_SPOT]
-            nearest = min(others, key=lambda top: float(np.linalg.norm(top[:2] - target.xy)), default=None)
-            pick, _ = self._plan(target, start, [top for top in obstacles if top is not nearest])
-            if pick is not None:
-                log.warning("every target is blocked by a neighbour: picking %s as if the object at (%+.3f,%+.3f) were not there",
-                            target, nearest[0], nearest[1])
-                return pick
-        return None
+    def _as_if_alone(self, waiting: Sequence[Target], start: PlanStart, obstacles: Obstacles) -> Pick | None:
+        """No target is clear of its neighbours: of the least tried, the one whose plan as if it stood alone keeps furthest from them."""
+        picks = [pick for pick, _ in (self._plan(target, start, []) for target in waiting) if pick is not None]
+        pick = min(picks, key=lambda pick: (*self._order(pick.target)[:2], -self._room(pick, obstacles)), default=None)
+        if pick is not None:
+            log.warning("no target is clear of its neighbours: picking %s as if it stood alone, fingers %.0f mm from the nearest",
+                        pick.target, 1000 * self._room(pick, obstacles))
+        return pick
 
-    def _order(self, target: Target) -> tuple[int, bool, int, float]:
-        """Sort key: least tried first, a known shape before an unknown one, fewest close neighbours, then nearest its bin."""
-        return target.attempts, target.detection.shape is None, target.neighbours, self._distance_to_bin(target)
+    def _room(self, pick: Pick, obstacles: Obstacles) -> float:
+        """Smallest distance (m) between the pick's fingers, while they are down, and the centre of another object."""
+        own = self.planner.motion["obstacles"]["radius"]
+        others = [top for top in obstacles if float(np.linalg.norm(top[:2] - pick.target.xy)) > own]
+        return min((self.planner.digit_gap(pick.plan, pick.side, top) for top in others), default=np.inf)
+
+    def _order(self, target: Target) -> tuple[int, bool, float]:
+        """Sort key: least tried first, a shape the grasp knows before one it does not, then nearest its bin."""
+        return target.attempts, grasp_hints(target.detection)[0] is None, self._distance_to_bin(target)
 
     def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
-        """The first arm, grasp and release slot with a plan; without one, whether a neighbouring object was in the hand's way."""
-        touching = False
+        """`_first_plan`; whatever one target's data breaks on the way counts as no plan, so the other targets keep their turn."""
+        try:
+            return self._first_plan(target, start, obstacles)
+        except Exception:
+            log.exception("no options for %s", target)
+            return None, False
+
+    def _first_plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
+        """The first arm, grasp and release slot with a plan; none, and True, if that plan would touch a neighbouring object."""
         for side, grasp, shift in self._options(target, start.released.get(target.bin_name, 0), start.hands):
             if start.cancelled():
                 break
             plan = self._plan_pick(target, side, grasp, shift, start, obstacles)
             if plan.ok:
                 return Pick(target, side, grasp, plan), False
-            touching |= TOUCHING in plan.reason
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
                      shift, plan.reason)
-        return None, touching
+            if TOUCHING in plan.reason:
+                return None, True
+        return None, False
 
     def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> list[tuple[str, Grasp, Shift]]:
         """Arm, grasp and slot in the order to try; a retry starts with the next arm and grasp and moves the grasp point a little."""
@@ -111,7 +125,7 @@ class PickChooser:
         shifts = self.slots.candidates(target.bin_name, released)
         arms = _rotated([side for side in self._arms(target) if side in hands], turns)
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
-                         for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side, hands[side]), turns)]
+                         for grasp in _rotated(candidate_grasps(*grasp_hints(det), side, hands[side]), turns)]
                   for side in arms}
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
 
