@@ -139,7 +139,7 @@ motion:
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
     cube: [cage, pinch]
     cylinder: [cage]
-    triangle: [cage]
+    triangle: [cage_apex, cage]
     unknown: [cage]
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
@@ -154,6 +154,9 @@ motion:
       soft:                   # hand="soft" (kp ~1.5): the fingers close too (tips 47 mm/rad), ~7.5 N on every shape by the static model
         squeeze_axis: [0.0, 1.0, -1.15, -0.5, 0.0, -0.5, 0.0]
         carry_acc: 4.0        # rad/s^2 while the object is held (lift, carry); the planner's default is 8
+    cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
+      base: cage
+      headings_deg: {triangle: [0, 120, 240]}
     pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}
@@ -163,4 +166,6 @@ grasp_bench:
   trace_every: 2              # ticks between privileged object pose samples
   held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
   lifted_height: 0.03         # and at least this far above its resting height
-  hard_dr: {friction_max: 0.82, mass_min: 1.2}   # `dr: hard` keeps seeds giving every placed object such scales
+  dr_corners:                 # `dr: <name>` keeps seeds whose scales for every placed object lie in these ranges
+    hard: {friction: [0.0, 0.82], mass: [1.2, 9.0]}      # slippery and heavy
+    sticky: {friction: [1.0, 9.0], mass: [0.0, 1.0]}     # grippy and light: objects do not slide into place

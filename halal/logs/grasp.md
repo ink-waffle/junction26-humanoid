@@ -299,3 +299,22 @@ own weight with nothing held, the size of the real hand's bias. Hard DR, exact p
 - Contact signal on the soft hand (largest of thumb_1, finger_0 error at lift and mid-carry): held 0.14–0.27 rad
   (thumb_1 median 0.22), empty 0.006–0.056: a threshold of 0.10 separates them; the stiff-sim threshold 0.025 does not.
 - Every carried object was out of the hand within the open phase (50/50).
+
+## Sweeps 13a and 15: triangles with the fingers along the nearest vertex
+
+Analysis first (114 default-hint triangle picks of sweeps 3, 5, 10, 13a): the default hints put the fingers straight
+forward; success by the apex's angle off the finger heading: within ±40° 100/101, 40–60° off 9/13. Near 60° a flat side
+faces the fingertips and the thumb meets a vertex, the unstable configuration of sweep 2.
+
+Sweep 13a (hard DR, exact pose, layout yaw −45 / −30 / 0 / 30 / 45°, both arms): fingers along the nearest vertex
+(`headings_deg: {triangle: [0, 120, 240]}`, needs the yaw) 30/30, spin ≤ 11°; the same with a 10° error on the
+perceived yaw 10/10; default hints 19/20 (one not lifted at −45°), spin 27–68°.
+
+Sweep 15, the policy's repeatable miss (layout seed 1001, triangle at pelvis (0.304, −0.102), layout yaw −36°, right
+arm, 4 of 4 runs empty) and its mirror image for the left arm, hard DR: default hints 12/12, vertex-aligned 12/12.
+NOT reproduced. That episode's object has friction ×0.95 and, after the DR pose jitter, yaw −39.6°: every sweep so far
+used the slippery-and-heavy DR corner (friction ≤ ×0.82), where a misaligned triangle slides into the gap between the
+fingertips. The opposite corner (grippy and light) is the hard one for self-centring and had not been tested; the
+bench now has `dr: sticky` for it.
+
+Verdict: `candidates.triangle: [cage_apex, cage]` (vertex-aligned when the yaw is known, default hints otherwise).
