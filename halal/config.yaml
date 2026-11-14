@@ -259,7 +259,6 @@ policy:
   detect_deadline_s: 5.0      # a detector call (0.03-0.1 s; a whole look 0.8 s under three sims) left behind after this long; doubles with every miss
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
-  behind_zone: [0.10, 0.04]   # another object up to this far towards the robot (x) and this close sideways (y) lies under the open thumb: it goes first (motion: 0 of 6 held)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 10.0  # and they must span this long: `done` earns nothing, a wrong one loses what is still on the counter (8 s of sim per episode)

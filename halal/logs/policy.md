@@ -145,7 +145,7 @@ Since v4 (state of the v16 tree; each item has its section below):
   home first, calibrate there.
 - Picks: order = least tried, kinds with a grasp of their own (`policy.last_kinds` go last), nearest its bin.
   Every detection of the look goes to the planner as an obstacle. A target waits when the plan it would get
-  alone would touch a neighbour, or when another object stands between it and the robot (`policy.behind_zone`).
+  alone would touch a neighbour.
   When no target is clear, the least tried one whose plan keeps its fingers furthest from the others goes,
   planned without obstacles. Obstacles change the order, never the grasp.
 - After an empty pick the nearest detection of that colour inherits the attempts (pushed objects); 5 picks per
@@ -360,17 +360,16 @@ furthest from the centre of any other object goes (motion's `digit_gap`; logged 
 planner: cubes 50 / 60 / 70 mm apart are picked with the fingers 23 / 33 / 42 mm from the neighbour; with one
 cube turned 30° the other cube is chosen (28 mm). Fake planner: clear first; all blocked: most room; a target
 already tried once waits for an untried one.
-One object behind another as seen from the robot (after v15). Motion's physics sweep: a pick planned with the
-obstacles left the neighbour untouched 26 of 26 times; planned blind, a neighbour 8 cm behind the target (between
-it and the robot) is where the open thumb comes down: 0 of 6 held, the neighbour moved or toppled. In the mock
-with the real planner the v15 tree picked the FAR object first in 7 of 8 pairs 7–8 cm apart in x: the planner
-finds the far pick clear (no refusal), refuses the near one at 7 cm (its fingers reach the far object) and the
-order prefers the object nearer its bin, which is the far one. Only at 6 cm, where both are refused, the
-most-room rule took the near one (4 of 4, 28 mm). Rule added: a target waits while another detection lies up to
-10 cm nearer the robot and within 4 cm sideways (`policy.behind_zone`; the zone is my reading of "behind", not
-motion's number). Same mock: near first in 12 of 12 pairs 6–8 cm apart; pairs 5 cm to the side are not touched
-by the rule. It is pairwise on purpose: ordering everything by x would send the cross-body cube of fixed seed
-1001 first again, the order that stacks.
+One object behind another as seen from the robot (checked after v15, nothing changed). Motion's sweep 19: a
+cube with a neighbour 8 cm behind it (where the open thumb comes down), planned blind: 0 of 6 held, neighbour hit;
+planned with the obstacles: 6 of 6, neighbour untouched (26 of 26 over all his cases). Mock, real planner, pairs
+6–8 cm apart in x: at 6 cm both objects are refused and the most-room rule takes the NEAR one (4 of 4, 28 mm);
+at 7–8 cm the far one usually goes first (7 of 8), with a plan the planner made with the obstacles and found
+clear, which is the case the sweep measured as safe. A rule "wait while another detection lies up to 10 cm
+nearer the robot and within 4 cm sideways" made the mock near-first in 12 of 12 and was taken out again: it can
+not fire in a sampled layout (the object band is 7 cm deep and objects are 8 cm apart, so a pair is never within
+4 cm sideways: 0 pairs in our 24 eval layouts), and "behind" is along the hand's heading, which only the planner
+knows. Ordering everything by x instead would bring back the order that stacks fixed seed 1001.
 
 ### Which class for a hand nobody calibrated (v13)
 Motion's table: a soft hand with stiff grasps holds 2 of 18, a stiff hand with soft grasps loses only triangles

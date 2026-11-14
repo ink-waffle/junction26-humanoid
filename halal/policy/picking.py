@@ -70,8 +70,7 @@ class PickChooser:
         unplannable: list[Target] = []
         waiting: list[Target] = []
         for target in sorted(targets, key=self._order):
-            behind = self._behind_another(target, obstacles)
-            pick, touching = (None, True) if behind else self._plan(target, start, obstacles)
+            pick, touching = self._plan(target, start, obstacles)
             if pick is not None:
                 return pick, unplannable
             (waiting if touching else unplannable).append(target)
@@ -86,12 +85,6 @@ class PickChooser:
             log.warning("no target is clear of its neighbours: picking %s as if it stood alone, fingers %.0f mm from the nearest",
                         pick.target, 1000 * self._room(pick, obstacles))
         return pick
-
-    def _behind_another(self, target: Target, obstacles: Obstacles) -> bool:
-        """Whether another object stands between the target and the robot, where the open thumb comes down: that one goes first."""
-        reach, width = self.settings["behind_zone"]
-        own = self.planner.motion["obstacles"]["radius"]
-        return any(own < target.xy[0] - top[0] <= reach and abs(target.xy[1] - top[1]) <= width for top in obstacles)
 
     def _room(self, pick: Pick, obstacles: Obstacles) -> float:
         """Smallest distance (m) between the pick's fingers, while they are down, and the centre of another object."""
