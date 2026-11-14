@@ -494,3 +494,36 @@ to the nearest inner wall when its bottom passes the rim (under 22.5 mm it touch
 Verdict: no wall incident in 48 releases at −2 cm, smallest margin over touching 5.5 mm. The −59 mm extreme is one
 release in about 160 on record (p5 −45 mm); at this slot it leaves the centre 6 mm inside the wall's inner face: the
 object scrapes the wall and falls inside. The release point stays; the bench takes `drop_shift` per variant.
+
+## Obstacles as outlines (offline; sim evidence: sweep 26, queued)
+
+`plan_pick(..., obstacles=...)` now takes detections as well as bare top points. A detection is kept off by its
+outline (square for a cube with a yaw, triangle with the apex along its yaw, circle of half its size for a cylinder;
+circle of `motion.obstacles.radius` when the shape or yaw is unknown or the prism is lying); digit centre lines, now
+sampled at five points per distal link, stay `finger_radius + margin` = 17 mm from it. Bare tops behave exactly as
+before (47 mm from the centre). Offline over 40 layouts (169 targets, every neighbour present): the blind first plan
+passes within 13 mm of a neighbour's true outline (touching) in 20 % of the picks; targets left without a plan: 17 %
+with bare tops, 12 % with detections; planning time unchanged (0.4 s mean, 4.6 s worst). The bench passes
+`avoid: footprint` and records the planned clearance to the neighbour's true outline (`neighbour_clear_mm`).
+Not yet used by the policy (it passes tops) and not yet measured in sim.
+
+## Objects close to a bin's near wall (offline; sim cell: sweep 27, queued)
+
+Policy episode: a cube that came to rest 3.2 cm (centre) before the centre bin was refused 47 times ("hand −0.4 cm
+above a bin rim during descend"). The preshaped fingers come down ~4 cm ahead of the object along the finger heading:
+with the fingers forward that is on the wall. The default hints do include an inward direction, but only as a weak
+preference (weight 0.3) that the IK does not follow there. Offline, cube at 2.5–5 cm before the walls, cage:
+
+| centre before the wall | default hints | fingers 90° inward, grasp point at 0.6 of the height | 90° outward, same |
+|---|---|---|---|
+| 5 cm | 4/6 (the rest plan at 60° inward) | | |
+| 4 cm | 0/6 | centre bin 5/5, side bins 0/5 (the IK flips the hand) | side bins 7/7 |
+| 3 cm | 0/6 | centre bin 5/5 | side bins 5/5, between the bins 0/2 |
+| 2.5 cm | 0/6 | centre bin 2/5 | 2/7 |
+
+At 90° the hand is tilted 22–36° (reach), so with the grasp point at mid-height the closed fingertips are 8–9 mm above
+the counter when the lift starts and the organiser's check (12 mm) refuses the plan; 4.5 mm higher it passes.
+Strategies can now fix their headings (`inward_headings_deg: [90, -90]`, tried in that order, not filtered by the
+natural-heading range; `_check_finger_yaw` rejects the one the arm cannot turn to). Not in the candidates yet: a
+tilted hand at that heading has never held an object in sim (sweep 27: `side` at the wall, `side_mid` in the middle
+of the table, `reference` = today's candidates).
