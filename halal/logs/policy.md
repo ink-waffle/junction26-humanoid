@@ -76,7 +76,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v16 | ae811fa244d1 | f58d8a4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 149) | v15 + main 99e1976: grasps keyed as motion keys them (`lying` passed through, strategy `cage_lying` = the unknown-shape hold for now); no change of behaviour intended: a repeat of v15's result, 87 of 87, no empty pick; soft sim 31/31, all picks held at the first try |
 | v17 | 2332657ddf0e | 3ebbf19 | +3.88 ± 0.78, 31/31 | 7 episodes: 25/25, stopped | – | – | PASS on the 15 episodes run | v16 + main a8d0b63 (`min_wall_height` 0.07, `cage_side` last candidate) + `Grasp.last_resort` kept out of the retry rotation; stopped for v18 (robot slot), contained in it |
 | v18 | b99fd5dd4a9f | e981865 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 134 with four sims running) | v17 + main 4d93acb (perception hardening, bin row finder) + perception's layout is the only layout (no scene-file re-plan, no latch); known leg on sim `d`; soft sim 31/31, 0 empty picks |
-| v19 | ede4203ebfb1 | 6216ebb | see below | | | | | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
+| v19 | ede4203ebfb1 | 6216ebb | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 115 at rtf 0.33–0.38) | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -654,3 +654,19 @@ Real-look sim, v18, boxes 6 cm farther: purple → centre objects never got a pl
 ran (silent since v16). v19 logs "no plan for <target>: no arm in use reaches the <bin> bin with a grasp";
 `motion.release_rise` is `[0.0, 0.03, 0.06, 0.09, 0.12]` (reach engineer) and main has the `reaches_bin` stale-inset
 fix. Mock at nominal: release points and pick durations unchanged.
+
+### v19 per leg (through the image, 14.11, 16:45–18:10 UTC; seeds 1000–1007; sim `a`, instance loaded: rtf 0.33–0.38)
+
+| Leg | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | "hand would touch" / as if alone | Layout source per look |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 125 | PASS | 0 | 3 / 1 | scene 177 of 177 |
+| known | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 118 | PASS | 0 | 7 / 2 | scene 174 of 174 |
+| unseen | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 115 | PASS | 0 | 7 / 2 | scene 174 of 174 |
+
+Grasps used: cage 70, cage_apex 42; no `cage_side`, pinch or lying grasp, no landing-box line, no "no arm reaches"
+line, no error line: with `release_rise` on and perception's 12 mm `agree_within` the nominal sim behaves as v18.
+Mock note for the version after v19 (main with perception's H11: on `nominal` the layout is the bins as seen): in the
+mock world with the boxes really 6 cm farther the mock shows no arms, the source is `nominal`; the v19 tree then
+releases at the file's x 0.463 (a cube on the counter in front of its box), the newer tree's detector puts the row at
+x 0.56 and the releases at 0.508–0.518. `far_bins.py` must not shift the layout itself on such a tree (`SEEN=1`
+in `far_one.py` uses the detector's own layout).
