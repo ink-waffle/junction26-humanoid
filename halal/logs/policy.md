@@ -83,7 +83,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | +3.88 ± 0.78, 31/31 | skipped (v24 contains v23) | +7.00 ± 1.41, 28/28 | – | PASS on the 16 episodes run (0 clips, ≥ 29.98 Hz, rt ≥ 165) | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 | v24 | e4869cbc1500 | 3d413a3 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 118; soft sim 31/31) | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
 | v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | see below | stopped (sims to the servo engineer) | 3 episodes: 11/11, stopped | – | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
-| v26 | 010977be9f6f | 52330d1 (= main ed2be04 + 9787d0f) | waiting for a sim | | | | pre-check pass (p50 6.6 ms) | v25 + shape memory by colour, forgotten where a pick starts, lying prisms keep their shape + broken targets left alone after 3 looks + motion 7a3a729 (`_depth` falls back to `unknown`) and f42568f (`ridge_skew15`, soft lying list) |
+| v26 | 010977be9f6f | 52330d1 (= main ed2be04 + 9787d0f) | +3.88 ± 0.78, 31/31 | +6.75 ± 0.97, 27/28 (jitter; seed 1002 rerun 5/5) | +7.00 ± 1.41, 28/28 | +21.13 | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 113; soft sim 31/31) | v25 + shape memory by colour, forgotten where a pick starts, lying prisms keep their shape + broken targets left alone after 3 looks + motion 7a3a729 (`_depth` falls back to `unknown`) and f42568f (`ridge_skew15`, soft lying list) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -873,3 +873,54 @@ behind `ridge_opposed`).
 
 Suites 36/36 (0 clips, tracebacks only where injected), `neighbours_e2e` 5/5, resting starts 24/24 objects in 6 episodes with the boxes at the file's place,
 frozen cases as v25.
+
+### v26 per leg (through the image, 14.11, from 21:08 UTC; seeds 1000–1007; one sim (b), rtf 0.46–0.50)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 175 | PASS | 0 | scene, bins scene 177 / 177 | cage 28, cage_apex 6 |
+| fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 173 | PASS | 0 | scene, bins scene 177 / 177 | cage 19, cage_apex 6, cage_deep 9 |
+| known | b | +6.75 ± 0.97 | 27/28, 1 counter | done 8 | 0 | 30.0 | 115 | PASS | 3 | scene, bins scene 176 / 176 | cage 21, cage_apex 18, pinch 1, ridge_opposed 1 |
+| unseen | b | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 114 | PASS | 0 | scene, bins scene 174 / 174 | cage 20, cage_apex 18, cage_deep 1 |
+| known, seed 1002 again | b | +10 | 5/5 | done | 0 | 30.0 | 144 | ok | 0 | scene | the blue triangle held at the first try |
+
+Known seed 1002 lost its blue triangle: the first pick (left arm, `cage_apex`, the same target and release as v12–v24 from
+the same first look) planned 11.2 s where every earlier version had 10.9–11.0 s and held; this time it closed on air and
+pushed the prism, the right arm's `cage` missed it too, it toppled, `ridge_opposed` missed, and the attempt cap left it
+(3 real picks counted as 5: see the next section). Not v26 code: planning that pick on the v24 and v26 trees over a 0–114°
+yaw sweep gives byte-identical results; the duration moves 0.2–0.3 s per 6° of detected yaw. Unseen seed 1002 (the same
+layout, the same sim, v26) and the rerun of known seed 1002 both planned it in 10.9 s and held it (0.095). Verdict: gate PASS
+on all 33 episodes, 0 frozen / left-alone / no-options lines; 86/87 by the letter (jitter), equal to v24 with the rerun.
+
+### Tries follow a pushed object without being counted twice (for v27, 4c70681)
+v26 known seed 1002: the blue triangle was picked three times (each miss pushed it 2-4 cm) and then left alone: the attempt
+cap counted 5. `Attempts.follow` copied the records of the missed spot to the new spot; the next spot of a 2-3 cm push saw
+the old records and the copies, so each push double counted. Now the records near the missed spot move to the new spot.
+Mock (scratch `p5/follow_pushes.py`: the policy's own `record_pick`, `_follow_missed` and `_targets` along push paths):
+
+| Path | real picks before (v26) | after |
+|---|---|---|
+| v26 known seed 1002 (0.305,0.071) -> (0.324,0.095) -> (0.284,0.101) -> (0.296,0.098) ... | 3 | 5 |
+| random walks, 200 each: pushes of 2 / 2.5 / 3 / 4 / 6 cm | short of 5 in 70 / 43 / 58 / 7 / 0 | 0 / 0 / 0 / 0 / 0 |
+
+Suites 36/36, `neighbours_e2e` 5/5, predecessors' `follow_chain` (1..6) and `follow_missed` (1 0 0) unchanged.
+
+### A target no arm reaches, and colours spoiled by a hand at home (for v27, afb2e9c)
+Realsim rs24-robot6edgefar-rest seed 1007: a yellow cube whose box stood 10 cm farther got "no arm in use reaches the left
+bin" 22 times and the policy looked again from home for 80 s; meanwhile a yellow cylinder next to the left hand read
+`None/cylinder c0.00` in all 23 home looks, so it was never a target and never earned the clear-view look. v27:
+- a target without any option (no arm in use reaches its bin, or building the options raised) is left alone after
+  `policy.broken_target_looks` (3) such looks, counted only on looks whose camera is fixed (`scene` / `hands`): the nominal
+  camera can put boxes centimetres too far and must not condemn a target the hand fit would make reachable;
+- after `policy.clear_look_every` (3) looks in a row from home without a plannable target, one look is taken with the arms out
+  of the way (counter reset by a pick or a clear look).
+
+| Mock (scratch `p5/unreachable.py`) | v26 tree | v27 tree |
+|---|---|---|
+| seed 11: red unreachable, blue colourless while the hands are home | yellow sorted; 64 looks "no plan", time limit; blue and red left | red left alone at 15.7 s, blue sorted from the clear look, `done` at 49 s |
+| seed 13: yellow unreachable, red colourless at home | 43 looks "no plan", time limit, both reds left | yellow left alone at 38.6 s, both reds sorted, `done` at 93 s |
+| seed 11: every plan for red refused (not optionless), blue colourless at home | 53 looks "no plan", blue left | clear look after 3 looks, blue sorted at 36 s, red refused to the time limit |
+
+Stock legs: "no plan for any of" appears in none of the v24–v26 stock legs and "no arm reaches" never: both rules are no-ops
+there. Suites 36/36 (one load-noisy case rerun alone: as before), `neighbours_e2e` 5/5, shape-memory and follow mocks as
+before.

@@ -29,7 +29,7 @@ class Look:
     outside: list[ObjectDetection]
     pick: Pick | None
     unplannable: list[Target]
-    broken: list[Target]        # of those, the ones whose grasp options could not even be built
+    broken: list[Target]        # of those, the ones without any option: no arm in use reaches the bin, or building the options raised
     unclear: int                # sortable objects seen too poorly to grasp from this view
     layout_source: str          # what fixed the camera: scene | hands | nominal (no reference found yet)
     bins_from: str              # where the bins come from: seen | kept | scene
@@ -117,7 +117,7 @@ class Looker:
             attempts.follow(missed.xy, nearest)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
-        """Confident detections with their clearest-seen shape (a lying prism keeps its own) that the instruction sends to a bin, with picks left and options that can be built."""
+        """Confident detections with their clearest-seen shape (a lying prism keeps its own) that the instruction sends to a bin, with picks left and not given up for lack of options."""
         targets = []
         for seen in detections:
             clearest = situation.shapes.clearest(seen.top[:2], seen.color, seen.shape, seen.visible)

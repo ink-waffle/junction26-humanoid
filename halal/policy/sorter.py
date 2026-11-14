@@ -97,6 +97,7 @@ class SortPolicy:
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
         self.unfitted_looks = 0   # looks that had a pick but only the nominal camera, while the hands could still fix it
+        self.unplanned_looks = 0  # looks in a row from home in which no target had a plan
 
     def act(self, obs: Mapping[str, Any]) -> Action:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
@@ -237,8 +238,7 @@ class SortPolicy:
             log.info("t=%.1f %d targets seen too poorly to grasp: looking with the arms out of the way", t, look.unclear)
             self.stage, self.next_view = Stage.MOVING, View.CLEAR
         elif look.pick is None and look.unplannable:
-            log.info("t=%.1f no plan for any of %d targets: looking again", t, len(look.unplannable))
-            self._pause(self.settings["replan_pause_s"])
+            self._look_again_unplanned(t, look)
         elif look.pick is None:
             self._nothing_to_pick(t, look)
         elif self.view is View.START and self.calibrator.missing:
@@ -257,6 +257,17 @@ class SortPolicy:
             self.stage = Stage.SERVO
         else:
             self._start_pick(look.pick, t)
+
+    def _look_again_unplanned(self, t: float, look: Look) -> None:
+        """No target has a plan: look again, every few such looks with the arms out of the way (an arm at home can spoil an object's colour)."""
+        self.unplanned_looks = 0 if self.view is View.CLEAR else self.unplanned_looks + 1
+        if self.unplanned_looks >= self.settings["clear_look_every"]:
+            log.info("t=%.1f no plan for any of %d targets in %d looks: looking with the arms out of the way", t,
+                     len(look.unplannable), self.unplanned_looks)
+            self.unplanned_looks, self.stage, self.next_view = 0, Stage.MOVING, View.CLEAR
+        else:
+            log.info("t=%.1f no plan for any of %d targets: looking again", t, len(look.unplannable))
+            self._pause(self.settings["replan_pause_s"])
 
     def _servo_step(self, obs: Mapping[str, Any], t: float) -> None:
         """The hand hovers beside its target: hold while the servo looks and replans, then pick from there (or go home and look again)."""
@@ -289,11 +300,11 @@ class SortPolicy:
         self.missed = None
         for target in look.unplannable:
             self.attempts.record_plan_failure(target.xy)
-        for target in look.broken:
+        counted = look.broken if look.layout_source != "nominal" else []   # the nominal camera can put objects and bins centimetres off
+        for target in counted:
             self.attempts.record_broken(target.xy)
             if self.attempts.broken(target.xy) == self.settings["broken_target_looks"]:
-                log.warning("t=%.1f %s is left alone: its grasp options could not be built in %d looks", t, target,
-                            self.settings["broken_target_looks"])
+                log.warning("t=%.1f %s is left alone: no grasp option for it in %d looks", t, target, self.settings["broken_target_looks"])
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
         seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};c{d.confidence:.2f};v{d.visible:.2f})"
@@ -324,7 +335,7 @@ class SortPolicy:
             self._settle()
 
     def _start_pick(self, pick: Pick, t: float) -> None:
-        self.empty_looks, self.empty_since = 0, math.inf
+        self.empty_looks, self.empty_since, self.unplanned_looks = 0, math.inf, 0
         self.attempts.record_pick(pick.target.xy)
         self.shapes.forget(pick.target.xy)
         self.tally.update(picks=1)
