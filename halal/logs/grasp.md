@@ -682,3 +682,34 @@ cases: 11/12 when the thumb follows, 9/16 when it stalls at −0.26.
 
 Verdict: `cage_deep` (cube 0.45) is the FIRST soft cube candidate, `cage` (0.30) the second. Not measured: 0.45 with a
 position error, and the soft 0.45 closure on a stiff hand (the soft 0.30 closure held 12/12 there, sweep 14).
+
+## Sweeps 28 and 20b (stock sim): soft closures on the stiff hand
+
+A stiff hand classified as soft gets the soft closure (fingers closing too, 4 rad/s²). DR as it comes (28), hard DR (20b).
+
+| soft closure on the stiff hand | binned |
+|---|---|
+| cube 0.45 (`cage_deep`) / cube 0.30 | 12/12 / 12/12 |
+| triangle, vertex-aligned, 0.40 / 0.50 / 0.60 | 12/12 each |
+| triangle 0.80 (today's soft depth; sweep 14, default hints) | 6/12 |
+
+Verdict: `cage_deep` is safe when the class is wrong. The soft triangle at 0.60 would suit both hands (stiff 12/12
+here, soft-hand sim 12/12 in sweep 17 with the policy's contact sum at 0.31, twice its threshold) where 0.80 loses
+half on a stiff hand; 0.80 has the larger soft sample (34/36). Not changed here: proposed to the coordinator.
+
+## Sweep 26 (stock sim): blind picks with a neighbour 80–95 mm ahead, planned clearance against what happened
+
+Cube, cylinder and triangle neighbours straight ahead of the target; `neighbour_clear_mm` = smallest planned distance
+from a digit centre line (below the neighbour's top, descend and close) to the neighbour's true outline. 27 picks had
+a finger come down beside the neighbour (the rest passed above it or the neighbour was not placed).
+
+| planned clearance | picks | neighbour moved (> 5 mm) or toppled |
+|---|---|---|
+| under 3.5 mm | 3 | 2 (36.7 mm and toppled at 1.4 mm; 6.8 mm at 3.2 mm; none at 1.1 mm beside a triangle's flat side) |
+| 3.9–13 mm | 13 | 0 (0.0–0.8 mm) |
+| over 13 mm | 11 | 0 |
+
+Every target was binned. Verdict: the fingertip taper makes the real contact distance about 4 mm from the centre
+line, not the 13 mm half-width of the link: the outline check's 17 mm (`finger_radius` + `margin`) is safe with
+room to spare, for neighbours AHEAD of the fingers. Not measured: neighbours beside the fingers or under the thumb,
+so the numbers stay. Sweep 21 (touching cubes, soft) crashed at its first episode ("episode is over") and has no data.
