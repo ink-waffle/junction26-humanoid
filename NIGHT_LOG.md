@@ -6,6 +6,15 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 23:00
+- **Hand-in candidate: v24** (amd64 `sha256:e4869cbc15002be99625e5dd8a8c5732ce8d2b5a59cecb36a736cf905e3c166d`, `:v24-multi`
+  `sha256:1f52f8a6…`): stock 87/87, gate PASS 24/24, soft 31/31. = v22 + frozen head image stops picks, kept box row,
+  warm split guard, turned starts, outline log, and no first pick on the nominal camera while the hand fit can still
+  come (realsim resting start: v22/v23 made one blind pick per episode, v24 waits and picks on the fitted camera).
+- Next: v25 (frozen image also caught from home), v26 (shape memory and squeeze-map fix for fallen prisms, skewed
+  ridge grasp for the reach hole at the counter edge), and a switchable closed-loop grasp correction
+  (`policy.grasp_feedback` open | measure | servo) for the second live robot test.
+
 ### Sat 14.11, 21:45
 - **Hand-in candidate: v22** (`sha256:cb81d93c…`, `:v22-multi` `sha256:e4cf710e…`): stock 87/87, gate 24/24, soft 31/31. Built and pre-checked since: **v22** (`:v22-multi` `sha256:e4cf710e…`; amd64
   `sha256:cb81d93c…`) = v21 + hands resting on the counter leave it first (by way of the clear-view pose if needed),
