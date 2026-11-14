@@ -113,10 +113,21 @@ def liner_boxes(scene_cfg: ModuleType, cfg: dict) -> dict[str, Any]:
     return out
 
 
+def cut_near_edge(counter: Any, near_x: float) -> None:
+    """Shorten the counter box on the robot's side so that its near edge lies at pelvis x `near_x`."""
+    x, y, z = counter.init_state.pos
+    depth, width, thickness = counter.spawn.size
+    far = x + depth / 2
+    counter.init_state.pos = ((near_x + far) / 2, y, z)
+    counter.spawn.size = (far - near_x, width, thickness)
+
+
 def bare_table(fixed: dict[str, Any], cfg: dict) -> dict[str, Any]:
-    """The fixed scene entities without the printed mat, the counter painted as the real table."""
+    """The fixed scene entities without the printed mat, the counter painted as the real table, its near edge moved if asked."""
     material = fixed["counter"].spawn.visual_material
     material.diffuse_color, material.roughness = tuple(c / 255.0 for c in cfg["rgb"]), cfg["roughness"]
+    if cfg.get("near_edge_x") is not None:
+        cut_near_edge(fixed["counter"], cfg["near_edge_x"])
     return {name: entity for name, entity in fixed.items() if name != "mat"}
 
 

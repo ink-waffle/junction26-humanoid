@@ -21,6 +21,7 @@ boxes:
 table:                             # bare glossy table instead of the printed grid mat
   rgb: [165, 160, 155]
   roughness: 0.3
+  near_edge_x: null                # pelvis x of the counter's near edge; null = the scene file's (0.09). Forearms of a resting start hang in front of it
 
 offsets:                           # pelvis frame, metres, added to the scene file's placement
   counter: [0.0, 0.0, 0.01]        # counter, mat, objects and boxes together (real: z +0.00 to +0.02)
