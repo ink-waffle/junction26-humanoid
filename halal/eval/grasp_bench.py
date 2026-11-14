@@ -6,7 +6,7 @@ Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), arms (2 | 1 at
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
-`repeats`, `squeeze`, `candidates`, `overrides`
+`repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
@@ -37,7 +37,7 @@ from aaltonomous.sim.scene_client import SceneClient
 
 from halal import config
 from halal.motion import Grasp, PickPlanner, candidate_grasps
-from halal.motion.grasps import right_hand, strategy_grasps
+from halal.motion.grasps import for_hand, right_hand, strategy_grasps
 from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
@@ -212,10 +212,11 @@ class Bench:
     def _plan(self, case: Case, detection: ObjectDetection) -> tuple[Grasp | None, Plan]:
         """First of the variant's grasps (one, or the policy's candidate list) that plans."""
         variant, planner = self.spec["variants"][case.variant], self.planners[case.variant]
+        hand = variant.get("hand", "stiff")
         if variant.get("candidates"):
-            grasps = candidate_grasps(detection.shape, detection.yaw, case.side)
+            grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand)
         else:
-            params = {**config.load()["motion"]["grasps"].get(variant.get("base"), {}), **variant}
+            params = {**for_hand(config.load()["motion"]["grasps"].get(variant.get("base"), {}), hand), **variant}
             grasps = strategy_grasps(case.variant, params, detection.shape, detection.yaw, case.side)
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
