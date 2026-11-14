@@ -528,7 +528,7 @@ natural-heading range; `_check_finger_yaw` rejects the one the arm cannot turn t
 tilted hand at that heading has never held an object in sim (sweep 27: `side` at the wall, `side_mid` in the middle
 of the table, `reference` = today's candidates).
 
-## Sweep 23: prisms lying on a rectangular side (in progress)
+## Sweep 23: prisms lying on a rectangular side (23a, 23b; 23d / 23e queued)
 
 Why: on the real table the foam prism lies on a side in most first frames, and in sim a triangle toppled by a failed
 grasp lies the same way. Perception reports it as `shape="triangle", lying=True`, yaw = ridge direction, top = ridge
@@ -544,23 +544,24 @@ mid-height, narrower than the 40 mm between the fingertips, so a centred cage st
 45 mm long sloped faces span the fingertips like a cube face, but they lean 30° inward: the squeeze pushes the roof
 down and the fingers up the slope, friction only (needs µ > 0.58).
 
-Lying and planned picks, 23a = soft-hand sim (smoke), 23b = stock sim (56 of 80 picks when this was written; the rest
-and sweeps 23d / 23e, from x 0.29 on both sims, are in `runs/grasp/` on the instance):
+Lying and planned picks, 23a = soft-hand sim (smoke), 23b = stock sim (78 of 80 picks; sweeps 23d / 23e,
+from x 0.29 on both sims, are queued and land in `runs/grasp/` on the instance):
 
 | grasp | stock | soft | what happens |
 |---|---|---|---|
-| unknown-shape cage, default hints, 0.75 (the policy's fallback, `cage_lying`) | 1/3 | | |
-| cage along the ridge, 0.30 | 0/3 | 0/3 | grip signal 0.00–0.19: the fingers straddle the end face |
-| organiser pinch along the ridge | 0/3 | | grip signal 0 |
-| cage across the ridge, 0.45 / 0.60 / 0.60 with the grasp point at 0.4 of the height / 0.80 | 0/2, 0/0, 0/2, 1/1 | 0/2 at 0.60 | soft: grip reads firm (0.25–0.33), the roof stays on the counter |
-| pinch along the ridge, thumb swung opposite one finger (`thumb_0` −0.63), 0.30 | 1/3 | | |
-| the same with the grasp point at 0.4 of the height | 2/3 | | |
-| the same with the thumb at half its swing (−0.315) | 1/2 | | |
+| unknown-shape cage, default hints, 0.75 (the policy's fallback, `cage_lying`) | 1/5 | | |
+| cage along the ridge, 0.30 | 0/4 | 0/3 | grip signal 0.00–0.19: the fingers straddle the end face |
+| organiser pinch along the ridge | 0/4 | | grip signal 0 |
+| cage across the ridge, 0.45 / 0.60 / 0.60 with the grasp point at 0.4 of the height / 0.80 | 0/2, 1/1, 0/3, 2/2 | 0/2 at 0.60 | soft: grip reads firm (0.25–0.33), the roof stays on the counter |
+| pinch along the ridge, thumb swung opposite one finger (`thumb_0` −0.63), 0.30 | 2/5 | | |
+| the same with the grasp point at 0.4 of the height | 4/5 | | |
+| the same with the thumb at half its swing (−0.315) | 2/3 | | |
 
 The opposed pinch: object under one finger (`point_in_palm` z 0.0285), preshape `[-0.63, -0.5, 1.5, -0.4 x4]`, closed
 `[-0.63, 0.1, 1.01, -1.0, -0.6, -1.0, -0.6]` (thumb tip at palm x 65 mm, z 28.5 mm), squeeze axis
 `[0.46, 1.0, -1.23, 0, 0, 0, 0]` (46 mm per rad at constant height and z).
 
-Verdict so far: nothing holds a lying prism reliably; the opposed pinch is the only family that holds at all (4 of 8)
-and it depends on `thumb_0`, which on the real hand did not follow below −0.26 in one of the organisers' recordings.
+Verdict so far: nothing is confirmed (n ≤ 5 per cell). The opposed pinch holds 8 of 13 over its three variants, best
+with the lower grasp point (4/5); across the ridge only the deepest closure held (0.80: 2/2, shallower 1/6). The
+opposed pinch depends on `thumb_0`, which on the real hand did not follow below −0.26 in one of the organisers' recordings.
 `candidate_grasps(..., lying=True)` therefore still returns the unknown-shape cage.
