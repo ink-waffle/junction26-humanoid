@@ -49,7 +49,7 @@ def plane_row(frame: Frame, plane: PlaneFit | None, nominal: Camera, surface: np
 def hands_row(frame: Frame, calibration: SelfCalibration, nominal: Camera, plane: PlaneFit | None, band: np.ndarray) -> Row:
     """The hand fit of one look: every check by name, whether it is believed, and how far it puts the object band off."""
     obs = frame.obs
-    fit = calibration.hands.fit(obs["head_depth"], nominal, obs["arm_q"], obs["hand_q"], plane, calibration.band[-1])
+    fit = calibration.hand_fit(obs["head_depth"], nominal, (obs["arm_q"], obs["hand_q"]), plane)
     if fit is None:
         return {"hands_fit": False, "hands_ok": False}
     checks, (turn, shift) = calibration.hand_checks(fit, nominal), calibration.displacement(fit, nominal)

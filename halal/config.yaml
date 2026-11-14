@@ -40,6 +40,11 @@ perception:
         - [0.0, -0.015, 0.0]
         - [0.0, 0.0, 0.015]
         - [0.0, 0.0, -0.015]
+      turned_starts:          # camera turns (rotation vector, pelvis frame, rad), tried only when no shifted start gave a believable fit:
+        - [0.0, 0.052, 0.0]   # pitch +-3 and +-6 deg (pelvis y is the optical x axis); low hands under a +3 deg head error lie beyond
+        - [0.0, -0.052, 0.0]  # the shifts' reach (lowhands, typical: 2 of 20 believed), +-3 alone gets 12 of 20, with +-6 all 20
+        - [0.0, 0.105, 0.0]
+        - [0.0, -0.105, 0.0]
       settled_coverage: 0.8   # a result with depth on this share of the visible model needs no further start
       min_points: 300
       min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible
@@ -169,11 +174,17 @@ perception:
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
       grey_chroma: 0.15       # a bare counter whose median colour has more chroma is not grey and not balanced on: wood 0.20 to 0.32, sim mat 0.09 at most, drop 2 0.10
+  outline:                    # the black hands in the head RGB against their FK model (halal.perception.outline): logged, not used
+    dark_value: 60            # image value (0..255) below which a pixel is dark: the black Dex3 links (real hand 43; sim often brighter)
+    black_parts: [hand_palm_link, thumb_0_link, thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
+    min_points: 60            # visible black model points a hand needs to be judged
+    clip_px: 40               # a model point further than this from any dark pixel counts as this far
+    reach_px: 60              # image shifts tried, either way (60 px is about 5.7 deg) ...
+    step_px: 4                # ... first in steps of this, then every pixel around the best
   replay:                     # halal.eval.real_replay: a runner export through the perception chain
     still_s: 0.1              # a look: every joint where it stood this long ago ...
     still_tolerance: 0.02     # ... within this (rad) ...
     look_interval_s: 1.0      # ... and no sooner after the previous look than this
-    dark_value: 60            # image value (0..255) below which a pixel is dark: the black Dex3 links
     box_pad_px: 15            # around the arm model's image box, where dark pixels are counted
     on_model: 0.008           # depth this close to a model point is depth on the model
     parts:                    # arm parts by link name ending, for the share of each that returned depth
@@ -181,12 +192,7 @@ perception:
       palm: [hand_palm_link, thumb_0_link]
       wrist: [wrist_roll_link, wrist_pitch_link, wrist_yaw_link]
       forearm: [elbow_link]
-    black_parts: [hand_palm_link, thumb_0_link, thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
     levels: {mild: 0.6, typical: 0.2, bad: 0.0}   # least share of dark arm pixels with depth for each level of bench.d435, best first
-    outline_clip_px: 40       # RGB only: a model point further than this from any dark pixel counts as this far
-    shift_reach_px: 60        # image shifts tried for the outline, either way ...
-    shift_step_px: 4          # ... in steps of this
-    min_outline_points: 60    # visible model points of the black links needed to judge the outline
     table_chroma: 0.15        # RGB only: pixels paler than this ...
     table_value: 110          # ... and brighter than this are the table: the white reference
     blob_px: [400, 14000]     # RGB only: size of a colour blob that may be an object

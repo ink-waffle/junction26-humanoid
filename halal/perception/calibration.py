@@ -92,7 +92,7 @@ class SelfCalibration:
         return plane if plane.inliers >= c["min_points"] and plane.rms <= c["max_rms"] else None
 
     def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> HandFit | None:
-        fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
+        fit = self.hand_fit(depth, camera, joints, floor)
         if fit is None:
             LOG.info("arms: too little of them in view")
             return None
@@ -102,6 +102,16 @@ class SelfCalibration:
                  fit.coverage, fit.known, fit.clear, fit.visible, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
                  "trusted" if all(checks.values()) else f"rejected {checks}")
         return fit if all(checks.values()) else None
+
+    def hand_fit(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> HandFit | None:
+        """The hand fit from the shifted starts; only when it is not believable, the one from the turned starts if that one is."""
+        fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
+        if fit is None or all(self.hand_checks(fit, camera).values()):
+            return fit
+        turned = self.hands.fit(depth, camera, *joints, floor, self.band[-1], turned=True)
+        believed = turned is not None and all(self.hand_checks(turned, camera).values())
+        LOG.info("arms: no shifted start gave a believable fit, a turned start %s", "did" if believed else "did not either")
+        return turned if believed else fit
 
     @staticmethod
     def displacement(fit: HandFit, start: Camera) -> tuple[float, float]:

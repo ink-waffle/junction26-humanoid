@@ -17,6 +17,7 @@ from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier, chromas
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
 from halal.perception.hands import HandFit
+from halal.perception.outline import HandOutline
 from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
@@ -41,6 +42,7 @@ class TopFaceDetector:
         self.scene = Scene.load()
         self.nominal = Camera.head()
         self.calibration = SelfCalibration(self.scene, cfg["calibration"])
+        self.outline = HandOutline(cfg["outline"], self.calibration.hands)
         self.bins = BinFinder(self.scene, cfg["bins"])
         self.fitter = OutlineFitter(self.scene, self.cfg["outline"])
         self.colors = ColorClassifier(self.cfg["color"])
@@ -116,8 +118,19 @@ class TopFaceDetector:
         if not still or full or self.arm_attempts >= self.cfg["arm_attempts"]:
             return anchor, self.arm_fits
         self.arm_attempts += 1
+        self._log_outline(obs)
         fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
         return anchor, self.arm_fits + ([] if fit is None else [fit])
+
+    def _log_outline(self, obs: Mapping[str, Any]) -> None:
+        """Log how far the nominal camera puts each black hand from its dark pixels in the colour image: the head error, depth or not."""
+        hands = self.outline.fit(obs["head_rgb"], self.nominal, obs["arm_q"], obs["hand_q"])
+        focal = float(self.nominal.K[0, 0])
+        seen = [f"{side} shift ({o.shift[0]:+d}, {o.shift[1]:+d}) px = {np.degrees(np.arctan(np.hypot(*o.shift) / focal)):.1f} deg, on dark "
+                f"{o.on_dark:.2f} -> {o.shifted_on_dark:.2f}, {o.residual_px:.1f} -> {o.shifted_px:.1f} px off, {o.points} points" for side, o in hands.items()]
+        if len(hands) == 2:
+            seen.append(f"hands disagree by {np.hypot(*np.subtract(hands['left'].shift, hands['right'].shift)):.0f} px")
+        LOG.info("outline: %s", "; ".join(seen) or "no black hand in view")
 
     def _still(self, obs: Mapping[str, Any], t: float) -> bool:
         """True when arms and fingers stand where an earlier look of this episode saw them: their image shows the joints."""
