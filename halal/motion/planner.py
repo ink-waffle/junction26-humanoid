@@ -22,6 +22,7 @@ from halal.motion.obstacles import distance, outline, top_of
 from halal.perception import SceneLayout
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
+SIDES = ("left", "right")
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
 HELD_PHASES = ("lift", "carry")
@@ -67,7 +68,7 @@ class PickPlanner(Planner):
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
-            releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name)
+            releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name, det)
             tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
             for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
                 if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, releases[0][0])):
@@ -208,14 +209,29 @@ class PickPlanner(Planner):
         cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"], seen)
         return Scene(cfg)
 
-    def reaches_bin(self, side: str, bin_name: str) -> bool:
-        """Whether this arm can hold the grasp point over one of the bin's release points."""
-        return bool(self._reachable_releases(side, bin_name))
+    def reaches_bin(self, side: str, bin_name: str, det: Any = None) -> bool:
+        """Whether this arm can hold the grasp point over one of the bin's release points (those for this object, when given)."""
+        return bool(self._reachable_releases(side, bin_name, det))
 
-    def _reachable_releases(self, side: str, bin_name: str) -> list[tuple[float, float]]:
-        """(distance from the bin's near wall, release rise) pairs this arm reaches: distances largest first, each at its lowest rise."""
-        rises = {inset: self._lowest_rise(side, bin_name, inset) for inset in self.motion["drop_inset"]["near"]}
+    def _reachable_releases(self, side: str, bin_name: str, det: Any) -> list[tuple[float, float]]:
+        """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first; the rim insets instead for an object that may go in over the rim of a bin beyond both arms' reach."""
+        insets = self.motion["drop_inset"]
+        if self._may_go_over_rim(det) and self._beyond_reach(bin_name):
+            return self._reached(side, bin_name, insets["rim"]["near"])
+        return self._reached(side, bin_name, insets["near"])
+
+    def _reached(self, side: str, bin_name: str, insets: Sequence[float]) -> list[tuple[float, float]]:
+        """The insets this arm reaches, each with its lowest rise."""
+        rises = {inset: self._lowest_rise(side, bin_name, inset) for inset in insets}
         return [(inset, rise) for inset, rise in rises.items() if rise is not None]
+
+    def _may_go_over_rim(self, det: Any) -> bool:
+        """Whether the object is an upright shape that rolls or slides into the bin from a release on its near rim."""
+        return det is not None and not det.lying and det.shape in self.motion["drop_inset"]["rim"]["shapes"]
+
+    def _beyond_reach(self, bin_name: str) -> bool:
+        """Whether neither arm reaches any of the bin's `near` insets."""
+        return not any(self._reached(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
 
     def _lowest_rise(self, side: str, bin_name: str, inset: float) -> float | None:
         """The lowest configured rise from which this arm reaches that release point (reach grows with the height); None if the highest does not."""

@@ -14,8 +14,9 @@ from halal import config
 from halal.perception import ObjectDetection, SceneLayout, scene_layout
 from halal.perception.bins import BinFinder
 from halal.perception.calibration import CameraFit, SelfCalibration
-from halal.perception.color import ColorClassifier
+from halal.perception.color import ColorClassifier, chromas
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
+from halal.perception.hands import HandFit
 from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
@@ -51,9 +52,10 @@ class TopFaceDetector:
     def _forget(self) -> None:
         """Drop what earlier looks established: a new episode has its own camera pose and scene."""
         self.anchor: Camera | None = None
-        self.arm_fits: list[Camera] = []
+        self.arm_fits: list[HandFit] = []
         self.arm_attempts = 0
         self.split: float | None = None
+        self.grey: bool | None = None
         self.last_t = -np.inf
         self.last_joints: np.ndarray | None = None
 
@@ -81,7 +83,7 @@ class TopFaceDetector:
         height = counter.height(cloud)
         free = self._on_counter(cloud)
         bare = rgb[self._bare_counter(cloud, height)]
-        gains = self.colors.white_balance(bare)
+        gains = self._balance(bare)
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
         drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains, bare) for face in faces]
         solid = [face for face, draft in zip(faces, drafts) if not self._yields(draft)]
@@ -93,14 +95,25 @@ class TopFaceDetector:
             self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
         return found
 
-    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[Camera]]:
-        """This look's scene anchor, and the episode's believed arm poses: those kept by looks with objects, plus this look's."""
+    def _balance(self, bare: np.ndarray) -> np.ndarray:
+        """White-balance gains from the bare counter's pixels; the log says when the looks of an episode start or stop finding it grey."""
+        colour = np.median(bare, axis=0) if len(bare) else None
+        grey = colour is not None and self.colors.grey(colour)
+        if grey != self.grey:
+            seen = "not seen" if colour is None else f"RGB {colour.astype(int).tolist()}, chroma {float(chromas(colour)):.2f}"
+            LOG.info("bare counter %s: %s", seen, "grey, colours white-balanced on it" if grey else "not grey, colours as the camera gives them")
+            self.grey = grey
+        return self.colors.white_balance(bare)
+
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[HandFit]]:
+        """This look's scene anchor, and the episode's believed arm fits: those kept by looks with objects, plus this look's."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
             self._forget()
         still = self._still(obs, t)
         anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
-        if not still or len(self.arm_fits) >= self.cfg["arm_fits"] or self.arm_attempts >= self.cfg["arm_attempts"]:
+        full = sum(self.calibration.clear(fit) for fit in self.arm_fits) >= self.cfg["arm_fits"]
+        if not still or full or self.arm_attempts >= self.cfg["arm_attempts"]:
             return anchor, self.arm_fits
         self.arm_attempts += 1
         fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
