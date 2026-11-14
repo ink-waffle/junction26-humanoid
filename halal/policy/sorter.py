@@ -5,28 +5,26 @@ import enum
 import logging
 import math
 from collections import Counter
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping
+from dataclasses import dataclass
+from typing import Any, Mapping
 
 import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan
 
 from halal.motion import PickPlanner
-from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
-from halal.policy.area import ObjectArea
-from halal.policy.background import Background, Cancelled
+from halal.perception import Detector
+from halal.policy.background import Background
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
 from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, phase
 from halal.policy.hands import HandCalibrator
+from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
-from halal.policy.picking import Pick, PickChooser, Target
-from halal.policy.release import ReleaseSlots
+from halal.policy.picking import Pick
 from halal.policy.transit import checked_move
 
 log = logging.getLogger(__name__)
 HZ = 30.0
-BinFor = Callable[[str, str | None], str | None]
 
 
 class View(enum.Enum):
@@ -40,35 +38,6 @@ class Stage(enum.Enum):
     LOOKING = enum.auto()       # perception and planning run in the background
     WAITING = enum.auto()       # the next pick does not fit into the remaining time
     DONE = enum.auto()
-
-
-@dataclass(frozen=True)
-class Look:
-    """Result of one look: what was seen, what cannot be an object, the next pick and the targets without a plan."""
-    detections: list[ObjectDetection]
-    outside: list[ObjectDetection]
-    pick: Pick | None
-    unplannable: list[Target]
-    unclear: int                # sortable objects seen too poorly to grasp from this view
-    layout_source: str
-    layout_rejected: bool       # the perceived layout allowed no plan at all and the scene file's was used instead
-    primer: bool                # nothing was planned: the frame only went to the detector
-
-
-@dataclass(frozen=True)
-class Situation:
-    """What a look plans from: the pose the pick starts in, the view, and the episode's mapping, memory and layout choice."""
-    arm_q: np.ndarray
-    hand_q: np.ndarray
-    clear_view: bool
-    bin_for: BinFor
-    attempts: Attempts
-    shapes: Shapes
-    released: Mapping[str, int]
-    blocked: frozenset[str]     # arms whose hand could not let go of an object: not used again this episode
-    file_layout: bool
-    hands_pending: bool         # a calibration close is running: plan only once the hands are known
-    primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
 
 
 @dataclass
@@ -91,13 +60,12 @@ def leave_everything(color: str, shape: str | None) -> None:
 class SortPolicy:
     def __init__(self, detector: Detector, planner: PickPlanner, clear_pose: np.ndarray, settings: Mapping[str, Any],
                  time_limit: float) -> None:
-        self.detector, self.planner, self.settings = detector, planner, settings
+        self.planner, self.settings = planner, settings
         self.view_poses = {View.HOME: planner.home, View.CLEAR: np.asarray(clear_pose, float)}
         self.episode_s = time_limit
-        self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
-        self.file_layout = scene_layout(planner.scene)
-        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["retry_offsets"])
         self.calibrator = HandCalibrator(planner, settings)
+        self.looker = Looker(detector, planner, self.calibrator, settings)
+        self.file_layout = self.looker.file_layout
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.reset(leave_everything)
@@ -213,54 +181,12 @@ class SortPolicy:
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
-                              self.shapes, dict(self.released), frozenset(self.blocked), self.use_file_layout,
-                              calibrate, primer)
-        self.jobs.submit(lambda cancelled: self._look(obs, situation, cancelled))
+                              self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
+                              self.use_file_layout, calibrate, primer)
+        self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
         self.stage = Stage.LOOKING
-
-    def _look(self, obs: Mapping[str, Any], situation: Situation, cancelled: Cancelled) -> Look | None:
-        """Background job: detect and plan the next pick; None when a head image has not arrived."""
-        if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
-            return None
-        detections = self.detector.detect(obs)
-        if situation.primer:
-            return Look(detections, [], None, [], 0, self.detector.layout().source, False, True)
-        if situation.hands_pending:
-            self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
-        seen = self.file_layout if situation.file_layout else self.detector.layout()
-        look = self._plan(seen, detections, situation, cancelled)
-        rejected = len(look.unplannable) + len(look.outside)
-        if look.pick is None and rejected and seen.source != self.file_layout.source:
-            log.warning("the perceived layout leaves no pick among %d detections: trying the scene file's", rejected)
-            return replace(self._plan(self.file_layout, detections, situation, cancelled), layout_rejected=True)
-        return look
-
-    def _plan(self, layout: SceneLayout, detections: list[ObjectDetection], situation: Situation,
-              cancelled: Cancelled) -> Look:
-        """The sortable targets and the next pick with counter and bins where `layout` has them."""
-        self.planner.set_layout(layout)
-        inside = [det for det in detections if self.area.contains(det.top[:2], layout.bins)]
-        outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
-        targets = self._targets(inside, situation)
-        clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
-        deeper = {side: self.settings["deeper_squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
-        pick, unplannable = self.chooser.choose(clear, situation.released, deeper, situation.blocked, situation.arm_q,
-                                                situation.hand_q, cancelled)
-        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
-
-    def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
-        """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
-        targets = []
-        for seen in detections:
-            det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
-            sure = det.confidence >= self.settings["min_detection_confidence"]
-            bin_name = situation.bin_for(det.color, det.shape) if sure else None
-            limit = self.settings["max_attempts"] if det.visible > 0 else self.settings["blob_attempts"]
-            if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
-                targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
-        return targets
 
     def _finish_look(self, t: float) -> None:
         job = self.jobs.poll()
@@ -341,8 +267,6 @@ class SortPolicy:
         self.active = ActivePick(pick, window)
         if window is None:
             self.stream.load(pick.plan.arm, pick.plan.hand)
-        elif pick.depth < self.settings["release_check_squeeze"]:
-            self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS])
         else:
             self._load_with_release_check(pick.plan, window)
         self.stage, self.next_view = Stage.MOVING, View.HOME
@@ -351,17 +275,19 @@ class SortPolicy:
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
 
     def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:
-        """Queue the pick with one more close of the hand after the retreat, arm still above the bin."""
-        active, stream, at = self.active, self.stream, phase(plan, "retreat")[1]
-        check = self._release_check(plan.arm[at - 1], plan.hand[at - 1], window, open_s=0.0)
-        active.check_tick, active.checks_left = at + check.read_tick, self.settings["release_checks"] - 1
-        active.tail = (plan.arm[at:], plan.hand[at:])
-        stream.load(np.vstack([plan.arm[:at], check.arm, plan.arm[at:]]), np.vstack([plan.hand[:at], check.hand, plan.hand[at:]]),
+        """Queue the pick with one more close of the hand above the bin; it starts while the arm retreats."""
+        active, stream, (start, end) = self.active, self.stream, phase(plan, "retreat")
+        check = self._release_check(plan.arm[end - 1], plan.hand[start - 1], window, open_s=0.0)
+        arm = np.vstack([plan.arm[start:end], check.arm[end - start:]])
+        active.check_tick, active.checks_left = start + check.read_tick, self.settings["release_checks"] - 1
+        active.tail = (plan.arm[end:], plan.hand[end:])
+        stream.load(np.vstack([plan.arm[:start], arm, plan.arm[end:]]), np.vstack([plan.hand[:start], check.hand, plan.hand[end:]]),
                     cuts=[window.first_tick + OBS_LAG_TICKS, active.check_tick + OBS_LAG_TICKS])
 
     def _release_check(self, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_s: float) -> ReleaseCheck:
         return ReleaseCheck.after(arm_q, hand_q, window, round(open_s * HZ), self._grip_settle_ticks,
-                                  self.planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
+                                  round(self.settings["reopen_stagger_s"] * HZ), self.planner.cfg["motion"]["hand_max_vel"],
+                                  1.0 / HZ)
 
     def _check_release(self, obs: Mapping[str, Any], t: float) -> None:
         """The hand has closed again after letting go: if it still holds something, open and close once more, then give the arm up."""

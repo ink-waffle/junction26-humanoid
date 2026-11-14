@@ -63,7 +63,9 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v3 | c6a50633cd73 | e7934c6 | +3.62 ± 0.48, 29/31 | – | – | – | PASS (through the image) | cage grasps; camera calibrated on a pre-reset frame; language legs skipped in favour of v4 |
 | v4 | 994a14f7b199 | e3f9687 | +3.62 ± 0.70, 29/31 | +6.38 ± 1.87, 26/28 (1 wrong bin) | +6.50 ± 1.94, 26/28 | **+19.75** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 166; exact hand-in path `evaluate --container`: 8/8 in 2 episodes, rt 176) | start settle, visibility rule, clear looks before `done`; 16/16 instructions parsed; 4 of its 6 lost objects stayed in a hand that did not let go, 2 triangles toppled by a failed grasp |
 | v5 | 5a4d3187fcf0 | fe03f4c | – | – | – | – | pre-check only | superseded by v6 before it ran |
-| v6 | ec29a3c0ad75 | 58573f1 | running | running | queued | – | pre-check pass | v4 + perception 47e63f3 (anchor refit at every look, two still looks at the start, colour confidence 0.5, one pick for an unclaimed blob) + release check + motion 44bc3a4 (soft squeeze = grasp depth + 0.45, grip score on thumb_1 and finger_0) + retries keep the shape's depth |
+| v6 | ec29a3c0ad75 | 58573f1 | – | 6/6, 6/6 then stopped | – | – | pre-check pass | v4 + perception 47e63f3 + release check after grasps deeper than 0.6 + motion 44bc3a4; replaced after 5 min: v4's unseen leg had a cube wedge at depth 0.30 |
+| v7 | 5a8d69474d2e | 88aacba | 3/3, 5/5 then stopped | 2/3, 2/3 then stopped | – | – | pre-check pass | release check after every grasp; the check found a triangle still in the hand in both known episodes (0.096, like its carry score) and three plain reopenings did not free it: arm retired with the object in it |
+| v8 | 550b70a8b003 | 2a1155c | running | running | queued | – | pre-check pass | v7 + staggered reopening after the check's close + hand-aware grasps (`candidate_grasps(hand=...)`) |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -176,4 +178,11 @@ What (v6): after a grasp deeper than 0.6 rad the hand closes once more at the re
 grip score is read and the hand reopens: an open-close-open cycle with a verdict. Still holding → the cycle is
 repeated (3 closes at most), then the arm is not used again in the episode. A retry keeps the detected shape's
 depth (the unknown-shape depth only for `shape=None`) and varies arm, grasp and a 5 mm offset instead.
-Verdict: pending v6.
+v7 (first two episodes of the known leg): the close above the bin read 0.096, 0.096, 0.097 for a triangle whose
+carry score was 0.095, twice in two episodes that v4 had sorted 3/3: after a plain opening the triangle still
+sits in the cage 1.3 s later; v4 let the move home shake it out (mostly into the bin), v7's check re-closed on it,
+could not release it with three plain reopenings and retired the arm with the object in it (0 instead of +2, but
+no −1). So the check sees the problem and plain reopening is no remedy.
+v8: the reopening after such a close starts one finger 0.25 s late (`policy.reopen_stagger_s`, the motion
+engineer's finding: staggered opening took wedged-in-hand from 16/24 to 0/24 in his sweep).
+Verdict: pending v8.
