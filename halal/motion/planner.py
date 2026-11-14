@@ -15,6 +15,7 @@ from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
 from halal import config
+from halal.motion import sequence
 from halal.motion.grasps import Grasp, right_hand
 from halal.perception import SceneLayout
 
@@ -26,6 +27,7 @@ BIN_PHASES = ("carry", "lower", "retreat")
 class PickPlanner(Planner):
     drop_shift = np.zeros(2)
     near_inset = 0.0
+    low = False
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -35,19 +37,33 @@ class PickPlanner(Planner):
 
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
-                  place_xy: tuple[float, float] | None = None, squeeze: float = 0.0) -> Plan:
-        """Pick (closing `squeeze` rad past the grasp's closed posture) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
+                  place_xy: tuple[float, float] | None = None, squeeze: float | None = None) -> Plan:
+        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
         self.drop_shift = np.asarray(drop_shift, float)
         if place_xy is None and not self._choose_near_inset(side, bin_name):
             return Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
-        with self._grasp_applied(grasp, side, squeeze), self._counter_under(target):
-            if grasp.finger_yaw is None:
-                plan = self._plan_side_hints(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
-            else:
-                plan = self._plan_side(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
-                plan = self._check_finger_yaw(plan, side, grasp.finger_yaw)
+        depth = grasp.squeeze if squeeze is None else squeeze
+        with self._grasp_applied(grasp, side, depth), self._counter_under(target):
+            for self.low in self._sequences(place_xy):
+                plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
+                if plan.ok:
+                    break
         return self._ending_at(plan, end)
+
+    @staticmethod
+    def _sequences(place_xy: tuple[float, float] | None) -> list[bool]:
+        """Whether to try our low sequence, per configured sequence in order; counter placements only have the organiser's."""
+        names = ["organiser"] if place_xy is not None else config.load()["motion"]["sequences"]
+        return [name == "low" for name in names]
+
+    def _plan_with(self, grasp: Grasp, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
+                   place_xy: tuple[float, float] | None) -> Plan:
+        """One sequence (low or organiser) with the grasp's finger heading, or with each default finger hint in turn."""
+        if grasp.finger_yaw is None:
+            return self._plan_side_hints(det, side, bin_name, arm_q, hand_q, place_xy=place_xy)
+        plan = self._plan_side(det, side, bin_name, arm_q, hand_q, place_xy=place_xy)
+        return self._check_finger_yaw(plan, side, grasp.finger_yaw)
 
     def resqueezed(self, plan: Plan, grasp: Grasp, side: str, squeeze: float) -> Plan:
         """The plan with a deeper closure inserted after its last close / squeeze phase: ramp, hold, then carry and release from the new posture."""
@@ -107,10 +123,9 @@ class PickPlanner(Planner):
         cache = self.__dict__.setdefault("_reach", {})
         key = (side, bin_name, self.near_inset)
         if key not in cache:
-            g, bins = self.cfg["grasp"], self.scene.cfg["bins"]
-            carry = self.scene.counter_z + max(g["carry_height"], float(bins["wall_height"]) + self.height + 0.03)
             xy = self.drop_xy(bin_name) - self.drop_shift
-            cache[key] = all(self.kin.solve(side, np.r_[xy, z], self.home)[1] for z in (carry, self._release_height()))
+            heights = (self.carry_height(), self.release_height())
+            cache[key] = all(self.kin.solve(side, np.r_[xy, z], self.home)[1] for z in heights)
         return cache[key]
 
     def _choose_near_inset(self, side: str, bin_name: str) -> bool:
@@ -136,7 +151,7 @@ class PickPlanner(Planner):
         with self._heading_free(name in BIN_PHASES):
             if name == "carry":
                 reason = plan.reason
-                carry = self._joint_carry(side, q0, p0, p1, self._release_height(), name, plan)
+                carry = self._joint_carry(side, q0, p0, p1, self.release_height(), name, plan)
                 if carry is not None:
                     return carry
                 plan.reason = reason
@@ -156,10 +171,30 @@ class PickPlanner(Planner):
         finally:
             self.kin.w_hint = weight
 
-    def _release_height(self) -> float:
+    def release_height(self) -> float:
         """Grasp point height at which objects are released over a bin."""
         bins, g = self.scene.cfg["bins"], self.cfg["grasp"]
         return self.scene.counter_z + float(bins["wall_height"]) + self.height / 2 + g["drop_above_rim"]
+
+    def carry_height(self) -> float:
+        """Grasp point height above a bin before lowering to the release height."""
+        clear_of_rim = float(self.scene.cfg["bins"]["wall_height"]) + self.height + config.load()["motion"]["carry_margin"]
+        return self.scene.counter_z + max(self.cfg["grasp"]["carry_height"], clear_of_rim)
+
+    def object_clears_bins(self, p: np.ndarray) -> bool:
+        """Whether an object held with its centre at p is above the rim of every bin it overlaps."""
+        bins, margin = self.scene.cfg["bins"], config.load()["motion"]["rim_clearance"]
+        reach = np.asarray(bins["outer_size"], float) / 2 + self.height / 2 + margin
+        centre = self.scene.pelvis_to_mat(p)[:2]
+        over = any(np.all(np.abs(centre - np.asarray(c, float)) <= reach) for c in bins["centers"].values())
+        return not over or p[2] - self.height / 2 >= self.scene.counter_z + float(bins["wall_height"]) + margin
+
+    def _plan_side(self, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
+                   place_xy: tuple[float, float] | None = None) -> Plan:
+        """Our low sequence, or the organiser's high one (the fallback, and the only one that places on the counter)."""
+        if self.low:
+            return sequence.plan_low(self, det, side, bin_name, arm_q, hand_q)
+        return super()._plan_side(det, side, bin_name, arm_q, hand_q, place_xy=place_xy)
 
     def _is_straight(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray, name: str) -> bool:
         """Whether the joint-space move q0 -> q1 keeps the grasp point near the line p0 -> p1."""

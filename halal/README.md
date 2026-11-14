@@ -129,6 +129,8 @@ Instance (one RTX PRO 6000, `ssh` line in `team/SETUP.md`):
 - `bash halal/ops/push.sh` rsyncs the current checkout: `main` → `/data/halal`, branch `ws/<name>` → `/data/wt/<name>`.
 - On the instance: `source <tree>/halal/ops/env.sh <sim tag>` activates the `isaac` env, puts that tree on
   `PYTHONPATH` and points evaluator clients at sim `a`, `b` or `c`.
+- The instance is shared with the team's Spread bot (`/data/spread`, tmux session `spread`): never touch those,
+  never reboot or stop the instance.
 - Sims: `bash /data/halal/halal/ops/sims.sh status | start <tag> | stop <tag>` (DR `train` by default). Each
   workstream uses only the sim it was assigned; long jobs run in `tmux` (session `aalto`, one window per job).
 - Proxy score: `python -m halal.eval.proxy --name <version> --server "python -m halal.server" --trials 8 --sims a --port 81xx`

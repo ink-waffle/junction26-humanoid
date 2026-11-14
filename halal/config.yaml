@@ -119,6 +119,13 @@ motion:
   counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
   squeeze_axis: [0.0, 1.0, -1.15, 0.0, 0.0, 0.0, 0.0]   # LEFT order, per rad of `squeeze`: the thumb tip advances 41 mm at constant height
   hand_limit_margin: 0.03     # squeezed postures stay this far inside the hand joint limits (the filter clamps at 0.02)
+  approach_height: 0.07       # pregrasp above the grasp point: preshaped fingertips pass 3.5 cm over other objects
+  lift_height: 0.07           # straight lift before the carry: the held object passes 2.5 cm over other objects
+  over_object_clearance: 0.015    # hand above the counter by an object height plus this on the way to the pregrasp
+  carry_dip: 0.005            # the rising carry may sink this far below the lift height
+  carry_margin: 0.03          # held object's bottom above a bin rim at carry height
+  rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
+  min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
   drop_inset:                 # release point inside a bin's inner walls (objects land within +-2 cm of it in sim)
     near: [0.05, 0.04, 0.03]  # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.07                # from the side walls
@@ -127,15 +134,22 @@ motion:
     default: 0.01
     descend: 0.004
     lift: 0.004
+  sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
-    cube: [pinch_face, pinch]
-    cylinder: [pinch]
-    triangle: [pinch]
-    unknown: [pinch]
+    cube: [cage, pinch]
+    cylinder: [cage]
+    triangle: [cage]
+    unknown: [cage]
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
-  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis. Unset keys keep the organiser pinch.
+  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`).
+  # Unset keys keep the organiser pinch.
   grasps:
-    pinch: {}
+    # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
+    # follows how far each shape nests between the fingertips (40 mm apart): cube not at all, triangle apex 34 mm.
+    cage:
+      point_in_palm: [0.092, -0.084, 0.0]
+      squeeze: {cube: 0.30, cylinder: 0.45, triangle: 0.80, unknown: 0.75}
+    pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}
 
