@@ -3,6 +3,18 @@ baseline_overrides: {}        # dotted keys on top of aaltonomous/baselines/clas
 
 perception:
   detector: baseline          # key of halal.perception.DETECTORS
+  bench:                      # halal.eval.perception_bench
+    match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
+    heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
+    resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
+    min_inside: 0.9           # top-face fraction inside the image, below it the view is `border`
+    occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
+    max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`
+    sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
+    camera_edges_mm: [5, 10, 15]
+    gain_edges: [0.97, 1.03]
+    key_light_edges: [0.87, 1.13]
+    hue_edges_deg: [3.5]
 
 motion:
   finger_yaw_weight: 3.0      # IK weight of a grasp's finger heading (the organiser default hint weight is 0.3)
