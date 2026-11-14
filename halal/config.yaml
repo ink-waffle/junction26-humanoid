@@ -424,4 +424,16 @@ policy:
   transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home; a move that starts lower (hands resting on the counter) must only never sink below its start
   frozen_frame_arm_move: 0.05 # an arm joint stands this far (rad) from where a head image (colour or depth) was first seen, or the arms travelled this far and came back, and the image is still byte-identical: frozen stream, the look fails and no pick starts
   background_nice: 10         # niceness of the planning thread (Linux)
+  grasp_feedback: open        # open: the pick as planned at the look | measure: hover beside the target, look at hand and object, log the correction, grasp as planned | servo: grasp at the corrected target ($HALAL_GRASP_FEEDBACK overrides)
+  servo:                      # halal.policy.servo: the hover look before the descent (measure and servo only)
+    hold_s: 0.3               # hold at the hover before its look: head image lag 70-90 ms plus the arm settling
+    still_speed: 0.1          # rad/s: arms faster than this are still moving (the detector's still_speed) ...
+    max_hold_s: 1.0           # ... and the hold is extended up to this long for them to stop
+    max_iterations: 2         # hover looks per pick (servo): a step at least `converged` long re-centres the hover and looks again
+    converged: 0.003
+    max_correction: 0.04      # a total correction longer than this is a failed measurement: the open-loop target
+    max_z_correction: 0.02    # the same for its height
+    correct_z: true           # correct the height too (the real palm sat 9-11 mm under its command before the close)
+    track_offset: true        # add commanded minus measured grasp point at the hover: the arm's sag is expected again at the grasp
+    overhead_s: 1.5           # time the hover's look and replanning add: a pick that would then overrun the episode goes open-loop
   gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often
