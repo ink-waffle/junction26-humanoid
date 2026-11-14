@@ -393,7 +393,7 @@ policy:
   grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
-    unknown: 0.02             # no calibration close, no empty-hand error to subtract: a real empty hand then reads 0.06-0.12 = held (6 s lost), a full hand is never dropped
+    unknown: 0.05             # no calibration close, no empty-hand error to subtract: the real empty hand read 0.014-0.026 there (robot runs of 14.11); soft grasps hold at 0.1 or more on either hand
   release_check_after: [unknown, lying]   # grasp kinds (shape, unknown, lying) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
   last_kinds: [unknown, lying]  # grasp kinds picked after the others: they share the unknown-shape hold (lying: until motion's own grasp for it is measured)
   release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
@@ -406,6 +406,7 @@ policy:
   stiff_hand_bias: 0.002      # mean steady error (rad) under which a hand is the stiff sim kind (sim 0.0001, soft-hand sim 0.0055, real 0.02-0.04)
   stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
-  transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
+  transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home; a move that starts lower (hands resting on the counter) must only never sink below its start
+  frozen_frame_arm_move: 0.05 # an arm joint moved this much (rad) between two looks whose head colour images are byte-identical: the stream is frozen (logged as an error)
   background_nice: 10         # niceness of the planning thread (Linux)
   gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often
