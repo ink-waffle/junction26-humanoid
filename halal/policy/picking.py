@@ -9,14 +9,13 @@ import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan
 
-from halal.motion import Grasp, candidate_grasps
+from halal.motion import Grasp, PickPlanner, candidate_grasps
 from halal.perception import ObjectDetection
 from halal.policy.background import Cancelled
-from halal.policy.release import ReleaseSlots, ShiftedReleasePlanner
+from halal.policy.release import ReleaseSlots
 
 log = logging.getLogger(__name__)
 SIDES = ("left", "right")
-NO_SHIFT = np.zeros(2)
 
 
 @dataclass(frozen=True)
@@ -47,10 +46,8 @@ class Pick:
 
 
 class PickChooser:
-    def __init__(self, planner: ShiftedReleasePlanner, slots: ReleaseSlots, relocate: bool) -> None:
+    def __init__(self, planner: PickPlanner, slots: ReleaseSlots, relocate: bool) -> None:
         self.planner, self.slots, self.relocate = planner, slots, relocate
-        bins = planner.scene.bin_names
-        self._reach = {(side, name): self._reaches(side, name) for side in SIDES for name in bins}
 
     def choose(self, targets: Sequence[Target], obstacles: Sequence[ObjectDetection], released: Mapping[str, int],
                arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
@@ -71,8 +68,6 @@ class PickChooser:
         except Exception:
             log.exception("planning failed for %s", target)
             return None
-        finally:
-            self.planner.drop_shift = NO_SHIFT
 
     def _direct(self, target: Target, released: int, arm_q: np.ndarray, hand_q: np.ndarray,
                 cancelled: Cancelled) -> Pick | None:
@@ -83,8 +78,7 @@ class PickChooser:
         for side, grasp, shift in attempts:
             if cancelled():
                 break
-            self.planner.drop_shift = shift
-            plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q)
+            plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q, drop_shift=shift)
             if plan.ok:
                 return Pick(target, side, grasp, plan)
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
@@ -96,7 +90,6 @@ class PickChooser:
         """Cross-body fallback: put the object down where an arm that reaches the bin can pick it up."""
         if not self.relocate or cancelled():
             return None
-        self.planner.drop_shift = NO_SHIFT
         others = [o.top[:2] for o in obstacles if o is not target.detection]
         plan = self.planner.plan_relocation(target.detection, target.bin_name, arm_q, hand_q, others)
         if not plan.ok:
@@ -108,13 +101,7 @@ class PickChooser:
         """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side."""
         near = target.bin_name if target.bin_name in SIDES else ("left" if target.xy[1] > 0 else "right")
         far = "right" if near == "left" else "left"
-        return [side for side in (near, far) if self._reach[(side, target.bin_name)]]
-
-    def _reaches(self, side: str, bin_name: str) -> bool:
-        """Whether this arm can hold an object over the bin's release point at carry height."""
-        planner = self.planner
-        z = planner.scene.counter_z + planner.cfg["grasp"]["carry_height"]
-        return bool(planner.kin.solve(side, np.r_[planner.drop_xy(bin_name), z], planner.home)[1])
+        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
 
     def _distance_to_bin(self, target: Target) -> float:
         return float(np.linalg.norm(target.xy - self.planner.bin_xy(target.bin_name)))

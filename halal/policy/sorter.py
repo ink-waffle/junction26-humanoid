@@ -12,13 +12,14 @@ import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan
 
+from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection
 from halal.policy.area import ObjectArea
 from halal.policy.background import Background, Cancelled
 from halal.policy.commands import Action, CommandStream
 from halal.policy.memory import Attempts
 from halal.policy.picking import Pick, PickChooser, Target
-from halal.policy.release import ReleaseSlots, ShiftedReleasePlanner
+from halal.policy.release import ReleaseSlots
 
 log = logging.getLogger(__name__)
 HZ = 30.0
@@ -47,8 +48,8 @@ def leave_everything(color: str, shape: str | None) -> None:
 
 
 class SortPolicy:
-    def __init__(self, detector: Detector, planner: ShiftedReleasePlanner, look_pose: np.ndarray,
-                 settings: Mapping[str, Any], time_limit: float) -> None:
+    def __init__(self, detector: Detector, planner: PickPlanner, look_pose: np.ndarray, settings: Mapping[str, Any],
+                 time_limit: float) -> None:
         self.detector, self.planner, self.look_pose, self.settings = detector, planner, look_pose, settings
         self.episode_s = time_limit
         self.area = ObjectArea(planner.scene, settings["band_margin"], settings["bin_clearance"])
