@@ -243,6 +243,7 @@ policy:
   calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish
   calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
   stiff_hand_bias: 0.002      # mean steady error (rad) under which a hand is the stiff sim kind (sim 0.0001, soft-hand sim 0.0055, real 0.02-0.04)
+  stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
   transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
   background_nice: 10         # niceness of the planning thread (Linux)

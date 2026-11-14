@@ -60,14 +60,15 @@ class CalibrationTrace:
             self.commanded.append(self.hand[max(tick, 0)])
             self.measured.append(np.asarray(hand_q, float))
 
-    def responses(self, stiff_bias: float) -> dict[str, HandResponse]:
+    def responses(self, stiff_bias: float, stiff_lag_s: float) -> dict[str, HandResponse]:
         times, commanded, measured = np.array(self.times), np.array(self.commanded), np.array(self.measured)
-        return {side: hand_response(times, commanded[:, hand_slice(side)], measured[:, hand_slice(side)], stiff_bias)
+        return {side: hand_response(times, commanded[:, hand_slice(side)], measured[:, hand_slice(side)], stiff_bias, stiff_lag_s)
                 for side in SIDES}
 
 
-def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray, stiff_bias: float) -> HandResponse:
-    """One hand's calibration trace (samples x 7, open -> closed -> still) as its empty error, bias, lag and class."""
+def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray, stiff_bias: float,
+                  stiff_lag_s: float) -> HandResponse:
+    """One hand's calibration trace (samples x 7, open -> closed -> still) as its empty error, bias, lag and class: stiff needs both small."""
     error = commanded - measured
     travel = commanded[-1] - commanded[0]
     behind = (error - error[-1]) @ np.sign(travel)   # summed over the joints, beyond the steady error
@@ -75,7 +76,7 @@ def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray
     moved = float(np.abs(travel - error[-1]).sum())
     lag_s = area / moved if moved > 0 else 0.0   # time integral of a step's tracking error = step x mean delay
     bias = float(np.abs(error[-1]).mean())
-    return HandResponse(error[-1], bias, lag_s, bias < stiff_bias)
+    return HandResponse(error[-1], bias, lag_s, bias < stiff_bias and lag_s < stiff_lag_s)
 
 
 @dataclass(frozen=True)
