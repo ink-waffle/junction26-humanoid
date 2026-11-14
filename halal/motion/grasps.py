@@ -83,8 +83,13 @@ def _grasp(name: str, params: Mapping[str, Any], shape: str | None, finger_yaw: 
 
 
 def _depth(squeeze: float | Mapping[str, float], shape: str | None) -> float:
-    """A strategy's squeeze depth: one number, or one per shape with `unknown` for unclassified objects."""
-    return float(squeeze[shape or "unknown"] if isinstance(squeeze, Mapping) else squeeze)
+    """A strategy's squeeze depth: one number, or one per shape with `unknown` for unclassified objects and shapes the map lacks."""
+    if not isinstance(squeeze, Mapping):
+        return float(squeeze)
+    key = shape if shape in squeeze else "unknown"
+    if key not in squeeze:
+        raise KeyError(f"squeeze map {dict(squeeze)} has neither {shape!r} nor 'unknown'")
+    return float(squeeze[key])
 
 
 def _shift(params: Mapping[str, Any], finger_yaw: float | None) -> tuple[float, float]:
