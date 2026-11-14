@@ -189,7 +189,13 @@ class Bench:
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
         detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
         grasp, plan = self._plan(case, detection)
-        return Pick(case, name, pos, yaw, detection, grasp, plan, self.spec["variants"][case.variant].get("squeeze", 0.0))
+        depth = self._squeeze_override(case.variant)
+        return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth)
+
+    def _squeeze_override(self, variant: str) -> float | None:
+        """A variant's `squeeze` when it is one number for every shape; None leaves the depth to the grasp."""
+        depth = self.spec["variants"][variant].get("squeeze")
+        return float(depth) if isinstance(depth, (int, float)) else None
 
     def _plan(self, case: Case, detection: ObjectDetection) -> tuple[Grasp | None, Plan]:
         """First of the variant's grasps (one, or the policy's candidate list) that plans."""
@@ -202,7 +208,8 @@ class Bench:
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
-                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"], squeeze=variant.get("squeeze", 0.0))
+                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"],
+                                     squeeze=self._squeeze_override(case.variant))
             if plan.ok:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan
