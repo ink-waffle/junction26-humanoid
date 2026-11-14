@@ -84,6 +84,8 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v24 | e4869cbc1500 | 3d413a3 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 118; soft sim 31/31) | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
 | v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | see below | stopped (sims to the servo engineer) | 3 episodes: 11/11, stopped | – | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
 | v26 | 010977be9f6f | 52330d1 (= main ed2be04 + 9787d0f) | +3.88 ± 0.78, 31/31 | +6.75 ± 0.97, 27/28 (jitter; seed 1002 rerun 5/5) | +7.00 ± 1.41, 28/28 | +21.13 | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 113; soft sim 31/31) | v25 + shape memory by colour, forgotten where a pick starts, lying prisms keep their shape + broken targets left alone after 3 looks + motion 7a3a729 (`_depth` falls back to `unknown`) and f42568f (`ridge_skew15`, soft lying list) |
+| v27pre | befc09018de2 | c9bd3db (= main; corridor off) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 128; soft sim 31/31) | v26 + attempt records move with a pushed object (4c70681) + a target no arm reaches left alone on fixed-camera looks, clear-view look after 3 unplannable looks (afb2e9c) + main: servo `grasp_feedback` (default `open`: no-op), corridor code (off), far-box planning time; the corridor-off reference for v27 |
+| v27 | ba84e7a30e41 | main 99474e9 (= v27pre + `carry_corridor.enabled: true`) | running | running | running | – | – | v27pre + motion's carry corridor on (realsim A/B: on 24/26, off 22/26) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -924,3 +926,21 @@ bin" 22 times and the policy looked again from home for 80 s; meanwhile a yellow
 Stock legs: "no plan for any of" appears in none of the v24–v26 stock legs and "no arm reaches" never: both rules are no-ops
 there. Suites 36/36 (one load-noisy case rerun alone: as before), `neighbours_e2e` 5/5, shape-memory and follow mocks as
 before.
+
+### v27pre per leg (through the image, 14.11, 22:48-23:49 UTC; seeds 1000-1007; sims d and a, rtf 0.33-0.39)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Picks by grasp |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed, soft-hand sim | d | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 129 | PASS | 2 | scene, bins scene 179 / 179 | cage 19, cage_apex 5, cage_deep 9 |
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 128 | PASS | 0 | scene, bins scene 177 / 177 | cage 26, cage_apex 5 |
+| unseen | d | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 132 | PASS | 0 | scene, bins scene 174 / 174 | cage 19, cage_apex 9 |
+| known | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 128 | PASS | 0 | scene, bins scene 174 / 174 | cage 18, cage_apex 9, pinch 1 |
+
+The v27 rules are no-ops on the stock sim, as expected: 0 "is left alone", 0 "no plan for any of", 0 clear-view looks from
+the new rule (the old "seen too poorly" clear look twice per leg, as before), 0 frozen, 0 "no arm reaches". Hands stiff 48/48,
+soft 16/16. Imperfect but sorted: the as-if-alone triangles (fixed / soft 1004, known / unseen 1001 and 1003; fingers 0-6 mm
+from the neighbour), as in v24 / v26; known seed 1002's blue triangle (v26's jitter loss) held. Soft seed 1001: the first two
+picks (blue cylinder right `cage`, yellow cylinder left `cage`) came up empty where v26 held both; the first pick's arm and
+hand commands in the episode npz match v26's to 0.4 mrad from an identical start state, the simulated arm differs by up to
+33 mrad and the cylinder was pushed 1.7 cm: sim jitter; both held at the second try, 5/5 at 96 s (v26 84 s). Grasp counts
+here are from pick lines only (earlier tables also counted refused options).
