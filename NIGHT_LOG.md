@@ -7,7 +7,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 ## Status
 
 ### Sat 14.11, 20:10
-- **Hand-in candidate still v18.** Built and published since: **v20** (amd64 `sha256:b7468d51…`, `:v20-multi`) = v19 +
+- **Hand-in candidate: v19** (`sha256:ede4203e…`, `:v19-multi`): stock 87/87, gate 24/24, soft 31/31, equal to v18 on every leg, with the centre-box fix, `release_rise`, black objects, 12 mm anchor agreement. Built and published since: **v20** (amd64 `sha256:b7468d51…`, `:v20-multi`) = v19 +
   layout by geometry on an unanchored camera (H11), lying-prism grasps for both hands, soft cube `cage_deep`, early
   obstacle rejection; **v21** (amd64 `sha256:0f7ca363…`, arm64 `sha256:e46cefed…`, `:v21-multi` `sha256:d397e09b…`) =
   v20 + hand-fit guard 6° / 5 cm -> 10° / 7 cm (H13) + lying prisms under noisy depth (H12). Pre-checks pass; sim legs
