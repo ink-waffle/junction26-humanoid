@@ -245,3 +245,35 @@ object landed inside, the closest 0.5 mm from a wall.
 Verdict: `motion.release_stagger_s: 0.25` is the default from here (+0.25 s per pick). Not reproduced in the bench: the
 policy's triangles that stayed in the cage at 0.80 after a plain opening (0 of 48 here at ≤ 5 mm error); the
 tolerance sweep adds plain-release cells with 10–15 mm forward error.
+
+## Sweep 5: confirmation and position tolerance of the candidate grasp (cage, per-shape depth, staggered release)
+
+Setup: hard DR, both arms, own-side bin, organiser pick sequence, release stagger 0.25 s. Position error = perceived
+minus true object position along pelvis x (forward) and y (outward). 178 picks.
+
+| condition | cube | cylinder | triangle |
+|---|---|---|---|
+| exact pose, layout yaw −30 / 0 / 30° | 12/12 | 12/12 | 12/12 |
+| cube corner-on (yaw ±20°) / triangle at yaw ±45° | 8/8 | | 5/8 (2 not lifted, 1 lost in lift) |
+| x error −10 mm | 4/4 | 4/4 | 4/4 |
+| x error +10 mm | 4/4 | 4/4 | 4/4 |
+| x error +15 mm | 4/4 | 4/4 | 4/4 |
+| y error −10 mm (inward) | 4/4 | 4/4 | 4/4 |
+| y error +10 mm (outward) | 4/4 | 4/4 | 3/4 (not lifted) |
+| same grasp, plain release, exact | 6/6 | 6/6 | 6/6 (one still in the hand at the end of the open phase) |
+| plain release, x error +10 / +15 mm | 8/8 | 8/8 | 8/8 |
+| cube at 0.75, 5 mm error, stagger | 12/12 | | |
+| cube at 0.75, stagger, opening at 1.0 rad/s instead of 2.0 | 10/12 (2 stuck in the hand) | | |
+
+- Out at open with the stagger: 120 of 120 carried objects. A slower opening is worse (the object rides the finger);
+  the release-speed setting was removed again.
+- Tolerance window: every shape holds through ±10 mm in x and y and +15 mm in x (59/60). The weak spot is the
+  triangle's orientation, not its position: with the apex ~70° off the finger heading (layout yaw ±45°) 3 of 8 were
+  not lifted. Next: finger heading along the nearest triangle vertex when the yaw is known.
+- Failed picks left the object 29–32 mm from where it was (max 70 mm), upright, on the counter.
+- Landing minus release point with the stagger at these depths (n = 108): x −28…+77 mm, outward y −40…+48 mm.
+  The release point moved to 6 cm from the near wall and 8.5 cm from the side walls (`motion.drop_inset`) so that this
+  box clears every wall by ≥ 9 mm; the near inset still shrinks (5, 4, 3 cm) when the arm cannot reach, and now does
+  so on a failed full plan too, not only on the reach check.
+- Reach with the cage grasp (its grasp point is 7 mm nearer the palm than the pinch's): every bin plans up to a near
+  edge at x 0.46, the side bins up to 0.47.

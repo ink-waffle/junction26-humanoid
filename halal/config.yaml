@@ -126,9 +126,9 @@ motion:
   carry_margin: 0.03          # held object's bottom above a bin rim at carry height
   rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
   min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
-  drop_inset:                 # release point inside a bin's inner walls (objects land within +-2 cm of it in sim)
-    near: [0.05, 0.04, 0.03]  # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
-    side: 0.07                # from the side walls
+  drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
+    near: [0.06, 0.05, 0.04, 0.03]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
+    side: 0.085               # from the side walls
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
     default: 0.01
@@ -136,7 +136,6 @@ motion:
     lift: 0.004
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
-  release_vel: 2.0            # rad/s of the opening hand (the organiser sequence opens at motion.hand_max_vel)
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
     cube: [cage, pinch]
     cylinder: [cage]
