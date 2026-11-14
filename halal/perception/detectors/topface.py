@@ -25,9 +25,10 @@ LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Draft:
-    """A detection whose colour is not named yet, and the colour sampled on it (None: geometry has rejected it)."""
+    """A detection whose colour is not named yet, the colour sampled on it (None: geometry has rejected it) and its dark share."""
     detection: ObjectDetection
     colour: np.ndarray | None = None
+    dark: float = 0.0
 
 
 class TopFaceDetector:
@@ -79,9 +80,10 @@ class TopFaceDetector:
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
         free = self._on_counter(cloud)
-        gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
+        bare = rgb[self._bare_counter(cloud, height)]
+        gains = self.colors.white_balance(bare)
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
-        drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains) for face in faces]
+        drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains, bare) for face in faces]
         drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
@@ -169,8 +171,9 @@ class TopFaceDetector:
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
 
     def _named(self, draft: Draft) -> ObjectDetection:
-        """The draft with its colour family and confidence, by the episode's boundary; no family (None) where the colour says none."""
-        color, confidence = self.colors.name(draft.colour, self.split)
+        """The draft as black when mostly dark, else with its colour family by the episode's boundary; None where the colour says none."""
+        black = self.colors.black(draft.dark)
+        color, confidence = ("black", black) if black > 0.0 else self.colors.name(draft.colour, self.split)
         return replace(draft.detection, color=color if confidence >= self.cfg["min_confidence"] else None, confidence=confidence)
 
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
@@ -239,7 +242,8 @@ class TopFaceDetector:
         overhang = over & (tall > own + low) & (tall < own + top)
         return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
-    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> Draft:
+    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray,
+                  bare: np.ndarray) -> Draft:
         """Turn one top-face fit into a detection still to be coloured: `visible` is about the pose and the size."""
         c, best = self.cfg, face.best
         tall, measured = float(counter.height(best.centre)), best.visible >= c["min_size_visible"]
@@ -251,4 +255,4 @@ class TopFaceDetector:
         size = tall if measured else None
         seen = ObjectDetection(color="red", top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
                                confidence=0.0, pixels=len(face.pixels), visible=best.visible, size=size)
-        return Draft(seen, self.colors.sample(body_rgb, gains))
+        return Draft(seen, self.colors.sample(body_rgb, gains), self.colors.dark_share(body_rgb, bare))
