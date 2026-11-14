@@ -175,3 +175,19 @@ Landing minus release point over every binned release of r1–r5 (outward = away
 Verdict so far: `release_rise: [0, 0.03, 0.06, 0.09, 0.12]` holds on both hands up to +8 cm (164/164 carried objects
 binned at +6 / +8, no rim contact that kept an object out). Insets under 3 cm: pending the joint proposal with motion.
 Sim d is back on stock settings.
+
+## Sweep r6: soft hand, side bins, +10 cm (the real hand's class at the reach limit)
+
+| config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|
+| rise list, insets ≥ 3 cm | 0/24 | | | | | | "arm cannot reach the bin" (the soft list has no pinch) |
+| `rim` [0.02, 0.01] | 24/24 | 22 | 22/22 (cube 6/6, cylinder 8/8, triangle 8/8) | 0 / 0 | 2 cm, +6 cm | +11…+148 mm (median +40) | 29 mm, 0 contacts |
+
+- The forward drift at the reach limit exists on the soft-hand sim too (median +40 mm; stock +25 mm at the same
+  point), although it is absent at +6 / +8 cm (median 0): it belongs to the nearly straight arm, not to the hand class.
+  Its cause is still not traced, and the soft-hand sim has no backlash or stiction: the EV stays an upper bound.
+- Two objects were lost before the release (lift, carry). Sim d is back on stock settings.
+- Percentiles of landing minus release point, binned releases (min / p2.5 / median / p97.5 / max, mm): stock risen,
+  inset ≥ 3 cm (n 104): x −34 / −26 / +8 / +75 / +110, outward y −52 / −45 / +8 / +71 / +89; soft risen, inset ≥ 3 cm
+  (n 68): x −31 / −20 / 0 / +52 / +79, y −31 / −26 / +6 / +37 / +83; stock risen at the limit, inset ≤ 2 cm (n 48):
+  x +3 / +6 / +46 / +117 / +129, y −57 / −46 / −4 / +60 / +82.
