@@ -139,6 +139,23 @@ to `plan_pick` (none / 1.0).
 v3 = the same without the start settle, the visibility rule, the clear-view looks and the shape memory (it looks
 from home only and needs two empty looks from there for `done`).
 
+Since v4 (state of the v16 tree; each item has its section below):
+- Hands: a calibration close at the first look classes each hand stiff or soft (bias and lag); soft or unknown
+  hands get the soft grasps, slower carries and their own grip threshold. No room to close at the start pose:
+  home first, calibrate there.
+- Picks: order = least tried, kinds with a grasp of their own (`policy.last_kinds` go last), nearest its bin.
+  Every detection of the look goes to the planner as an obstacle. A target waits when the plan it would get
+  alone would touch a neighbour, or when another object stands between it and the robot (`policy.behind_zone`).
+  When no target is clear, the least tried one whose plan keeps its fingers furthest from the others goes,
+  planned without obstacles. Obstacles change the order, never the grasp.
+- After an empty pick the nearest detection of that colour inherits the attempts (pushed objects); 5 picks per
+  object, 3 for a toppled one (lying prism or blob).
+- Release: two slots per bin, sideways only, 65 mm apart; the release check (one more close above the bin) runs
+  only after picks of `policy.release_check_after` kinds and only for a calibrated hand.
+- Looks: the detector call has a deadline (`policy.detect_deadline_s`, doubling after a miss); anything one
+  target breaks counts as no plan for that target only. `done` needs clear looks without a sortable object
+  spanning 10 s.
+
 Failure injection (scratch scripts outside the repo, kinematic mock world with a finger contact signal, runner-like
 observation lag): blank head frames for the first 40 calls, first frames showing the empty counter, no depth at
 all, detector raising on two looks, planner raising once / always, reset during a 1 s plan followed directly by
