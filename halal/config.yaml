@@ -60,6 +60,7 @@ perception:
       min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
       max_turn_deg: 10.0      # nor one that moves the camera further than a head calibration can be wrong (recordings: 7.4 deg, 4 cm)
       max_shift: 0.07
+      clear_margin: 0.05      # fits less clear of the counter (visible model share) than the clearest by more: not used (hands on the table)
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
@@ -89,7 +90,7 @@ perception:
       min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
-    arm_fits: 5               # believed arm fits gathered per episode; the one nearest to all others fixes the camera
+    arm_fits: 5               # believed arm fits clear of the counter gathered per episode; the one nearest to all others fixes the camera
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
     still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
     still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm

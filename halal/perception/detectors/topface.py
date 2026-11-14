@@ -16,6 +16,7 @@ from halal.perception.bins import BinFinder
 from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier, chromas
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
+from halal.perception.hands import HandFit
 from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
@@ -51,7 +52,7 @@ class TopFaceDetector:
     def _forget(self) -> None:
         """Drop what earlier looks established: a new episode has its own camera pose and scene."""
         self.anchor: Camera | None = None
-        self.arm_fits: list[Camera] = []
+        self.arm_fits: list[HandFit] = []
         self.arm_attempts = 0
         self.split: float | None = None
         self.grey: bool | None = None
@@ -104,14 +105,15 @@ class TopFaceDetector:
             self.grey = grey
         return self.colors.white_balance(bare)
 
-    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[Camera]]:
-        """This look's scene anchor, and the episode's believed arm poses: those kept by looks with objects, plus this look's."""
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[HandFit]]:
+        """This look's scene anchor, and the episode's believed arm fits: those kept by looks with objects, plus this look's."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
             self._forget()
         still = self._still(obs, t)
         anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
-        if not still or len(self.arm_fits) >= self.cfg["arm_fits"] or self.arm_attempts >= self.cfg["arm_attempts"]:
+        full = sum(self.calibration.clear(fit) for fit in self.arm_fits) >= self.cfg["arm_fits"]
+        if not still or full or self.arm_attempts >= self.cfg["arm_attempts"]:
             return anchor, self.arm_fits
         self.arm_attempts += 1
         fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))

@@ -881,6 +881,31 @@ table as recorded and `--shift real`: believed 90 of 90 everywhere, band 2.8 to 
 +5 deg. In `lowhands` at +3 deg even the unchanged fit (gate 0.065) is believed only 16 of 20 clean and 2 of 20 typical (coverage
 rejects fits that did not converge, 17 to 39 mm). So leaving the table before fitting (robot.md fix 1) stays the better order.
 
+**H16. Arm-fit consensus prefers the fits clearest of the counter** (`calibration.hands.clear_margin` 0.05, orchestrator's order). The
+policy now takes its first look with the hands still on the table, to find the boxes, and only then goes home and looks again, so
+a weak start-pose fit (H15) comes first. With two fits the H6 consensus did not take "the first" as written above. It took the
+one with the smaller distance to the other, which is asymmetric and close to a coin toss: the low fit won 16 of 90 and 39 of 85
+times below. Now only fits whose clear share (`HandFit.clear_share`, clear / visible model points) is within 0.05 of the clearest
+are candidates, and of them the one nearest to all others. Only fits within 0.05 of fully clear fill the quota of five
+(`topface.arm_fits`), so low-hand fits cannot use up the quota before the robot gets home. `arm_pose` returns the `HandFit`.
+
+Sequence emulation (scratch): one detector per frame, `--shift real` (no scene anchor). First a still look with the floor gate
+raised (low hands: `lowhands` gate 0.13 / 0.14, `dr_train` dev gate 0.21, clear share about 0.5 to 0.7), then a still look with
+the gate at 0.065 (hands clear, the home fit). Camera actually used, band error mm (median / p95 / max):
+
+| set, gate, head error, depth | nominal | H15 only (ae7b524): home fit used in | used | H16: home fit used in | used | before H15 |
+|---|---|---|---|---|---|---|
+| `dr_train` dev 0.21, 0, clean | 14.4 / 25.7 / 28.6 | 74 of 90 | 3.7 / 6.8 / 10.6 | 90 of 90 | 3.7 / 4.0 / 4.2 | 3.7 / 4.0 / 4.2 |
+| `dr_train` dev 0.21, 0, typical | | 46 of 85 | 3.7 / 5.0 / 9.4 | 85 of 85 | 3.7 / 4.8 / 5.1 | 3.7 / 4.8 / 5.1 |
+| `dr_train` dev 0.21, +3 deg, clean | 36.1 / 46.7 / 53.8 | 79 of 90 | 4.3 / 13.2 / 23.4 | 90 of 90 | 4.2 / 5.1 / 6.2 | 4.2 / 5.1 / 6.2 |
+| `dr_train` dev 0.21, +3 deg, typical | | 65 of 83 | 4.3 / 9.5 / 16.7 | 83 of 83 | 4.3 / 5.7 / 7.5 | 4.3 / 5.7 / 7.5 |
+| `lowhands` 0.13 / 0.14, 0, clean and typical | 16.9 / 21.9 / 24.6 | 19 to 20 of 20 | up to 2.1 / 3.8 / 13.3 | 20 of 20 | 2.0 to 2.1 / 3.2 / 3.7 to 4.0 | same |
+| `lowhands` 0.13, +3 deg, typical | 37.0 / 45.7 / 49.7 | 2 of 2 (15 home fits rejected) | 39.0 / 43.1 / 45.3 | same | same | 37.0 / 45.7 / 49.7 (nominal) |
+
+Wherever a home fit is believed, the camera is now exactly what it was before H15. Where only the low fit exists, H15's trade-off
+stays: `lowhands` at +3 deg is the case where the home fit itself does not converge (H15). There the lone low fit (29 to 36 mm) is
+used instead of nominal (37 to 50 mm), about equal. Regression matrix (the H15 list): identical to the digit again, `--armless` 0.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
@@ -911,8 +936,9 @@ Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-ou
 
 ## Next
 
-1. Consensus of the arm fits (H6) takes the first fit while there are only one or two: a fit from the start pose (low hands, H15)
-   then outranks a later one from home. Preferring the fit with the larger clear share would likely fix it; not tried.
+1. `lowhands` with the head pose turned +3 deg (the robot's sign): the hand fit does not converge in 4 of 20 clean and 18 of 20
+   typical frames (fits 17 to 39 mm off, rejected by coverage); at home (`dr_train`, +-3 / +-5 deg) it does. Starts are camera shifts
+   only; turned starts (+-3 deg pitch) are untested.
 2. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
    first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
 3. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
