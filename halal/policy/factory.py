@@ -11,4 +11,6 @@ def make_policy(time_limit: float | None = None) -> SortPolicy:
     """The sorter with the configured detector; `time_limit` overrides the configured episode length."""
     settings = config.load()
     detector = make_detector(settings["perception"]["detector"])
-    return SortPolicy(detector, PickPlanner.create(), settings["policy"], time_limit or settings["policy"]["time_limit_s"])
+    clear_pose = settings["motion"][settings["policy"]["clear_view_pose"]]
+    return SortPolicy(detector, PickPlanner.create(), clear_pose, settings["policy"],
+                      time_limit or settings["policy"]["time_limit_s"])

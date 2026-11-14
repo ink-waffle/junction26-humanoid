@@ -1,4 +1,4 @@
-"""Episode memory: where picks were tried and where planning failed, with objects matched by position."""
+"""Episode memory: picks tried, planning failures and the clearest view of each object, with objects matched by position."""
 from __future__ import annotations
 
 import numpy as np
@@ -28,3 +28,19 @@ class Attempts:
 
     def _near(self, spots: list[np.ndarray], xy: np.ndarray) -> int:
         return sum(float(np.linalg.norm(spot - xy)) < self.radius for spot in spots)
+
+
+class Shapes:
+    """The shape each object showed in the clearest look at it so far."""
+
+    def __init__(self, radius: float) -> None:
+        self.radius = radius
+        self._seen: list[tuple[np.ndarray, str, float]] = []
+
+    def clearest(self, xy: np.ndarray, shape: str | None, visible: float) -> str | None:
+        """Record one detection and return the shape from the look that saw most of the object at `xy`."""
+        if shape is not None:
+            self._seen.append((np.array(xy, float), shape, visible))
+        near = [(seen_visible, seen_shape) for spot, seen_shape, seen_visible in self._seen
+                if float(np.linalg.norm(spot - xy)) < self.radius]
+        return max(near, key=lambda item: item[0])[1] if near else None

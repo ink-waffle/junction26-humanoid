@@ -203,6 +203,8 @@ policy:
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
+  min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
+  clear_view_pose: look_arm_q # key of `motion`: arm pose with nothing between the head camera and the counter
   min_detection_confidence: 0.3   # correct detections of the topface detector come back as low as 0.34
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack

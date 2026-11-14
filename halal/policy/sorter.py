@@ -1,4 +1,4 @@
-"""Sequential sorter: look (calibrating the hands meanwhile, once) -> plan one pick -> execute and verify -> home -> look again."""
+"""Sequential sorter: look (calibrating the hands meanwhile, once) -> plan one pick -> execute and verify -> home -> look again; arms out of view when a look needs it."""
 from __future__ import annotations
 
 import enum
@@ -17,7 +17,7 @@ from halal.policy.background import Background, Cancelled
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
 from halal.policy.grip import SIDES, GripWindow, phase
 from halal.policy.hands import HandCalibrator
-from halal.policy.memory import Attempts
+from halal.policy.memory import Attempts, Shapes
 from halal.policy.picking import Pick, PickChooser, Target
 from halal.policy.release import ReleaseSlots
 from halal.policy.transit import checked_move
@@ -25,6 +25,12 @@ from halal.policy.transit import checked_move
 log = logging.getLogger(__name__)
 HZ = 30.0
 BinFor = Callable[[str, str | None], str | None]
+
+
+class View(enum.Enum):
+    START = enum.auto()         # where the episode began, hands untouched: the camera fit wants the arms in view
+    HOME = enum.auto()          # the pose picks end in
+    CLEAR = enum.auto()         # arms swung out of the head camera's view of the counter
 
 
 class Stage(enum.Enum):
@@ -41,17 +47,20 @@ class Look:
     outside: list[ObjectDetection]
     pick: Pick | None
     unplannable: list[Target]
+    unclear: int                # sortable objects seen too poorly to grasp from this view
     layout_source: str
     layout_rejected: bool       # the perceived layout allowed no plan at all and the scene file's was used instead
 
 
 @dataclass(frozen=True)
 class Situation:
-    """What a look plans from: the pose the pick will start in, the episode's mapping and memory, release counts, layout choice."""
+    """What a look plans from: the pose the pick will start in, the view, the episode's mapping and memory, release counts, layout choice."""
     arm_q: np.ndarray
     hand_q: np.ndarray
+    clear_view: bool
     bin_for: BinFor
     attempts: Attempts
+    shapes: Shapes
     released: Mapping[str, int]
     file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
@@ -71,8 +80,10 @@ def leave_everything(color: str, shape: str | None) -> None:
 
 
 class SortPolicy:
-    def __init__(self, detector: Detector, planner: PickPlanner, settings: Mapping[str, Any], time_limit: float) -> None:
+    def __init__(self, detector: Detector, planner: PickPlanner, clear_pose: np.ndarray, settings: Mapping[str, Any],
+                 time_limit: float) -> None:
         self.detector, self.planner, self.settings = detector, planner, settings
+        self.view_poses = {View.HOME: planner.home, View.CLEAR: np.asarray(clear_pose, float)}
         self.episode_s = time_limit
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.file_layout = scene_layout(planner.scene)
@@ -92,18 +103,20 @@ class SortPolicy:
         self.time_limit = self.episode_s
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
         self.attempts = Attempts(s["same_object_radius"], s["max_attempts"])
+        self.shapes = Shapes(s["same_object_radius"])
         self.layout_source, self.use_file_layout = self.file_layout.source, False
         self.released: Counter[str] = Counter()
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
-        self.at_home = True   # the first look is taken where the episode starts, hands untouched: the camera fit wants them in view
+        self.view, self.next_view = View.START, None
         self.empty_looks, self.empty_since = 0, math.inf
 
     def act(self, obs: Mapping[str, Any]) -> Action:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
+            self._settle()   # the very first frame may still show the scene before the reset
         try:
             self._observe(obs)
         except Exception:
@@ -136,8 +149,8 @@ class SortPolicy:
             self.calibrator.finish(t)
         if self.stage is Stage.MOVING and not self.jobs.idle:
             return   # a look abandoned at reset still uses the planner: wait for it
-        if self.stage is Stage.MOVING and not self.at_home:
-            self._load_move_home()
+        if self.stage is Stage.MOVING and self.next_view is not None:
+            self._load_view_move()
         elif self.stage is Stage.MOVING:
             self._start_look(obs)
         elif self.stage is Stage.LOOKING:
@@ -160,31 +173,35 @@ class SortPolicy:
         self._stop_grip_check()
         self._pause(self.settings["replan_pause_s"])
 
-    def _load_move_home(self) -> None:
-        """Queue the move of both arms to the home pose with open hands, then a settle; hands only if the arm move is not safe."""
+    def _load_view_move(self) -> None:
+        """Queue the move of both arms to the pose of the next view with open hands, then a settle; hands only if the arm move is not safe."""
         stream, planner = self.stream, self.planner
-        move = self._move_home()
+        move = self._move_to(self.next_view)
         if move is None and self.layout_source != self.file_layout.source:
-            log.warning("no safe move home in the perceived layout: scene-file layout from now on")
+            log.warning("no safe move in the perceived layout: scene-file layout from now on")
             self.use_file_layout, self.layout_source = True, self.file_layout.source
             planner.set_layout(self.file_layout)
-            move = self._move_home()
+            move = self._move_to(self.next_view)
         if move is None:
-            log.warning("no safe move home: looking from here")
+            log.warning("no safe move to the %s view: looking from here", self.next_view.name.lower())
             move = planner.go_to(stream.arm_cmd, stream.hand_cmd, stream.arm_cmd, planner.post["open"])
         stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
-        self.at_home = True
+        self.view, self.next_view = self.next_view, None
 
-    def _move_home(self) -> tuple[np.ndarray, np.ndarray] | None:
-        return checked_move(self.planner, self.stream.arm_cmd, self.stream.hand_cmd, self.planner.home,
+    def _move_to(self, view: View) -> tuple[np.ndarray, np.ndarray] | None:
+        return checked_move(self.planner, self.stream.arm_cmd, self.stream.hand_cmd, self.view_poses[view],
                             self.planner.post["open"], self.settings["transit_clearance"])
+
+    def _settle(self) -> None:
+        """Hold still for the settle time; the next look uses a frame from after it."""
+        self.stream.load(np.empty((0, 14)), np.empty((0, 14)), settle_ticks=round(self.settings["settle_s"] * HZ))
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         """Look at this frame; if the hands are not calibrated yet they close on nothing while it is processed."""
         stream, calibrate = self.stream, self.calibrator.due(self.stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
-        situation = Situation(stream.arm_cmd.copy(), hand_q, self.bin_for, self.attempts, dict(self.released),
-                              self.use_file_layout, calibrate)
+        situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
+                              self.shapes, dict(self.released), self.use_file_layout, calibrate)
         self.jobs.submit(lambda cancelled: self._look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -211,20 +228,22 @@ class SortPolicy:
         self.planner.set_layout(layout)
         inside = [det for det in detections if self.area.contains(det.top[:2], layout.bins)]
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
-        targets = self._targets(inside, situation.bin_for, situation.attempts)
+        targets = self._targets(inside, situation)
+        clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         squeeze = {side: self.settings["squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
-        pick, unplannable = self.chooser.choose(targets, situation.released, squeeze, situation.arm_q,
-                                                situation.hand_q, cancelled)
-        return Look(detections, outside, pick, unplannable, layout.source, False)
+        pick, unplannable = self.chooser.choose(clear, situation.released, squeeze, situation.arm_q, situation.hand_q,
+                                                cancelled)
+        return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False)
 
-    def _targets(self, detections: list[ObjectDetection], bin_for: BinFor, attempts: Attempts) -> list[Target]:
-        """Confident detections that the instruction sends to a bin and that still have attempts left."""
+    def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
+        """Confident detections, each with its clearest-seen shape, that the instruction sends to a bin and that have picks left."""
         targets = []
-        for det in detections:
+        for seen in detections:
+            det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
             sure = det.confidence >= self.settings["min_detection_confidence"]
-            bin_name = bin_for(det.color, det.shape) if sure else None
-            if bin_name is not None and not attempts.exhausted(det.top[:2]):
-                targets.append(Target(det, bin_name, attempts.count(det.top[:2])))
+            bin_name = situation.bin_for(det.color, det.shape) if sure else None
+            if bin_name is not None and not situation.attempts.exhausted(det.top[:2]):
+                targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
         return targets
 
     def _finish_look(self, t: float) -> None:
@@ -236,7 +255,10 @@ class SortPolicy:
             self._look_again(t, job.error)
             return
         self._note_look(t, look)
-        if look.pick is None and look.unplannable:
+        if look.pick is None and look.unclear:
+            log.info("t=%.1f %d targets seen too poorly to grasp: looking with the arms out of the way", t, look.unclear)
+            self.stage, self.next_view = Stage.MOVING, View.CLEAR
+        elif look.pick is None and look.unplannable:
             log.info("t=%.1f no plan for any of %d targets: looking again", t, len(look.unplannable))
             self._pause(self.settings["replan_pause_s"])
         elif look.pick is None:
@@ -257,7 +279,7 @@ class SortPolicy:
     def _pause(self, seconds: float) -> None:
         """Hold for a while, then go (back) home and look again."""
         self.stream.load(np.empty((0, 14)), np.empty((0, 14)), settle_ticks=round(seconds * HZ))
-        self.stage, self.at_home = Stage.MOVING, False
+        self.stage, self.next_view = Stage.MOVING, View.HOME
 
     def _note_look(self, t: float, look: Look) -> None:
         for target in look.unplannable:
@@ -265,21 +287,26 @@ class SortPolicy:
         self.layout_source, self.use_file_layout = look.layout_source, self.use_file_layout or look.layout_rejected
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
-        seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};{d.confidence:.2f})" for d in look.detections)
-        log.info("t=%.1f look: %d detections, %d outside the object area, layout from %s: %s", t, len(look.detections),
-                 len(look.outside), look.layout_source, seen)
+        seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};c{d.confidence:.2f};v{d.visible:.2f})"
+                        for d in look.detections)
+        log.info("t=%.1f look from %s: %d detections, %d outside the object area, layout from %s: %s", t,
+                 self.view.name.lower(), len(look.detections), len(look.outside), look.layout_source, seen)
 
     def _nothing_to_pick(self, t: float) -> None:
-        """Finish only after several looks in a row, spread over some time, agree that nothing sortable is left."""
+        """Finish only after several looks with the arms out of the way, spread over some time, show nothing sortable."""
+        self.stage = Stage.MOVING
+        if self.view is not View.CLEAR:
+            self.next_view = View.CLEAR   # an arm in the image can hide an object: only a clear look may say it is gone
+            return
         self.empty_looks += 1
         self.empty_since = min(self.empty_since, t)
-        log.info("t=%.1f nothing to pick (look %d in a row)", t, self.empty_looks)
+        log.info("t=%.1f nothing to pick (clear look %d in a row)", t, self.empty_looks)
         s = self.settings
         if self.empty_looks >= s["empty_looks_before_done"] and t - self.empty_since >= s["empty_span_before_done_s"]:
             self.stage = Stage.DONE
             self._log_tally()
         else:
-            self.stage, self.at_home = Stage.MOVING, False   # (back) home and a settle: a later frame with the arms out of the way
+            self._settle()
 
     def _start_pick(self, pick: Pick, t: float) -> None:
         self.empty_looks, self.empty_since = 0, math.inf
@@ -289,7 +316,7 @@ class SortPolicy:
         cuts = (window.first_tick + OBS_LAG_TICKS, window.release_tick + OBS_LAG_TICKS) if window else ()
         self.stream.load(pick.plan.arm, pick.plan.hand, cuts=cuts)
         self.active = ActivePick(pick, window)
-        self.stage, self.at_home = Stage.MOVING, False
+        self.stage, self.next_view = Stage.MOVING, View.HOME
         drop = pick.plan.waypoints["drop"]
         log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
@@ -319,7 +346,7 @@ class SortPolicy:
         """The hand is empty: go home at once if the way is clear, else let the plan run out unwatched."""
         if not self.jobs.idle:
             return   # the planner is still busy with an abandoned look: decide at the next reply
-        move = self._move_home()
+        move = self._move_to(View.HOME)
         if move is None:
             log.info("t=%.1f hand empty (grip score %.3f) but no clear way home: finishing the plan", t, score)
             self.active.window = None
@@ -327,7 +354,7 @@ class SortPolicy:
         log.info("t=%.1f hand empty (grip score %.3f): going home", t, score)
         self.tally.update(empty_hand=1)
         self.stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
-        self.active, self.at_home = None, True
+        self.active, self.view, self.next_view = None, View.HOME, None
         self._doubt_grip_signal(t)
 
     def _doubt_grip_signal(self, t: float) -> None:
