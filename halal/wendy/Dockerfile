@@ -1,1 +1,1 @@
-FROM ghcr.io/ink-waffle/halal-policy:<tag>
+FROM ghcr.io/ink-waffle/halal-policy:v14-multi
