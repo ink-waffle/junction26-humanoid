@@ -116,7 +116,7 @@ class SortPolicy:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
-            self._settle()   # the very first frame may still show the scene before the reset
+            self._settle(self.settings["start_settle_s"])   # the first frames can predate the reset: another scene, another camera pose
         try:
             self._observe(obs)
         except Exception:
@@ -192,9 +192,10 @@ class SortPolicy:
         return checked_move(self.planner, self.stream.arm_cmd, self.stream.hand_cmd, self.view_poses[view],
                             self.planner.post["open"], self.settings["transit_clearance"])
 
-    def _settle(self) -> None:
-        """Hold still for the settle time; the next look uses a frame from after it."""
-        self.stream.load(np.empty((0, 14)), np.empty((0, 14)), settle_ticks=round(self.settings["settle_s"] * HZ))
+    def _settle(self, seconds: float | None = None) -> None:
+        """Hold still (for the settle time unless told otherwise); the next look uses a frame from after it."""
+        seconds = self.settings["settle_s"] if seconds is None else seconds
+        self.stream.load(np.empty((0, 14)), np.empty((0, 14)), settle_ticks=round(seconds * HZ))
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         """Look at this frame; if the hands are not calibrated yet they close on nothing while it is processed."""
@@ -278,7 +279,7 @@ class SortPolicy:
 
     def _pause(self, seconds: float) -> None:
         """Hold for a while, then go (back) home and look again."""
-        self.stream.load(np.empty((0, 14)), np.empty((0, 14)), settle_ticks=round(seconds * HZ))
+        self._settle(seconds)
         self.stage, self.next_view = Stage.MOVING, View.HOME
 
     def _note_look(self, t: float, look: Look) -> None:
