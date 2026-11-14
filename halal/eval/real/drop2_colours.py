@@ -1,6 +1,6 @@
 """Colours of drop 2 in the head camera, first frame of every episode: foam objects, box tape, table, hand, forearm.
 
-    python -m halal.eval.real.drop2_colours [--sheets DIR]   -> hue / HSV tables, what the detector's colour stage makes of them
+    python -m halal.eval.real.drop2_colours [--sheets DIR] [--sweep]   -> hue / HSV tables, what the detector's colour stage makes of them
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 
 from halal import config
 from halal.eval.real import colours, dataset, drop2_frames
-from halal.perception.color import ColorClassifier, chromas, hue_angles
+from halal.perception.color import ColorClassifier, chromas, hue_angles, turned
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,8 @@ TAPE_HUE, FOREARM_HUE = (345, 34), (170, 212)
 BLOB_AREA = (900, 14000)
 BOX_AREA = 20000
 PATCH = 40
+FAMILY = {"purple": "blue", "orange": "red", "yellow": "yellow"}
+SWEEP_DEG = (-15, -10, -5, 0, 5, 10, 15)
 OUTLINE_BGR = {"purple": (255, 0, 255), "orange": (0, 255, 0), "yellow": (255, 255, 255)}
 # Shapes of the single orange / yellow blobs of every first frame, left to right: c cube, p prism, y cylinder, - unclear.
 SHAPES: dict[int, tuple[str, str]] = {
@@ -173,6 +175,32 @@ def print_take(take: dict[str, dict[str, float]], frames: int) -> None:
         print(f"  {family:8s}" + "".join(f"{row[s] / frames:15.0f}" for s in sources))
 
 
+def look(rgb: np.ndarray, blobs: dict[str, list[Blob]], table: np.ndarray, classifier: ColorClassifier) -> list[tuple[str, np.ndarray]]:
+    """Foam colour and sampled colour of every single blob of one frame: what one look of the detector would have to name."""
+    gains = classifier.white_balance(rgb[table])
+    return [(name, classifier.sample(rgb[grow(blob.mask, -2)], gains)) for name, group in blobs.items() for blob in group if blob.single]
+
+
+def sweep(frames: dict[int, np.ndarray], classifier: ColorClassifier) -> None:
+    """Print how many objects keep their family when the whole image's hue is turned: fixed boundary against the look's own."""
+    print("== whole-image hue turn: objects named right, fixed red / yellow boundary | boundary from the look's hue gap (moved in n looks)")
+    segments = {episode: segment(rgb) for episode, rgb in frames.items()}
+    for degrees in SWEEP_DEG:
+        right = {scheme: {name: 0 for name in FAMILY} for scheme in ("fixed", "look")}
+        total, moved = {name: 0 for name in FAMILY}, 0
+        for episode, rgb in frames.items():
+            blobs, masks = segments[episode]
+            seen = look(turned(rgb, degrees), blobs, masks["table"], classifier)
+            split = classifier.split([colour for _, colour in seen])
+            moved += split is not None and split != classifier.boundary()
+            for name, colour in seen:
+                total[name] += 1
+                right["fixed"][name] += classifier.name(colour, classifier.boundary())[0] == FAMILY[name]
+                right["look"][name] += classifier.name(colour, split)[0] == FAMILY[name]
+        cells = lambda scheme: "  ".join(f"{name} {right[scheme][name]:2d}/{total[name]}" for name in FAMILY)
+        print(f"  {degrees:+4d} deg   {cells('fixed')}   |   {cells('look')}   ({moved})")
+
+
 def save_sheet(frames: dict[int, np.ndarray], found: dict[int, dict[str, list[Blob]]], out: Path, per_row: int = 4) -> None:
     """Contact sheets of the first frames with every blob outlined and numbered, to check the segmentation and label shapes."""
     tiles = []
@@ -198,6 +226,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", type=Path, default=drop2_frames.ROOT)
     ap.add_argument("--sheets", type=Path, help="write contact sheets of the segmentation here")
+    ap.add_argument("--sweep", action="store_true", help="also turn the hue of the whole image and count what keeps its family")
     args = ap.parse_args(argv)
     classifier = ColorClassifier(config.load()["perception"]["topface"]["color"])
     families = list(classifier.cfg["basins"])
@@ -218,8 +247,9 @@ def main(argv: list[str] | None = None) -> int:
                 take[family][source] = take[family].get(source, 0.0) + float((mask & (classes == index)).sum())
         for name, mask in masks.items():
             pixels.setdefault(name, []).append(rgb[mask])
+        split = classifier.split([colour for _, colour in look(rgb, blobs, masks["table"], classifier)])
         for patch in tape_patches(rgb, masks["tape"]):
-            named.setdefault("tape patch", []).append((colour := classifier.vivid(patch, gains), *classifier.name(colour)))
+            named.setdefault("tape patch", []).append((colour := classifier.sample(patch, gains), *classifier.name(colour, split)))
         for name, group in blobs.items():
             for index, blob in enumerate(b for b in group if b.single):
                 body = rgb[grow(blob.mask, -2)]
@@ -227,11 +257,13 @@ def main(argv: list[str] | None = None) -> int:
                 lit, shaded = lit_shaded(body)
                 for key, part in ((label, body), (f"{name} lit faces", lit), (f"{name} shaded faces", shaded)):
                     pixels.setdefault(key, []).append(part)
-                named.setdefault(label, []).append((colour := classifier.vivid(body, gains), *classifier.name(colour)))
+                named.setdefault(label, []).append((colour := classifier.sample(body, gains), *classifier.name(colour, split)))
     print(f"{len(frames)} first frames of {args.root.name}; basins {dict(classifier.cfg['basins'])}")
     print_pixels(dict(sorted(pixels.items())))
     print_instances(dict(sorted(named.items())))
     print_take(take, len(frames))
+    if args.sweep:
+        sweep(frames, classifier)
     if args.sheets:
         save_sheet(frames, found, args.sheets)
     return 0

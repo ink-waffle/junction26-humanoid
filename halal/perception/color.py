@@ -1,8 +1,9 @@
 """Object colour from its most saturated pixels: hue basins of the three colour families, white-balanced on the counter."""
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
+import cv2
 import numpy as np
 
 SQRT3 = np.sqrt(3.0)
@@ -18,6 +19,20 @@ def chromas(rgb: np.ndarray) -> np.ndarray:
     """Chroma relative to brightness, (max - min) / max, of RGB triples (..., 3) on the 0..255 scale."""
     rgb = np.asarray(rgb, float)
     return (rgb.max(axis=-1) - rgb.min(axis=-1)) / np.maximum(rgb.max(axis=-1), 1.0)
+
+
+def turned(rgb: np.ndarray, degrees: float) -> np.ndarray:
+    """RGB image or samples (uint8, (..., 3)) with every hue turned by `degrees`."""
+    if not rgb.size:
+        return rgb
+    hsv = cv2.cvtColor(rgb.reshape(-1, 1, 3).astype(np.float32) / 255.0, cv2.COLOR_RGB2HSV)
+    hsv[..., 0] = (hsv[..., 0] + degrees) % 360.0
+    return np.round(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB) * 255.0).astype(np.uint8).reshape(rgb.shape)
+
+
+def apart(a: float, b: float) -> float:
+    """Degrees between two hues, the short way round."""
+    return float(abs((a - b + 180.0) % 360.0 - 180.0))
 
 
 def outside(hue: float, basin: tuple[float, float]) -> float:
@@ -58,14 +73,51 @@ class ColorClassifier:
         spread = chromas(balanced)
         return np.median(balanced[spread >= np.quantile(spread, 1.0 - self.cfg["vivid_fraction"])], axis=0)
 
-    def name(self, colour: np.ndarray) -> tuple[str, float]:
-        """Colour family and confidence in [0, 1] of one white-balanced RGB colour."""
+    def own(self, samples: np.ndarray, gains: np.ndarray) -> np.ndarray:
+        """The samples (N, 3) of the family most of them are in, when that is a fair share: a touching neighbour's edge is left out."""
+        classes = self.pixel_classes(samples, gains)
+        counts = np.bincount(classes[classes >= 0], minlength=len(self.cfg["basins"]))
+        return samples[classes == counts.argmax()] if counts.max() >= self.cfg["own_share"] * len(samples) else samples
+
+    def sample(self, samples: np.ndarray, gains: np.ndarray) -> np.ndarray:
+        """The white-balanced colour that stands for RGB samples (N, 3) of one object."""
+        return self.vivid(self.own(samples, gains), gains)
+
+    def boundary(self) -> float:
+        """Hue (deg) midway between the red and the yellow basin as configured."""
+        red, yellow = self.cfg["basins"]["red"], self.cfg["basins"]["yellow"]
+        return (red[1] + (yellow[0] - red[1]) % 360.0 / 2) % 360.0
+
+    def split(self, colours: Sequence[np.ndarray]) -> float | None:
+        """Hue (deg) where red ends and yellow begins, from the one clear gap between the object colours of a look; None without one."""
+        c, (start, red_end), (yellow_start, end) = self.cfg["warm_split"], self.cfg["basins"]["red"], self.cfg["basins"]["yellow"]
+        up = lambda hue: (hue - start) % 360.0
+        vivid = [x for x in colours if chromas(x) >= self.cfg["chroma_range"][0] and x.max() >= self.cfg["min_value"]]
+        warm = sorted(u for u in (up(float(hue_angles(x))) for x in vivid) if u <= up(end))
+        least = lambda lo: max(lo - up(red_end), -c["max_shift"])       # smallest turn of all hues that leaves `lo` in the red basin
+        most = lambda hi: min(hi - up(yellow_start), c["max_shift"])    # largest that leaves `hi` in the yellow basin
+        gaps = [(lo, hi) for lo, hi in zip(warm, warm[1:]) if hi - lo >= c["min_gap"] and least(lo) <= most(hi)]
+        if any(least(lo) <= 0.0 <= most(hi) for lo, hi in gaps):
+            return self.boundary()
+        return (sum(gaps[0]) / 2 + start) % 360.0 if len(gaps) == 1 else None
+
+    def basins(self, split: float | None) -> Mapping[str, tuple[float, float]]:
+        """The configured basins, red and yellow meeting around `split` when the episode has one."""
+        fixed = self.cfg["basins"]
+        if split is None:
+            return fixed
+        half = (fixed["yellow"][0] - fixed["red"][1]) % 360.0 / 2
+        return {**fixed, "red": (fixed["red"][0], (split - half) % 360.0), "yellow": ((split + half) % 360.0, fixed["yellow"][1])}
+
+    def name(self, colour: np.ndarray, split: float | None = None) -> tuple[str, float]:
+        """Family and confidence in [0, 1] of one white-balanced colour; `split` None: no hue gap vouches for the red / yellow boundary."""
         hue, chroma = float(hue_angles(colour)), float(chromas(colour))
-        miss, name = min((outside(hue, basin), name) for name, basin in self.cfg["basins"].items())
+        miss, name = min((outside(hue, basin), name) for name, basin in self.basins(split).items())
         low, full = self.cfg["chroma_range"]
         by_chroma = np.clip((chroma - low) / (full - low), 0.0, 1.0) * (colour.max() >= self.cfg["min_value"])
-        return name, float(np.clip(1.0 - miss / self.cfg["taper_deg"], 0.0, 1.0) * by_chroma)
+        unvouched = 1.0 if split is not None else apart(hue, self.boundary()) / self.cfg["taper_deg"]
+        return name, float(np.clip(min(1.0 - miss / self.cfg["taper_deg"], unvouched), 0.0, 1.0) * by_chroma)
 
-    def classify(self, samples: np.ndarray, gains: np.ndarray) -> tuple[str, float]:
+    def classify(self, samples: np.ndarray, gains: np.ndarray, split: float | None = None) -> tuple[str, float]:
         """Colour family and confidence in [0, 1] for RGB samples (N, 3) of one object."""
-        return self.name(self.vivid(samples, gains))
+        return self.name(self.sample(samples, gains), split)

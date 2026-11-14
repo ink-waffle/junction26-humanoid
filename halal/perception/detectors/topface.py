@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 import cv2
@@ -19,6 +20,13 @@ from halal.perception.shapes import OutlineFitter, TopFace
 
 
 LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Draft:
+    """A detection whose colour is not named yet, and the colour sampled on it (None: geometry has rejected it)."""
+    detection: ObjectDetection
+    colour: np.ndarray | None = None
 
 
 class TopFaceDetector:
@@ -43,6 +51,7 @@ class TopFaceDetector:
         self.anchor: Camera | None = None
         self.arms: Camera | None = None
         self.arm_attempts = 0
+        self.split: float | None = None
         self.last_t = -np.inf
         self.last_joints: np.ndarray | None = None
 
@@ -71,9 +80,11 @@ class TopFaceDetector:
         free = self._on_counter(cloud)
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
-        found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
-        found += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
-        found = [d for d in found if d.confidence >= self.cfg["min_confidence"]]
+        drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains) for face in faces]
+        drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
+        if self.split is None:
+            self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
+        found = [d for d in map(self._named, drafts) if d.confidence >= self.cfg["min_confidence"]]
         if found:
             self.anchor, self.arms = anchor or self.anchor, arms
         return found
@@ -117,8 +128,8 @@ class TopFaceDetector:
     def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
                counter: PlaneFit, rgb: np.ndarray, gains: np.ndarray) -> list[TopFace]:
         """Top faces of all objects: per colour first (touching objects of two colours part there), then what is left."""
-        c = self.cfg["seed"]
-        top = (np.abs(height - self.scene.object_height()) < c["height_band"]) & free
+        c, (small, large) = self.cfg["seed"], self.cfg["size_range"]
+        top = (height > small - c["height_band"]) & (height < large + c["height_band"]) & free
         kernel = np.ones((c["open_px"], c["open_px"]), np.uint8)
         mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, kernel)
         colour = np.full(mask.shape, -1, np.int8)
@@ -154,8 +165,15 @@ class TopFaceDetector:
         u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
 
+    def _named(self, draft: Draft) -> ObjectDetection:
+        """The draft with its colour family and confidence, by the episode's red / yellow boundary where one was seen."""
+        if draft.colour is None:
+            return draft.detection
+        color, confidence = self.colors.name(draft.colour, self.split)
+        return replace(draft.detection, color=color, confidence=confidence)
+
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
-                    rgb: np.ndarray, gains: np.ndarray) -> list[ObjectDetection]:
+                    rgb: np.ndarray, gains: np.ndarray) -> list[Draft]:
         """Coloured blobs standing on the counter that no top-face fit explains (toppled objects): colour and a rough centre."""
         c = self.cfg["straggler"]
         mask = ((height > c["heights"][0]) & (height < c["heights"][1]) & free).astype(np.uint8)
@@ -172,18 +190,23 @@ class TopFaceDetector:
                 continue
             if self._unanchored() and plan_depth(points) < self.cfg["wall_guard"]["min_depth"]:
                 continue
-            color, confidence = self.colors.classify(rgb[labels == i], gains)
-            found.append(ObjectDetection(color=color, top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=confidence,
-                                         pixels=int(stats[i, cv2.CC_STAT_AREA]), visible=0.0))
+            blob = ObjectDetection(color="red", top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=0.0,
+                                   pixels=int(stats[i, cv2.CC_STAT_AREA]), visible=0.0)
+            found.append(Draft(blob, self.colors.sample(rgb[labels == i], gains)))
         return found
 
     def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
-        """Rough top-plane centres of the blobs left in the top-height mask."""
-        tall = self.scene.object_height()
+        """Rough centres of the blobs left in the top-height mask, each on the top plane of an object as tall as the blob lies."""
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count)
-                 if stats[i, cv2.CC_STAT_AREA] >= self.cfg["seed"]["min_px"]]
-        return [blob - (counter.height(blob) - tall) * counter.normal for blob in blobs]
+        blobs = [cloud[labels == i] for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= self.cfg["seed"]["min_px"]]
+        centres = [np.nanmean(blob, axis=0) for blob in blobs]
+        talls = [float(np.nanmedian(counter.height(blob))) for blob in blobs]
+        return [centre - (counter.height(centre) - self._tall(tall)) * counter.normal for centre, tall in zip(centres, talls)]
+
+    def _tall(self, measured: float) -> float:
+        """Object height to work with: the scene file's unless the measured one clearly differs, kept inside the size range."""
+        scene = self.scene.object_height()
+        return scene if abs(measured - scene) < self.cfg["size_snap"] else float(np.clip(measured, *self.cfg["size_range"]))
 
     def _distinct(self, faces: list[TopFace]) -> list[TopFace]:
         """Drop fits that landed on an object another, better seen, fit already explains."""
@@ -198,22 +221,26 @@ class TopFaceDetector:
         c = self.cfg["color"]
         return (np.abs(height) < c["mat_band"]) & (cloud[..., 0] > c["mat_x_range"][0]) & (cloud[..., 0] < c["mat_x_range"][1])
 
-    def _body(self, face: TopFace, camera: Camera, rgb: np.ndarray, cloud: np.ndarray, height: np.ndarray) -> tuple[np.ndarray, int]:
+    def _body(self, face: TopFace, camera: Camera, rgb: np.ndarray, cloud: np.ndarray, height: np.ndarray,
+              counter: PlaneFit) -> tuple[np.ndarray, int]:
         """Colours of the pixels on the object (footprint, counter to top) and how many pixels stand just above its top."""
         c, window = self.cfg["color"], self._window(face, camera)
         over = np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["body_radius"]
-        tall = height[window]
+        tall, own = height[window], float(counter.height(face.best.centre))
         low, top = self.cfg["overhang_band"]
-        overhang = over & (tall > self.scene.object_height() + low) & (tall < self.scene.object_height() + top)
+        overhang = over & (tall > own + low) & (tall < own + top)
         return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
-    def _describe(self, face: TopFace, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> ObjectDetection:
-        """Turn one top-face fit into a detection: confidence is about the colour alone, `visible` about the pose."""
+    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> Draft:
+        """Turn one top-face fit into a detection still to be coloured: `visible` is about the pose and the size."""
         c, best = self.cfg, face.best
-        if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb):
-            return ObjectDetection(color="red", top=best.centre, confidence=0.0)
-        color, confidence = self.colors.classify(body_rgb, gains)
+        tall, measured = float(counter.height(best.centre)), best.visible >= c["min_size_visible"]
+        odd = abs(tall - self.scene.object_height()) >= c["size_snap"] and not measured   # an unexpected size needs a well seen top
+        if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb) or odd:
+            return Draft(ObjectDetection(color="red", top=best.centre, confidence=0.0))
         shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
-        return ObjectDetection(color=color, top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
-                               confidence=confidence, pixels=len(face.pixels), visible=best.visible)
+        size = tall if measured else None
+        seen = ObjectDetection(color="red", top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
+                               confidence=0.0, pixels=len(face.pixels), visible=best.visible, size=size)
+        return Draft(seen, self.colors.sample(body_rgb, gains))
