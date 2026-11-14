@@ -94,7 +94,7 @@ class TopFaceDetector:
         solid = [face for face, draft in zip(faces, drafts) if not self._yields(draft)]
         drafts = self._settled(drafts, self._stragglers(solid, camera, cloud, height, free, rgb, gains, counter))
         if self.split is None:
-            self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
+            self.split = self.colors.split([draft.colour for draft in drafts if self._splits(draft)])
         found = [self._named(draft) for draft in drafts if draft.colour is not None]
         if found:
             self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
@@ -205,6 +205,13 @@ class TopFaceDetector:
             mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
         rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
         return self._distinct(faces + rest)
+
+    def _splits(self, draft: Draft) -> bool:
+        """True for a draft that may set the episode's red / yellow boundary: an object with a seen face (no blob), clear of the bins."""
+        if draft.colour is None or draft.detection.visible <= 0.0:
+            return False
+        half = np.asarray(self.scene.cfg["bins"]["outer_size"])[::-1] / 2 + self.cfg["color"]["warm_split"]["bin_clearance"]
+        return all(np.any(np.abs(draft.detection.top[:2] - centre) > half) for centre in self.seen.bins.values())
 
     def _yields(self, draft: Draft) -> bool:
         """True for an accepted top face seen so little that a lying prism found in its place is the better reading."""
