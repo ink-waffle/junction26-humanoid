@@ -178,7 +178,7 @@ class GraspServo:
         if isinstance(result, Hover):
             state.hover = result
             stream.load(result.arm, result.hand, settle_ticks=self._hold_ticks)
-            log.info("t=%.1f servo: hovering again beside the corrected target, offset (%+.0f,%+.0f,%+.0f) mm, %.0f %% of the top hidden by the model",
+            log.info("t=%.1f servo: hovering again beside the moved target, offset (%+.0f,%+.0f,%+.0f) mm, %.0f %% of the top hidden by the model",
                      t, *(1e3 * result.offset), 100 * result.hidden)
             return Next.WAIT
         self.state, self.final, self.stranded = None, result, state.pick.target
@@ -205,10 +205,18 @@ class GraspServo:
         elif not state.applied:
             state.failed = measured.refused
         self._log(t, state, measured, time.monotonic() - began)
-        again = (self.mode == "servo" and not measured.refused and state.looks < self.cfg["max_iterations"]
-                 and float(np.linalg.norm(measured.step)) >= self.cfg["converged"])
-        hover = self._hover_again(state, arm_q, hand_q) if again and not cancelled() else None
+        aim = self._aim(state, measured)
+        hover = self._hover_again(state, aim, arm_q, hand_q) if aim is not None and not cancelled() else None
         return hover if hover is not None else self._final_pick(state, arm_q, hand_q)
+
+    def _aim(self, state: Hovering, measured: Measured) -> np.ndarray | None:
+        """Where to hover for another look (servo, looks left): beside the corrected target after a step not yet small, or beside where the look's believed arm fit moved the target when only its top face went unseen."""
+        if self.mode != "servo" or state.looks >= self.cfg["max_iterations"]:
+            return None
+        if not measured.refused:
+            return state.correction if float(np.linalg.norm(measured.step)) >= self.cfg["converged"] else None
+        unseen = measured.refused == "visible" and measured.look.camera is not None
+        return state.correction + measured.parts[0] * np.r_[1.0, 1.0, 0.0] if unseen else None
 
     def _safely_measured(self, obs: Mapping[str, Any], state: Hovering, arm_q: np.ndarray) -> Measured:
         """`_measure`; a look that raises counts as a failed one, so the pick still goes on from the hover."""
@@ -245,10 +253,10 @@ class GraspServo:
         return bool(np.linalg.norm(turn) > self.cfg["max_turn_correction"] or np.linalg.norm(local) > self.cfg["max_correction"]
                     or abs(local[2]) > self.cfg["max_z_correction"])
 
-    def _hover_again(self, state: Hovering, arm_q: np.ndarray, hand_q: np.ndarray) -> Hover | None:
-        """The hover re-centred on the corrected target, reached from where the hand hovers now."""
+    def _hover_again(self, state: Hovering, aim: np.ndarray, arm_q: np.ndarray, hand_q: np.ndarray) -> Hover | None:
+        """The hover re-centred on the grasp point moved by `aim`, reached from where the hand hovers now."""
         pick = state.pick
-        target = pick.plan.waypoints["grasp"] + state.correction
+        target = pick.plan.waypoints["grasp"] + aim
         return plan_hover(self.planner, pick.plan, pick.grasp, pick.side, pick.target.detection, self._camera(), arm_q, hand_q, target)
 
     def _final_pick(self, state: Hovering, arm_q: np.ndarray, hand_q: np.ndarray) -> Pick | None:
