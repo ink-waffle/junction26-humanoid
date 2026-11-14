@@ -80,6 +80,7 @@ class SortPolicy:
         self.hands: dict[str, HandResponse] = {}
         self.trace: CalibrationTrace | None = None
         self.active: ActivePick | None = None
+        self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
         self.stage = Stage.MOVING
         self.at_look_pose = self.hands_clear = False
         self.empty_looks = 0
@@ -138,7 +139,7 @@ class SortPolicy:
         self.at_look_pose = True
 
     def _calibration_due(self) -> bool:
-        return self.settings["grip_check"] and self.hands_clear and not self.hands and self.trace is None
+        return self.grip_trusted and self.hands_clear and not self.hands and self.trace is None
 
     def _start_calibration(self, obs: Mapping[str, Any]) -> None:
         """At the look pose, close both hands on nothing and record how they follow the command."""
@@ -228,7 +229,7 @@ class SortPolicy:
         self.empty_looks = 0
         self.attempts.record(pick.target.xy)
         self.tally.update(picks=1, relocations=int(pick.relocation))
-        watch = self.settings["grip_check"]
+        watch = self.grip_trusted
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if watch else None
         self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS] if watch else ())
         self.active = ActivePick(pick, window)
@@ -251,6 +252,8 @@ class SortPolicy:
         active.lowest_score = min(active.lowest_score, score)
         if score < self._empty_below(window.side):
             self._abandon_pick(t, score)
+        else:
+            self.grip_proven = True
 
     def _empty_below(self, side: str) -> float:
         """Grip score under which this hand holds nothing; an uncalibrated hand gets the value that never aborts wrongly."""
@@ -270,6 +273,15 @@ class SortPolicy:
         self.tally.update(empty_hand=1)
         stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
         self.active, self.at_look_pose = None, True
+        self._doubt_grip_signal(t)
+
+    def _doubt_grip_signal(self, t: float) -> None:
+        """A signal that has only ever said `empty` may be no signal at all: stop acting on it after a few picks."""
+        self.empty_verdicts += 1
+        if not self.grip_proven and self.empty_verdicts >= self.settings["grip_check_patience"]:
+            log.warning("t=%.1f %d picks in a row read as empty and none as held: grip check off for this episode", t,
+                        self.empty_verdicts)
+            self.grip_trusted = False
 
     def _finish_pick(self, t: float) -> None:
         active, self.active = self.active, None
