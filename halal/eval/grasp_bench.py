@@ -3,7 +3,8 @@
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
 Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = grippy and light), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
-(layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
+(layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), scene ({counter: [x, y, z],
+bins: [x, y], wall_height}: where a REAL_SIM=offsets,boxes sim has the counter, the bin row and the rims; the plans get the same), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
 `repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `neighbour` ([forward, outward] m: a second object beside the target),
@@ -16,6 +17,7 @@ pelvis direction, mirrored for the right arm, tips the upright prism onto a side
 from __future__ import annotations
 
 import argparse
+import copy
 import itertools
 import json
 import os
@@ -34,6 +36,7 @@ from aaltonomous.baselines.classical.kinematics import ArmKinematics
 from aaltonomous.baselines.classical.planner import Plan, ramp, time_scale
 from aaltonomous.interface.env import AaltoEnv
 from aaltonomous.interface.tasks import FIXED_MAPPING
+from aaltonomous.scene.scene import Scene
 from aaltonomous.sim import evaluate
 from aaltonomous.sim.aalto_task import dr as dr_module
 from aaltonomous.sim.aalto_task.layout import object_names
@@ -84,6 +87,16 @@ class Pick:
     neighbour: str | None
     neighbour_start: ObjectDetection | None
     lying: bool
+
+
+def displaced(scene: Scene, moved: Mapping[str, Any]) -> Scene:
+    """The scene with the counter, the bin row and the rims where the spec's `scene` says the sim has them."""
+    cfg = copy.deepcopy(scene.cfg)
+    origin, (forward, left) = cfg["counter"]["mat_origin_in_pelvis"], moved.get("bins", (0.0, 0.0))
+    cfg["counter"]["mat_origin_in_pelvis"] = [a + b for a, b in zip(origin, moved.get("counter", (0.0, 0.0, 0.0)))]
+    cfg["bins"]["centers"] = {name: [x + left, y + forward] for name, (x, y) in cfg["bins"]["centers"].items()}
+    cfg["bins"]["wall_height"] = moved.get("wall_height", cfg["bins"]["wall_height"])
+    return Scene(cfg)
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
@@ -169,7 +182,7 @@ class Bench:
         self.scene_client = SceneClient(host)
         self.env = AaltoEnv(backend="sim", task="sort_fixed", seed=0, time_limit=1e9, realtime=True, img_server_ip=host,
                             head_rgbd=False, cameras=False, head_rgbd_port=int(os.environ.get("AALTO_RGBD_PORT", "55560")))
-        self.scene = self.env.scene
+        self.scene = displaced(self.env.scene, spec.get("scene", {}))
         self.planners = {name: self._planner(variant) for name, variant in spec["variants"].items()}
         self.seeds = DrSeeds(self.scene_client, self.scene, int(spec["seed"]), spec["dr"])
         self.rest_z = self.scene.counter_z + self.scene.object_height() / 2
@@ -179,7 +192,7 @@ class Bench:
         overrides = {**config.load()["baseline_overrides"], **variant.get("overrides", {})}
         planner = PickPlanner.create(self.env.filter.cfg, baseline.load_config(profile="sim", overrides=overrides))
         planner.motion.update(variant.get("motion", {}))
-        planner.use_scene(planner.scene)
+        planner.use_scene(self.scene)
         return planner
 
     def close(self) -> None:
@@ -403,6 +416,7 @@ class Bench:
         record["finger_error"] = {key: np.round(left_order(error[t]), 4).tolist() for key, t in marks.items()}
         record["phases_s"] = {name: round((end - start) / 30.0, 2) for name, start, end in pick.plan.phases}
         record["release_xy"] = np.round(pick.plan.waypoints["drop"][:2], 4).tolist()
+        record["release_z"] = round(float(pick.plan.waypoints["drop"][2]), 4)
         if pick.name is None:
             return {**record, "outcome": None, "failure": "empty"}
         record.update(self._object_metrics(pick, slot, marks, trace))

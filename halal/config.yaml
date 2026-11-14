@@ -247,6 +247,8 @@ motion:
   drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
     near: [0.06, 0.05, 0.04, 0.03]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.085               # from the side walls
+  release_rise: [0.0]         # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
+  min_retreat_up: 0.02        # a raised release shortens the retreat after it by the rise, down to this
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
     default: 0.01
@@ -299,6 +301,9 @@ grasp_bench:
   dr_corners:                 # `dr: <name>` keeps seeds whose scales for every placed object lie in these ranges
     hard: {friction: [0.0, 0.82], mass: [1.2, 9.0]}      # slippery and heavy
     sticky: {friction: [1.0, 9.0], mass: [0.0, 1.0]}     # grippy and light: objects do not slide into place
+
+reach_bench:
+  spots: [[0.30, 0.10], [0.33, 0.02]]   # object centres (forward, outward on the arm's side) the plans start from
 
 policy:
   counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
