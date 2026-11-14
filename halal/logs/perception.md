@@ -792,6 +792,17 @@ Called lying without being one: unchanged (0 on `realsim_looks` at every level; 
 All clean sets including `motion`: identical line by line. What limits `motion` under noise is a different thing: prisms the
 roof fit does not accept (one face seen, support) and prisms under an arm.
 
+**H13. The hand fit may move the camera 10 deg / 7 cm (was 6 deg / 5 cm).** The realsim workstream built the head calibration
+error of the recordings into the sim (B7's six-parameter solution: -7.4, -1.9, -0.4 deg about the optical axes, -4 cm along
+optical y). Tried here first by handing the calibration stages a head pose that is wrong by exactly that (40 `dr_train` frames):
+the hand fit finds the camera to 3.5 mm median / 4.2 max at the band, and was thrown away in 40 of 40 by its own `turn` guard
+(6 deg), leaving the nominal pose, 31 mm off. With the limits at 10 deg / 7 cm: believed 40 of 40, 3.5 / 4.2 mm; -9 deg and -5 cm:
+40 of 40, 3.7 / 5.7; the opposite sign (+7.4 deg, +4 cm): 40 of 40, 5.0 median / 17.0 max; -12 deg and -6 cm: rejected (39 of 40).
+The prior of the fit (3 deg / 2 cm) does not stop it from getting there. Rotation-only error (-2.2, -1.8, -1.4 deg), 3 deg, 2 cm:
+believed before and after, 3.6 to 4.4 mm. All clean sets including `motion`: identical; `--armless` believed 0 at clean, typical
+and bad depth. The limit exists to refuse a fit that walked off; the other checks (coverage, pixels on the model, rms) did not
+need it in any frame here.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
