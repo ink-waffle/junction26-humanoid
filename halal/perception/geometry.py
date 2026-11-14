@@ -84,8 +84,22 @@ class PlaneFit:
     """Plane `normal . p = offset` with an upward unit normal and the support it was fitted on."""
     normal: np.ndarray
     offset: float
-    inliers: int
-    rms: float
+    inliers: int = 0
+    rms: float = 0.0
+
+    def height(self, points: np.ndarray) -> np.ndarray:
+        """Signed distance of points (..., 3) above the plane."""
+        return points @ self.normal - self.offset
+
+    def z_at(self, xy: np.ndarray) -> float:
+        """Pelvis z of the plane under the point xy."""
+        return float((self.offset - self.normal[:2] @ xy) / self.normal[2])
+
+    def axes(self) -> np.ndarray:
+        """Two unit vectors (2, 3) spanning the plane: the one nearest pelvis x, and the one completing a right-handed frame."""
+        forward = np.array([1.0, 0.0, 0.0]) - self.normal[0] * self.normal
+        forward /= np.linalg.norm(forward)
+        return np.stack([forward, np.cross(self.normal, forward)])
 
 
 def fit_plane(points: np.ndarray, tolerances: tuple[float, ...]) -> PlaneFit:

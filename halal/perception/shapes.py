@@ -10,7 +10,7 @@ import numpy as np
 from aaltonomous.scene.scene import Scene, shape_polygon
 
 from halal.perception import SHAPES
-from halal.perception.geometry import Camera
+from halal.perception.geometry import Camera, PlaneFit
 
 PERIOD_DEG = {"cube": 90, "triangle": 120, "cylinder": 1}
 HEADING = {"cube": 0.0, "triangle": np.pi / 2, "cylinder": 0.0}   # reported yaw minus the `shape_polygon` rotation
@@ -22,7 +22,7 @@ COARSE = 2
 class OutlineFit:
     """Best placement of one shape's outline on a top-face view; areas are in view cells."""
     shape: str
-    centre: np.ndarray
+    centre: np.ndarray      # top-face centre, pelvis frame (3,)
     yaw: float | None
     area: float             # of the whole outline
     score: float            # seen-as-top minus seen-as-empty area inside the outline
@@ -80,7 +80,7 @@ class OutlineFitter:
     def __init__(self, scene: Scene, cfg: Mapping[str, Any]) -> None:
         self.cfg = cfg
         self.cell = cfg["cell"]
-        self.top_z = scene.counter_z + scene.object_height()
+        self.height = scene.object_height()
         self.size = cfg["outline_cells"]
         self.grid = cfg["view_cells"]
         self.fillet = scene.cfg["objects"]["fillet"]
@@ -92,34 +92,31 @@ class OutlineFitter:
         offsets = (np.arange(self.grid) - (self.grid - 1) / 2) * self.cell
         self.offsets = np.stack(np.meshgrid(offsets, offsets, indexing="ij"), axis=-1).reshape(-1, 2)
 
-    def view(self, depth: np.ndarray, camera: Camera, centre: np.ndarray) -> np.ndarray:
-        """Top-plane evidence grid around `centre` (pelvis xy): +1 top face, -1 empty, 0 hidden or unknown."""
-        labels = camera.surface_labels(depth, self._points(centre, slice(None)), self.cfg["depth_tolerance"])
+    def view(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, axes: np.ndarray) -> np.ndarray:
+        """Top-plane evidence grid around `origin` (a point of the top plane): +1 top face, -1 empty, 0 hidden or unknown."""
+        labels = camera.surface_labels(depth, origin + self.offsets @ axes, self.cfg["depth_tolerance"])
         return labels.reshape(self.grid, self.grid).astype(np.float32)
 
-    def fit(self, depth: np.ndarray, camera: Camera, centre: np.ndarray) -> TopFace:
-        """Fit all shapes to the top-face view around a rough centre."""
-        view = self.view(depth, camera, centre)
+    def fit(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, counter: PlaneFit) -> TopFace:
+        """Fit all shapes to the top-face view around a rough centre on the top plane."""
+        axes = counter.axes()
+        view = self.view(depth, camera, origin, axes)
         small = cv2.resize(view, (self.grid // COARSE, self.grid // COARSE), interpolation=cv2.INTER_AREA)
-        bias = self._silhouette_shift(camera, centre)
-        fits = sorted((self._fit_shape(s, view, small, centre, bias) for s in SHAPES), key=lambda f: -f.score)
-        pixels = camera.project(self._points(centre, fits[0].cells))[:, :2]
+        start = origin - self._silhouette_shift(camera, origin, counter.normal)
+        fits = sorted((self._fit_shape(s, view, small, start, axes) for s in SHAPES), key=lambda f: -f.score)
+        pixels = camera.project(origin + self.offsets[fits[0].cells] @ axes)[:, :2]
         return TopFace(tuple(fits), np.round(pixels).astype(int))
 
-    def _silhouette_shift(self, camera: Camera, centre: np.ndarray) -> np.ndarray:
+    def _silhouette_shift(self, camera: Camera, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:
         """How far the seen top face sits towards the camera: front-face rays within tolerance, far fillet seen past."""
-        away = centre - camera.T[:2, 3]
-        slope = np.arctan2(camera.T[2, 3] - self.top_z, np.linalg.norm(away))
+        ray = origin - camera.T[:3, 3]
+        away = ray - (ray @ normal) * normal
+        slope = np.arctan2(-ray @ normal, np.linalg.norm(away))
         near = self.cfg["depth_tolerance"] * np.cos(slope)
         far = self.fillet * ((1 - np.sin(slope)) + (1 - np.cos(slope)) / np.tan(slope))
         return -0.5 * (near + far) * away / np.linalg.norm(away)
 
-    def _points(self, centre: np.ndarray, cells: np.ndarray | slice) -> np.ndarray:
-        """Pelvis-frame points of view cells on the top plane."""
-        xy = centre + self.offsets[cells]
-        return np.c_[xy, np.full(len(xy), self.top_z)]
-
-    def _fit_shape(self, shape: str, view: np.ndarray, small: np.ndarray, centre: np.ndarray, bias: np.ndarray) -> OutlineFit:
+    def _fit_shape(self, shape: str, view: np.ndarray, small: np.ndarray, start: np.ndarray, axes: np.ndarray) -> OutlineFit:
         step = min(self.cfg["coarse_yaw_deg"], PERIOD_DEG[shape])
         coarse = [self._peak(small, self.coarse[shape][a]) for a in range(0, PERIOD_DEG[shape], step)]
         k = int(np.argmax([score for score, _ in coarse]))
@@ -132,7 +129,7 @@ class OutlineFitter:
         top = placed * (view > 0)
         worst = COARSE ** 2 * min(score for score, _ in coarse)
         shift = (np.array([row, col]) - (self.grid - self.size) / 2) * self.cell
-        return OutlineFit(shape, centre + shift - bias, wrap_yaw(shape, angles[j]), self.area[shape], score, float(top.sum()),
+        return OutlineFit(shape, start + shift @ axes, wrap_yaw(shape, angles[j]), self.area[shape], score, float(top.sum()),
                           worst, np.flatnonzero(top > self.cfg["support_coverage"]))
 
     @staticmethod
