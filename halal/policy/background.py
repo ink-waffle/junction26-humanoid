@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 Cancelled = Callable[[], bool]
@@ -14,7 +14,7 @@ Cancelled = Callable[[], bool]
 class Job:
     work: Callable[[Cancelled], Any]
     cancelled: bool = False
-    finished: bool = False
+    finished: threading.Event = field(default_factory=threading.Event)
     value: Any = None
     error: BaseException | None = None
 
@@ -36,10 +36,10 @@ class Background:
         self._job = Job(work)
         threading.Thread(target=self._run, args=(self._job,), daemon=True).start()
 
-    def poll(self) -> Job | None:
-        """The submitted job once it has finished (exactly once), else None."""
+    def poll(self, wait_s: float = 0.0) -> Job | None:
+        """The submitted job once it has finished (exactly once), else None; waits up to `wait_s` for it."""
         job = self._job
-        if job is None or not job.finished:
+        if job is None or not job.finished.wait(wait_s):
             return None
         self._job = None
         return job
@@ -58,9 +58,21 @@ class Background:
         except Exception as error:
             job.error = error
         finally:
-            job.finished = True
+            job.finished.set()
 
     def _lower_priority(self) -> None:
         """Nice the calling thread (a per-thread setting on Linux only) so planning never starves `act()`."""
         if sys.platform == "linux":
             os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), self.nice)
+
+
+def within(seconds: float, work: Callable[[], Any], nice: int) -> Any:
+    """What `work` returns, run in a thread of its own; TimeoutError if it takes longer (that thread is left to run out)."""
+    runner = Background(nice)
+    runner.submit(lambda cancelled: work())
+    job = runner.poll(seconds)
+    if job is None:
+        raise TimeoutError(f"no answer within {seconds:.1f} s")
+    if job.error is not None:
+        raise job.error
+    return job.value

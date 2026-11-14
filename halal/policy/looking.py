@@ -11,7 +11,7 @@ from halal.language import SHAPES
 from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
 from halal.policy.area import ObjectArea
-from halal.policy.background import Cancelled
+from halal.policy.background import Cancelled, within
 from halal.policy.hands import HandCalibrator
 from halal.policy.memory import Attempts, Shapes
 from halal.policy.picking import Pick, PickChooser, Target
@@ -57,12 +57,13 @@ class Looker:
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.file_layout = scene_layout(planner.scene)
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["retry_offsets"])
+        self.detect_patience_s = float(settings["detect_deadline_s"])
 
     def look(self, obs: Mapping[str, Any], situation: Situation, cancelled: Cancelled) -> Look | None:
         """Background job: detect and plan the next pick; None when a head image has not arrived."""
         if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
             return None
-        detections = self.detector.detect(obs)
+        detections = self._detect(obs)
         if situation.primer:
             return Look(detections, [], None, [], 0, self.detector.layout().source, False, True)
         if situation.hands_pending:
@@ -74,6 +75,15 @@ class Looker:
             log.warning("the perceived layout leaves no pick among %d detections: trying the scene file's", rejected)
             return replace(self._plan(self.file_layout, detections, situation, cancelled), layout_rejected=True)
         return look
+
+    def _detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]:
+        """The detector's answer; a call that outlasts its deadline is left behind and the next one gets twice as long."""
+        try:
+            return within(self.detect_patience_s, lambda: self.detector.detect(obs), self.settings["background_nice"])
+        except TimeoutError:
+            log.error("the detector did not answer within %.1f s: looking again with twice the patience", self.detect_patience_s)
+            self.detect_patience_s *= 2
+            raise
 
     def _plan(self, layout: SceneLayout, detections: list[ObjectDetection], situation: Situation,
               cancelled: Cancelled) -> Look:
