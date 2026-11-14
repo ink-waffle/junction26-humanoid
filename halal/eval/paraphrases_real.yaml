@@ -1,0 +1,282 @@
+# Real-robot vocabulary set for the sort_language instruction parser (Junction 2026, Aaltonomous Humanoid).
+#
+# On the real robot the objects are purple / yellow / orange and the boxes are cardboard wrapped in orange tape.
+# Perception works with three colour families, so the ground truth stays canonical: orange counts as red, purple
+# (violet, lilac) as blue. The `words` field verbalises the families with the real words, so every colour and bin
+# permutation is exercised with the real vocabulary. Same entry format as paraphrases.yaml (see paraphrases.py);
+# every entry is split: test. Run: python -m halal.eval.language_bench --split test --file <this file>.
+
+# ---------------------------------------------------------------- color_full: three real colours onto three boxes
+- id: real-fixed-task
+  split: test
+  category: color_full
+  text: "Put the {c0} objects in the {b0} bin, the {c1} objects in the {b1} bin and the {c2} objects in the {b2} bin."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-into-boxes
+  split: test
+  category: color_full
+  text: "Put the {c0} objects into the {b0} box, the {c1} objects into the {b1} box and the {c2} objects into the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-goes-to
+  split: test
+  category: color_full
+  text: "{C0} goes to the {b0} box, {c1} to the {b1} box, {c2} to the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-arrows
+  split: test
+  category: color_full
+  text: "{c0} -> {b0}, {c1} -> {b1}, {c2} -> {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-colons
+  split: test
+  category: color_full
+  text: "{C0}: {b0}. {C1}: {b1}. {C2}: {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-bare-pairs
+  split: test
+  category: color_full
+  text: "{c0} {b0}, {c1} {b1}, {c2} {b2}"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-three-sentences
+  split: test
+  category: color_full
+  text: "Put the {c0} objects into the {b0} box. Put the {c1} objects into the {b1} box. Put the {c2} objects into the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-box-is-for
+  split: test
+  category: color_full
+  text: "The {b0} box is for {c0} objects, the {b1} box for {c1}, the {b2} box for {c2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-full-violet-ones
+  split: test
+  category: color_full
+  text: "Sort by colour: {c0} ones go in the {b0} box, {c1} ones in the {b1} box and {c2} ones in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: violet}
+- id: real-full-mixed-parentheses
+  split: test
+  category: color_full
+  text: "Put the {c0} objects in the {b0} box, the {c1} objects in the {b1} box and the {c2} objects in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: "orange (red)", blue: "purple (blue)"}
+- id: real-full-mixed-slash
+  split: test
+  category: color_full
+  text: "{C0} objects go into the {b0} box, {c1} objects into the {b1} box and {c2} objects into the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: "red/orange", blue: "blue/purple"}
+
+# ---------------------------------------------------------------- color_respectively
+- id: real-resp-boxes
+  split: test
+  category: color_respectively
+  text: "Put the {c0}, {c1} and {c2} objects into the {b0}, {b1} and {b2} boxes respectively."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-resp-left-to-right
+  split: test
+  category: color_respectively
+  text: "From left to right: {c0}, {c1}, {c2}."
+  mapping: {c0: left, c1: center, c2: right}
+  words: {red: orange, blue: purple}
+
+# ---------------------------------------------------------------- bin_synonym: the boxes described as orange
+- id: real-syn-middle-box
+  split: test
+  category: bin_synonym
+  text: "{C0} objects go in the {b0} box, {c1} objects in the {b1} box, {c2} objects in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple, center: middle}
+- id: real-syn-orange-box-on-the
+  split: test
+  category: bin_synonym
+  text: "Put the {c0} objects in the orange box {b0}, the {c1} objects in the orange box {b1} and the {c2} objects in the orange box {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple, left: "on the left", center: "in the middle", right: "on the right"}
+- id: real-syn-position-orange-box
+  split: test
+  category: bin_synonym
+  text: "{C0} objects go into the {b0} orange box, {c1} objects into the {b1} orange box and {c2} objects into the {b2} orange box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+
+# ---------------------------------------------------------------- noisy: scene descriptions around the instruction
+- id: real-noisy-three-orange-boxes
+  split: test
+  category: noisy
+  text: "There are three orange boxes in front of you. The {c0} objects belong in the {b0} box, the {c1} objects in the {b1} box and the {c2} objects in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-noisy-boxes-are-orange
+  split: test
+  category: noisy
+  text: "The boxes are orange. {C0} ones go {b0}, {c1} ones go {b1}, {c2} ones go {b2}."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-noisy-orange-tape
+  split: test
+  category: noisy
+  text: "The three cardboard boxes are wrapped in orange tape. {C0} objects belong in the {b0} one, {c1} objects in the {b1} one and {c2} objects in the {b2} one."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-noisy-finals-greeting
+  split: test
+  category: noisy
+  text: "Welcome to the finals! On the table you will find purple, yellow and orange objects and three orange boxes. Sort them: {c0} into the {b0} box, {c1} into the {b1} box, {c2} into the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-noisy-sim-colours-changed
+  split: test
+  category: noisy
+  text: "The colours differ from the simulator: what was red is now orange and what was blue is now purple. Put the {c0} objects in the {b0} box, the {c1} objects in the {b1} box and the {c2} objects in the {b2} box."
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: orange, blue: purple}
+- id: real-noisy-caps-equals
+  split: test
+  category: noisy
+  text: "{c0} = {b0} box; {c1} = {b1} box; {c2} = {b2} box"
+  mapping: {c0: b0, c1: b1, c2: b2}
+  words: {red: ORANGE, yellow: YELLOW, blue: PURPLE}
+
+# ---------------------------------------------------------------- color_leave: only some colours are named
+- id: real-one-colour-objects
+  split: test
+  category: color_leave
+  text: "Put the {c0} objects into the {b0} box."
+  mapping: {c0: b0}
+  words: {red: orange, blue: purple}
+- id: real-two-colours
+  split: test
+  category: color_leave
+  text: "Put the {c0} objects into the {b0} box and the {c1} objects into the {b1} box."
+  mapping: {c0: b0, c1: b1}
+  words: {red: orange, blue: purple}
+- id: real-one-colour-orange-box
+  split: test
+  category: color_leave
+  text: "Move the {c0} ones into the {b0} orange box."
+  mapping: {c0: b0}
+  words: {red: orange, blue: purple}
+- id: real-two-colours-leave-third
+  split: test
+  category: color_leave
+  text: "Put the {c0} objects in the {b0} box and the {c1} objects in the {b1} box. Leave the {c2} ones on the table."
+  mapping: {c0: b0, c1: b1}
+  words: {red: orange, blue: purple}
+- id: real-one-colour-lilac
+  split: test
+  category: color_leave
+  text: "All {c0} objects go into the {b0} box, please."
+  mapping: {c0: b0}
+  words: {red: orange, blue: lilac}
+
+# ---------------------------------------------------------------- color_rest
+- id: real-rest-everything-else
+  split: test
+  category: color_rest
+  text: "Put the {c0} objects into the {b0} box and everything else into the {b1} box."
+  mapping: {c0: b0, default: b1}
+  words: {red: orange, blue: purple}
+- id: real-rest-two-named
+  split: test
+  category: color_rest
+  text: "{C0} objects go in the {b0} box, {c1} objects in the {b1} box, and the rest in the {b2} box."
+  mapping: {c0: b0, c1: b1, default: b2}
+  words: {red: orange, blue: purple}
+
+# ---------------------------------------------------------------- color_shape: the organisers' single-object style
+- id: real-single-cube
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube into the {b0} box."
+  mapping: {c0/cube: b0}
+  words: {red: orange, blue: purple}
+- id: real-single-triangular-prism
+  split: test
+  category: color_shape
+  text: "Put the {c0} triangular prism into the {b0} box."
+  mapping: {c0/triangle: b0}
+  words: {red: orange, blue: purple}
+- id: real-single-cylinder
+  split: test
+  category: color_shape
+  text: "Put the {c0} cylinder into the {b0} box."
+  mapping: {c0/cylinder: b0}
+  words: {red: orange, blue: purple}
+- id: real-two-cube-sentences
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube into the {b0} box. Put the {c1} cube into the {b1} box."
+  mapping: {c0/cube: b0, c1/cube: b1}
+  words: {red: orange, blue: purple}
+- id: real-cube-and-prism-one-colour
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube into the {b0} box. Put the {c0} triangular prism into the {b1} box."
+  mapping: {c0/cube: b0, c0/triangle: b1}
+  words: {red: orange, blue: purple}
+- id: real-three-object-sentences
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube into the {b0} box. Put the {c1} triangular prism into the {b1} box. Put the {c2} cylinder into the {b2} box."
+  mapping: {c0/cube: b0, c1/triangle: b1, c2/cylinder: b2}
+  words: {red: orange, blue: purple}
+- id: real-prism-and-cube
+  split: test
+  category: color_shape
+  text: "Put the {c0} prism into the {b0} box and the {c1} cube into the {b1} box."
+  mapping: {c0/triangle: b0, c1/cube: b1}
+  words: {red: orange, blue: purple}
+- id: real-cube-into-orange-box
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube in the {b0} orange box."
+  mapping: {c0/cube: b0}
+  words: {red: orange, blue: purple}
+- id: real-cube-then-other-same-colour
+  split: test
+  category: color_shape
+  text: "Put the {c0} cube into the {b0} box and all the other {c0} objects into the {b1} box."
+  mapping: {c0/cube: b0, c0: b1}
+  words: {red: orange, blue: purple}
+- id: real-cube-three-orange-boxes
+  split: test
+  category: color_shape
+  text: "There are three orange boxes on the table. Put the {c0} cube into the {b0} one."
+  mapping: {c0/cube: b0}
+  words: {red: orange, blue: purple}
+
+# ---------------------------------------------------------------- shape: shape-only instructions, orange boxes around
+- id: real-shape-cubes-only
+  split: test
+  category: shape
+  text: "Put the cubes into the {b0} box."
+  mapping: {cube: b0}
+- id: real-shape-all-three
+  split: test
+  category: shape
+  text: "Put the cubes into the {b0} box, the cylinders into the {b1} box and the triangular prisms into the {b2} box."
+  mapping: {cube: b0, cylinder: b1, triangle: b2}
+- id: real-shape-into-orange-boxes
+  split: test
+  category: shape
+  text: "Sort by shape into the orange boxes: cubes {b0}, cylinders {b1}, prisms {b2}."
+  mapping: {cube: b0, cylinder: b1, triangle: b2}
+- id: real-shape-single-prism
+  split: test
+  category: shape
+  text: "Put the triangular prism into the {b0} box."
+  mapping: {triangle: b0}
+- id: real-shape-whatever-colour
+  split: test
+  category: shape
+  text: "Every cube goes into the {b0} box, whether it is purple, yellow or orange."
+  mapping: {cube: b0}

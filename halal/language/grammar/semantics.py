@@ -33,6 +33,7 @@ class Rule:
     weight: int = 0              # strength when a colour rule and a shape rule claim the same object type
     cost: float = 0.0
     corrects: bool = False       # stated as a correction: replaces earlier rules for the same object types
+    hue: str = ""                # the colour as worded, to tell 'orange' from 'red' when one family gets two bins
 
 
 @dataclass
@@ -189,7 +190,7 @@ def _rule(mention: ObjectMention, bin_name: str | None, cost: float, residual: b
         mention.negated, mention.key)
     weight = (tuning.W_UNIVERSAL * mention.universal + tuning.W_QUANTIFIED * (mention.scope is Scope.ALL)
               - tuning.W_RESIDUAL * (residual or mention.scope is Scope.REST))
-    return Rule(_selector(mention), bin_name, key if bin_name else None, weight, cost, corrects)
+    return Rule(_selector(mention), bin_name, key if bin_name else None, weight, cost, corrects, mention.hue)
 
 
 def _drop_correct_bin_opening(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None:
@@ -311,14 +312,30 @@ def _settle(ledger: _Ledger, rules: list[Rule]) -> str | None:
                                        tuning.F_CORRECTED))
         return corrections[-1]
     if len(bins) > 1:
-        best = min((rule for rule in rules if rule.bin), key=lambda rule: rule.cost).bin
-        issue = Issue(f"conflicting bins for '{_name(rules[0].atoms)}': {' vs '.join(bins)}; kept {best}",
-                      tuning.F_CONFLICT)
+        best, issue = _family_clash(rules) or _conflict(rules, bins)
         if issue not in ledger.issues:
             ledger.issues.append(issue)
             ledger.penalty += tuning.CONFLICT
         return best
     return bins[0] if bins else None
+
+
+def _conflict(rules: list[Rule], bins: list[str]) -> tuple[str, Issue]:
+    """Two bins stated for the same objects: the cheaper statement is kept."""
+    best = min((rule for rule in rules if rule.bin), key=lambda rule: rule.cost).bin
+    return best, Issue(f"conflicting bins for '{_name(rules[0].atoms)}': {' vs '.join(bins)}; kept {best}",
+                       tuning.F_CONFLICT)
+
+
+def _family_clash(rules: list[Rule]) -> tuple[str, Issue] | None:
+    """'red left, orange right': two hues of one family, which perception cannot tell apart; the first is kept."""
+    placed = [rule for rule in rules if rule.bin and rule.hue]
+    rival = next((rule for rule in placed if rule.hue != placed[0].hue and rule.bin != placed[0].bin), None)
+    if rival is None:
+        return None
+    first = placed[0]
+    return first.bin, Issue(f"'{first.hue}' and '{rival.hue}' are one colour for perception but go to different bins "
+                            f"({first.bin} vs {rival.bin}); kept '{first.hue}' -> {first.bin}", tuning.F_FAMILY_CLASH)
 
 
 def _charge_unpaired(ledger: _Ledger, ruled: set[Atom], unpaired: list[Mention]) -> None:

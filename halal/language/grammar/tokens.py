@@ -7,11 +7,12 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, CORRECT_NOUNS, DEFINING_WORDS, EGOCENTRIC,
-                                            FUZZY_TARGETS, INTENSIFIED, LETTER_BINS,
+from halal.language.grammar.lexicon import (BIN_COVERINGS, BINS, COLOUR_EMOJI, CORRECT_NOUNS, DEFINING_WORDS,
+                                            EGOCENTRIC, FUZZY_TARGETS, INDEFINITE, INTENSIFIED, LETTER_BINS,
                                             MAX_PHRASE, MODAL_FOLLOWERS, NAMING_WORDS, NOT_TYPOS, NUMBERS, PHRASES,
-                                            RELATIVE_PRONOUNS, ROW_EQUATES, ROW_HEADINGS, ROW_JOINERS, ROW_LEADS,
-                                            ROW_STARTERS, STAY_WORDS, SURFACES, TRAVEL_WORDS, WH_WORDS, WORDS, Tag)
+                                            PLACING, RELATIVE_PRONOUNS, ROW_EQUATES, ROW_HEADINGS, ROW_JOINERS,
+                                            ROW_LEADS, ROW_STARTERS, STAY_WORDS, SURFACES, TRAVEL_WORDS, WH_WORDS,
+                                            WORDS, Tag)
 
 _QUOTES = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"',
                          **{emoji: f" {colour} " for emoji, colour in COLOUR_EMOJI.items()}})
@@ -160,6 +161,55 @@ def _clause_ahead(tokens: list[Token], index: int) -> Iterator[Token]:
 
 def _retag(token: Token, new_tag: Tag, value: str = "") -> None:
     token.tag, token.value = new_tag, value
+
+
+def _resolve_bin_colours(tokens: list[Token]) -> list[Token]:
+    """A colour said of the bins ('three orange boxes', 'the bins are orange', 'orange tape') names no objects."""
+    said_of_bins = [token for index, token in enumerate(tokens) if token.tag is Tag.COLOUR
+                    and (_modifies_bin(tokens, index) or _predicated_of_bins(tokens, index))
+                    and not _listed_colour(tokens, index)]
+    for token in said_of_bins:
+        _retag(token, Tag.FILL)
+    return tokens
+
+
+def _modifies_bin(tokens: list[Token], index: int) -> bool:
+    """Colour before a bin noun that is plural, indefinite or placed by position; 'the red bin' alone is red's bin."""
+    noun_index = _skip(tokens, index + 1, (Tag.FILL,))
+    noun = _at(tokens, noun_index)
+    if noun.tag is not Tag.CONTAINER:
+        return noun.text in BIN_COVERINGS
+    placed = _placed_before(tokens, index) or _placed_at(tokens, noun_index + 1)
+    return placed or noun.text.endswith("s") or _at(tokens, index - 1).text in INDEFINITE
+
+
+def _placed_before(tokens: list[Token], index: int) -> bool:
+    """'the left', 'into the first' ends before `index`; a bare 'left red box, right blue box' lists pairs instead."""
+    position = _skip(tokens, index - 1, (Tag.FILL,), step=-1)
+    return _at(tokens, position).tag in (Tag.BIN, Tag.ORDINAL) and _at(tokens, position - 1).tag in (Tag.FILL, Tag.LINK)
+
+
+def _placed_at(tokens: list[Token], index: int) -> bool:
+    """'on the left', 'to your right', 'in the middle' starts at `index`."""
+    return _at(tokens, index).text in PLACING and _at(tokens, _skip(tokens, index + 1, (Tag.FILL,))).tag is Tag.BIN
+
+
+def _predicated_of_bins(tokens: list[Token], index: int) -> bool:
+    """'the bins are orange', 'the boxes on the table are all orange'; 'the left bin is red' assigns red instead."""
+    copula = _skip(tokens, index - 1, (Tag.FILL, Tag.ALL), step=-1)
+    subject = _at(tokens, _skip(tokens, copula - 1, (Tag.FILL, Tag.ALL, Tag.BIN, Tag.LINK), step=-1))
+    return _at(tokens, copula).value == "copula" and subject.tag is Tag.CONTAINER and subject.text.endswith("s")
+
+
+def _listed_colour(tokens: list[Token], index: int) -> bool:
+    """'the bins are red, yellow and blue' lists what goes in; in 'orange and purple cubes' purple has its own noun."""
+    for step in (-1, 1):
+        joiner = _skip(tokens, index + step, (Tag.FILL,), step)
+        other = _skip(tokens, joiner + step, (Tag.FILL,), step)
+        has_noun = _at(tokens, _skip(tokens, other + 1, (Tag.FILL,))).tag in (Tag.OBJECT, Tag.SHAPE)
+        if _at(tokens, joiner).tag in (Tag.COMMA, Tag.AND) and _at(tokens, other).tag is Tag.COLOUR and not has_noun:
+            return True
+    return False
 
 
 def _expand_rows(tokens: list[Token]) -> list[Token]:
@@ -643,7 +693,7 @@ def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
     return tokens
 
 
-_CONTEXT_RULES = (_expand_rows, _resolve_aliases, _resolve_left, _resolve_right, _resolve_between,
+_CONTEXT_RULES = (_resolve_bin_colours, _expand_rows, _resolve_aliases, _resolve_left, _resolve_right, _resolve_between,
                   _resolve_ordinals, _resolve_numbered, _resolve_relative, _soften_egocentric, _resolve_round,
                   _resolve_can, _resolve_blocks,
                   _resolve_but, _resolve_pronouns, _resolve_no, _resolve_not, _resolve_unless, _resolve_same,
