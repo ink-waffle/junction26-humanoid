@@ -391,6 +391,7 @@ policy:
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
+  nominal_camera_looks: 3     # looks with a pick but only the nominal camera (no scene anchor, no hand fit yet) spent waiting for the hand fit, hands in view, before a pick is made on that camera anyway (about 1 s each, once per episode)
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 10.0  # and they must span this long: `done` earns nothing, a wrong one loses what is still on the counter (8 s of sim per episode)
   min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
