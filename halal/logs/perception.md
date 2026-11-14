@@ -742,6 +742,37 @@ looks. On the instance under `/data/wt/infra/runs/frames/realsim_looks/`; the be
 This set gave H10 (lying cylinder called a triangle) and H11 (cardboard insides as yellow blobs on the nominal pose).
 Not yet run: the control set without offsets (`realsim_looks_nooff`, announced for later).
 
+### Real data, when it comes: `python -m halal.eval.real_replay runs/halal/<run>`
+
+Reads a runner run folder (`episode_NNN.npz` per tick: t, arm_q, hand_q, arm_dq and, with `--log-images`, head_rgb (T, 480, 640, 3)
+and head_depth (T, 480, 640) uint16; `episode_NNN.jsonl` for the instruction; `episode_NNN.mp4` from `--video`; `container.log`).
+Looks are the still moments (`perception.replay`), one detector per episode as the policy runs it. Output: a digest of our
+server's log (layout source of its looks, its "arms:" lines, warnings), then per episode a summary and one line per look, a few
+overlay PNGs and `report.json` under `<run>/replay/`.
+- With depth, per look: camera source, scene anchor fitted or not, the hand fit with rms / coverage / known share / pixels on
+  the model / which check failed, its distance to the anchor, counter height, rim, bins, detections. Summary: counter plane rms
+  and tilt against the pelvis, medians of the hand fit against their limits, per arm part (fingers, palm, wrist, forearm) the
+  share of visible model points that returned depth and that have depth on the model, and the share of DARK pixels around the
+  arms that returned depth, which needs no camera fit and names the depth level of `bench.d435` the hands resemble.
+- Overlay: left RGB with the bins at counter (cyan) and rim (yellow) height, detections, arm model; right depth (invalid purple)
+  with the arm model points green (depth on the model), yellow (depth elsewhere), red (none).
+- Without depth (frames from the mp4): the colour stage (white balance on pale bright pixels, blobs per family with the colour
+  they would be named) and the outline of the black links: share of their model points on dark pixels and distance to them
+  through the nominal camera, and after the best image shift (the head calibration's error at the hands, in pixels).
+Tested: (1) a real runner run with the mock backend, `--log-images --video`: the format reads, but that backend's images are
+black (the env's mock renders nothing), so such frames are skipped; (2) runner-format folders built from `realsim_looks` seed
+1002 with our server's log of that episode as `container.log`:
+
+| depth | camera by | hand fit rms / covered / known | fingers returned | palm | wrist | dark pixels returned | level named |
+|---|---|---|---|---|---|---|---|
+| sim | hands | 1.7 mm / 0.87 / 1.00 | 0.98 | 1.00 | 0.99 | 0.99 | mild |
+| typical | hands | 1.5 / 0.85 / 0.95 | 0.41 | 0.63 | 0.92 | 0.58 | typical |
+| bad | hands | 2.4 / 0.93 / 0.62 | 0.06 | 0.12 | 0.47 | 0.10 | bad |
+| RGB only | n/a | outline: 0.47 of the black links on dark pixels, 3.3 px; after a shift of (+12, -8) px 0.52, 2.3 px | | | | | |
+
+The sim arm is dark all over, so its dark-pixel share mixes hand and forearm; on the real robot only the hand is dark. In the
+sim's light the hand reads brighter than 60 in half of its pixels, hence the low outline share there; the real hand reads 43.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

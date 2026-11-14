@@ -94,7 +94,8 @@ class HandReference:
                   floor: PlaneFit | None, anchor: np.ndarray) -> HandFit | None:
         """One point-to-plane descent from the camera shifted by `start` (turn, shift); the prior still pulls to `camera`."""
         first = camera.moved(np.eye(3), start[3:])
-        model, normals = self._facing(*surface, first, depth.shape)
+        front = self.facing(*surface, first, depth.shape)
+        model, normals = surface[0][front], surface[1][front]
         pixels = self._pixels(depth, first, model, floor)
         if len(model) < self.cfg["min_points"] or len(pixels) < self.cfg["min_points"]:
             return None
@@ -126,8 +127,8 @@ class HandReference:
         out[inside] = depth[v[inside], u[inside]] > 0
         return out
 
-    def _facing(self, model: np.ndarray, normals: np.ndarray, camera: Camera, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
-        """The model points inside the image that face the camera and are the nearest in their image cell."""
+    def facing(self, model: np.ndarray, normals: np.ndarray, camera: Camera, shape: tuple[int, int]) -> np.ndarray:
+        """Indices of the model points inside the image that face the camera and are the nearest in their image cell."""
         view = model - camera.T[:3, 3]
         uvz = camera.project(model)
         u, v = uvz[:, 0], uvz[:, 1]
@@ -137,8 +138,7 @@ class HandReference:
         cell = (v[ok] // self.cfg["cell_px"]).astype(int) * shape[1] + (u[ok] // self.cfg["cell_px"]).astype(int)
         nearest = np.full(shape[0] * shape[1], np.inf)
         np.minimum.at(nearest, cell, uvz[ok, 2])
-        front = ok[uvz[ok, 2] <= nearest[cell] + self.cfg["cell_depth"]]
-        return model[front], normals[front]
+        return ok[uvz[ok, 2] <= nearest[cell] + self.cfg["cell_depth"]]
 
     def _pixels(self, depth: np.ndarray, camera: Camera, model: np.ndarray, floor: PlaneFit | None) -> np.ndarray:
         """Rows (u, v, depth) of valid pixels in the padded image box of the model, clear of the counter."""
