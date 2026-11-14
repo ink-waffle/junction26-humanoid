@@ -5,7 +5,8 @@
 Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
-variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `noise`, `squeeze`, `candidates`, `overrides`
+variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
+`repeats`, `squeeze`, `candidates`, `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
@@ -77,8 +78,8 @@ class Pick:
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
     """Every variant on every shape, spot, yaw and noise level in a seeded random order, arms alternating."""
     grid = [(name, *rest) for name, variant in spec["variants"].items()
-            for rest in itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"],
-                                          variant.get("noise", spec["noise"]), range(spec["repeats"]))]
+            for rest in itertools.product(*(variant.get(key, spec[key]) for key in ("shapes", "spots", "yaws_deg", "noise")),
+                                          range(variant.get("repeats", spec["repeats"])))]
     order = np.random.default_rng(spec["seed"]).permutation(len(grid))
     return [_case(spec, *grid[k], SIDES[i % 2]) for i, k in enumerate(order)]
 
