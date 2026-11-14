@@ -880,6 +880,17 @@ frozen cases as v25.
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | fixed | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 175 | PASS | 0 | scene, bins scene 177 / 177 | cage 28, cage_apex 6 |
 | fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 173 | PASS | 0 | scene, bins scene 177 / 177 | cage 19, cage_apex 6, cage_deep 9 |
+| known | b | +6.75 ± 0.97 | 27/28, 1 counter | done 8 | 0 | 30.0 | 115 | PASS | 3 | scene, bins scene 176 / 176 | cage 21, cage_apex 18, pinch 1, ridge_opposed 1 |
+| unseen | b | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 114 | PASS | 0 | scene, bins scene 174 / 174 | cage 20, cage_apex 18, cage_deep 1 |
+| known, seed 1002 again | b | +10 | 5/5 | done | 0 | 30.0 | 144 | ok | 0 | scene | the blue triangle held at the first try |
+
+Known seed 1002 lost its blue triangle: the first pick (left arm, `cage_apex`, the same target and release as v12–v24 from
+the same first look) planned 11.2 s where every earlier version had 10.9–11.0 s and held; this time it closed on air and
+pushed the prism, the right arm's `cage` missed it too, it toppled, `ridge_opposed` missed, and the attempt cap left it
+(3 real picks counted as 5: see the next section). Not v26 code: planning that pick on the v24 and v26 trees over a 0–114°
+yaw sweep gives byte-identical results; the duration moves 0.2–0.3 s per 6° of detected yaw. Unseen seed 1002 (the same
+layout, the same sim, v26) and the rerun of known seed 1002 both planned it in 10.9 s and held it (0.095). Verdict: gate PASS
+on all 33 episodes, 0 frozen / left-alone / no-options lines; 86/87 by the letter (jitter), equal to v24 with the rerun.
 
 ### Tries follow a pushed object without being counted twice (for v27, 4c70681)
 v26 known seed 1002: the blue triangle was picked three times (each miss pushed it 2-4 cm) and then left alone: the attempt
@@ -893,3 +904,23 @@ Mock (scratch `p5/follow_pushes.py`: the policy's own `record_pick`, `_follow_mi
 | random walks, 200 each: pushes of 2 / 2.5 / 3 / 4 / 6 cm | short of 5 in 70 / 43 / 58 / 7 / 0 | 0 / 0 / 0 / 0 / 0 |
 
 Suites 36/36, `neighbours_e2e` 5/5, predecessors' `follow_chain` (1..6) and `follow_missed` (1 0 0) unchanged.
+
+### A target no arm reaches, and colours spoiled by a hand at home (for v27, afb2e9c)
+Realsim rs24-robot6edgefar-rest seed 1007: a yellow cube whose box stood 10 cm farther got "no arm in use reaches the left
+bin" 22 times and the policy looked again from home for 80 s; meanwhile a yellow cylinder next to the left hand read
+`None/cylinder c0.00` in all 23 home looks, so it was never a target and never earned the clear-view look. v27:
+- a target without any option (no arm in use reaches its bin, or building the options raised) is left alone after
+  `policy.broken_target_looks` (3) such looks, counted only on looks whose camera is fixed (`scene` / `hands`): the nominal
+  camera can put boxes centimetres too far and must not condemn a target the hand fit would make reachable;
+- after `policy.clear_look_every` (3) looks in a row from home without a plannable target, one look is taken with the arms out
+  of the way (counter reset by a pick or a clear look).
+
+| Mock (scratch `p5/unreachable.py`) | v26 tree | v27 tree |
+|---|---|---|
+| seed 11: red unreachable, blue colourless while the hands are home | yellow sorted; 64 looks "no plan", time limit; blue and red left | red left alone at 15.7 s, blue sorted from the clear look, `done` at 49 s |
+| seed 13: yellow unreachable, red colourless at home | 43 looks "no plan", time limit, both reds left | yellow left alone at 38.6 s, both reds sorted, `done` at 93 s |
+| seed 11: every plan for red refused (not optionless), blue colourless at home | 53 looks "no plan", blue left | clear look after 3 looks, blue sorted at 36 s, red refused to the time limit |
+
+Stock legs: "no plan for any of" appears in none of the v24–v26 stock legs and "no arm reaches" never: both rules are no-ops
+there. Suites 36/36 (one load-noisy case rerun alone: as before), `neighbours_e2e` 5/5, shape-memory and follow mocks as
+before.
