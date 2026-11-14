@@ -52,8 +52,16 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
 |---|---|---|---|---|---|---|---|
 | r3-open-nofit | servo3-open-nofit | 1/15 | +0.25 | 4 time limits | 0 | PASS | - |
 | r3-servo-nofit-trans | servo3-servo-nofit-trans | 2/15 | +0.50 | 4 time limits | 0 | PASS | every look refused (rms 3.2-4.1 mm), open loop from the hover |
+| r3-servo | servo3-servo (home fit on) | 15/15 | +3.75 | 4 done | 0 | PASS | camera already fixed at home: does not hurt |
+| r3-servo-nofit | servo3-servo-nofit (hover arm fit allowed) | see below | | | | | first 20 looks: 6 applied, 6 "too large", 6 "visible", 2 rms |
 
 - Translation-only under a 7.4 deg error: hand shifts 3-34 mm, inconsistent between the arms for the same object (e.g. x -31 /
   +11 mm), rms 3.2-4.1 mm. A rotation over the hand patch is no shift; the rms guard refused all, so servo ran open-loop
   (same misses, ~3 s more per pick). Several looks also failed `visible`: a hover planned beside a believed object 3-6 cm
   off can stand over the real one.
+
+- servo-nofit, old caps: the hover's own 6-DOF arm fit is believed in the sim (rms 1.7-2.9 mm, inliers 0.75-0.85) and its turn
+  moves the target (-15..-39, +3..+23, -8..-23) mm, the true robot6 offset at the objects. The 4 cm total cap refused 6 of
+  20 such looks ("too large"); 6 more missed the top face because the hover, planned beside the believed object, stood over
+  the real one. 8f70397: the arm-fit turn is capped on its own (`servo.max_turn_correction` 8 cm). e944ede: a first look that
+  only missed the top face, with its arm fit believed, hovers again beside the turned target.
