@@ -82,6 +82,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v22 | cb81d93c1969 | e318a23 (= main cae48ed) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 119; soft sim 31/31) | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
 | v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | +3.88 ± 0.78, 31/31 | skipped (v24 contains v23) | +7.00 ± 1.41, 28/28 | – | PASS on the 16 episodes run (0 clips, ≥ 29.98 Hz, rt ≥ 165) | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 | v24 | e4869cbc1500 | 3d413a3 | not run | | | | pre-check only | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
+| v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | queued | | | | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -793,3 +794,23 @@ Known and soft legs skipped by order (v24 contains v23). Hands stiff 16/16 on bo
 gap 47 mm; unseen seed 1007's pair rests tilted, top z 0.043). Imperfect but sorted: three "no target is clear" picks as
 if alone, fingers 5 mm from the neighbour (fixed 1004, unseen 1001 and 1003: two triangles blocking each other); unseen
 seed 1007's red cube took `pinch` (left arm), held at the first try.
+
+### The frozen-stream check when every look is from home (v25, 5623ca6)
+v23/v24 compared a repeated head image with the arm pose it was FIRST seen from. When every look is taken from home
+(an episode that starts at home, which is what the organisers were asked for) the arms go out for a pick and come back to
+that pose, so a frozen colour stream is never caught; only a clear-view look (before `done`) trips it. The robot's
+resting start is caught (the frame is first seen on the table, every home look differs from that pose). v25 keeps an
+arm odometer in the policy (sum over replies of the largest commanded joint step, never reset): the image also counts as
+frozen when the arms travelled more than `frozen_frame_arm_move` since it was first seen. Scratch `p5/frozen_fresh.py`:
+fresh policy (no reference frame), home start, live depth, colour frozen at a picture taken at t = 3 s of a live episode.
+
+| Case | v24 tree | v25 tree |
+|---|---|---|
+| frozen picture of the same layout | 5 picks from the stale picture (5/5 correct by luck), frozen lines only after the first clear look | 1 pick (correct), then every look fails: 60 lines |
+| frozen picture of another layout (seed 11 on seed 13) | 2 picks, 1 WRONG BIN, then frozen lines after a clear look | 1 pick (correct), then every look fails |
+| `frozen_rgb.py` (reference from the previous episode) | 4/5, 3/3, nothing moved | the same picks at the same times |
+| live camera, resting starts (`table_e2e.py`, boxes +0 / +6 cm), suites (36), `neighbours_e2e.py` | | unchanged, 0 frozen lines, 0 clips |
+
+Limit left: the first pick of a fresh container with every frame so far seen from one pose (no arm travel yet) is still
+planned from the first picture. A false trigger needs a byte-identical frame after an arm move: on a real camera only a
+frozen stream gives that; on the stock sim the v25 legs must show none.
