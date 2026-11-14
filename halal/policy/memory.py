@@ -28,9 +28,9 @@ class Attempts:
         return self._near(self._broken, xy)
 
     def follow(self, old_xy: np.ndarray, new_xy: np.ndarray) -> None:
-        """The object tried at `old_xy` now lies at `new_xy`: no fewer tries count there than did at the old spot."""
+        """The object tried at `old_xy` now lies at `new_xy`: its tries move with it, none stay behind to be counted twice."""
         for spots in (self._picked, self._unplanned):
-            spots.extend([np.array(new_xy, float)] * max(self._near(spots, old_xy) - self._near(spots, new_xy), 0))
+            spots[:] = [np.array(new_xy, float) if float(np.linalg.norm(spot - old_xy)) < self.radius else spot for spot in spots]
 
     def picks(self, xy: np.ndarray) -> int:
         """Picks started so far on the object at `xy`."""
