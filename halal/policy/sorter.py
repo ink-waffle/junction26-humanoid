@@ -78,7 +78,8 @@ class SortPolicy:
         self.calibrator.reset(enabled=bool(s["grip_check"]))
         self.bin_for = bin_for
         self.time_limit = self.episode_s
-        self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
+        capped = s["hand_lead_cap"] is not None   # short replies: each one re-reads where the fingers are
+        self.stream = CommandStream(self.planner.spec, *((s["lead_cap_ticks"],) * 2 if capped else (s["chunk_ticks"], s["hold_ticks"])))
         self.attempts = Attempts(s["same_object_radius"])
         self.shapes = Shapes(s["same_object_radius"])
         self.released: Counter[str] = Counter()
@@ -90,11 +91,13 @@ class SortPolicy:
         self.stage = Stage.MOVING
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
+        self.unfitted_looks = 0   # looks that had a pick but only the nominal camera, while the hands could still fix it
 
     def act(self, obs: Mapping[str, Any]) -> Action:
         """One reply: the next chunk of the running trajectory, or a hold while the background job works."""
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
+            self.hand_sent = self.stream.hand_cmd.copy()
             self._settle(self.settings["start_settle_s"])   # the first frames can predate the reset and its camera pose
         try:
             self._observe(obs)
@@ -106,9 +109,19 @@ class SortPolicy:
         except Exception:
             log.exception("policy step failed: starting over from a look")
             self._start_over()
-        if self.stream.busy:
-            return self.stream.next_chunk()
-        return self.stream.hold(done=self.stage is Stage.DONE)
+        action = self.stream.next_chunk() if self.stream.busy else self.stream.hold(done=self.stage is Stage.DONE)
+        return self._within_hand_lead(action, obs)
+
+    def _within_hand_lead(self, action: Action, obs: Mapping[str, Any]) -> Action:
+        """For a runner that caps how far a hand command may lead the measured joint (`hand_lead_cap`): hand targets stay within the cap of the measurement."""
+        cap = self.settings["hand_lead_cap"]
+        if cap is None:
+            return action
+        measured, step, sent = np.asarray(obs["hand_q"], float), self._hand_vel / HZ, []
+        for target in np.clip(action["hand_q_target"], measured - cap, measured + cap):
+            self.hand_sent = np.clip(target, self.hand_sent - step, self.hand_sent + step)   # the clamp must not jump either
+            sent.append(self.hand_sent)
+        return {**action, "hand_q_target": np.array(sent)}
 
     def _observe(self, obs: Mapping[str, Any]) -> None:
         """Use the measured hand joints: calibration samples, and the grip check of a running pick."""
@@ -150,6 +163,7 @@ class SortPolicy:
             self.stream.load(*detour)
             self.view = View.CLEAR
         self.next_view = View.HOME
+        self.primed = False   # the detector's hand fit wants a still frame of its own from home, as at a home start
 
     def _stop_grip_check(self) -> None:
         """Run the rest of the episode without calibration and without watching the grip."""
@@ -186,7 +200,7 @@ class SortPolicy:
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         """Look at this frame; if the hands are not calibrated yet they close on nothing while it is processed."""
-        stream, primer = self.stream, self.view is View.START and not self.primed
+        stream, primer = self.stream, self.view in (View.START, View.HOME) and not self.primed
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
@@ -221,11 +235,22 @@ class SortPolicy:
         elif self.view is View.START and self.calibrator.missing:
             log.info("t=%.1f no room here for the hands' calibration close: going home for it before the first pick", t)
             self.stage, self.next_view = Stage.MOVING, View.HOME
+        elif self._waits_for_the_camera(look):
+            log.info("t=%.1f the camera is still the nominal one: look %d of %d for the hands before the first pick on it", t,
+                     self.unfitted_looks, self.settings["nominal_camera_looks"])
+            self.stage = Stage.MOVING
+            self._settle()
         elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING
         else:
             self._start_pick(look.pick, t)
+
+    def _waits_for_the_camera(self, look: Look) -> bool:
+        """A pick on the nominal camera can miss by centimetres: with the hands in view (not the clear pose) a few more still looks let the detector fix it first."""
+        waiting = look.layout_source == "nominal" and self.view is not View.CLEAR and self.unfitted_looks < self.settings["nominal_camera_looks"]
+        self.unfitted_looks += waiting
+        return waiting
 
     def _look_again(self, t: float, error: BaseException | None) -> None:
         """No look result: at once after a blank frame, after a pause when the detector or planner raised."""
@@ -247,8 +272,8 @@ class SortPolicy:
                           unplannable=len(look.unplannable))
         seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};c{d.confidence:.2f};v{d.visible:.2f})"
                         for d in look.detections)
-        log.info("t=%.1f look from %s: %d detections, %d outside the object area, layout from %s: %s", t,
-                 self.view.name.lower(), len(look.detections), len(look.outside), look.layout_source, seen)
+        log.info("t=%.1f look from %s: %d detections, %d outside the object area, layout from %s, bins %s: %s", t,
+                 self.view.name.lower(), len(look.detections), len(look.outside), look.layout_source, look.bins_from, seen)
 
     def _nothing_to_pick(self, t: float, look: Look) -> None:
         """Finish only after several looks with the arms out of the way, spread over some time, show nothing sortable."""

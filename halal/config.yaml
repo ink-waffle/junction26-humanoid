@@ -379,6 +379,8 @@ policy:
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
   chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
   hold_ticks: 10              # ticks per reply while the planner works
+  hand_lead_cap: null         # rad, contingency: set only if the runner's safety filter gets `hand_max_lead` (stay under it, e.g. 0.25 for 0.3): hand targets are clamped to the measured joints +- this and rate-limited; in the mock that takes a 0.3 filter from an abort to 8-14 clipped steps per episode, not to zero
+  lead_cap_ticks: 3           # ticks per reply while `hand_lead_cap` is set: the clamp is only as fresh as the reply
   start_settle_s: 0.5         # hold before the first look: frames rendered before the episode's reset must have gone by
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
@@ -389,6 +391,7 @@ policy:
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
+  nominal_camera_looks: 3     # looks with a pick but only the nominal camera (no scene anchor, no hand fit yet) spent waiting for the hand fit, hands in view, before a pick is made on that camera anyway (about 1 s each, once per episode)
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 10.0  # and they must span this long: `done` earns nothing, a wrong one loses what is still on the counter (8 s of sim per episode)
   min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
@@ -419,6 +422,6 @@ policy:
   stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
   transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home; a move that starts lower (hands resting on the counter) must only never sink below its start
-  frozen_frame_arm_move: 0.05 # an arm joint moved this much (rad) between two looks whose head colour images are byte-identical: the stream is frozen (logged as an error)
+  frozen_frame_arm_move: 0.05 # an arm joint moved this much (rad) since a head image (colour or depth) was first seen, and the image is still byte-identical: frozen stream, the look fails and no pick starts
   background_nice: 10         # niceness of the planning thread (Linux)
   gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often

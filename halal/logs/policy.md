@@ -77,6 +77,10 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v17 | 2332657ddf0e | 3ebbf19 | +3.88 ± 0.78, 31/31 | 7 episodes: 25/25, stopped | – | – | PASS on the 15 episodes run | v16 + main a8d0b63 (`min_wall_height` 0.07, `cage_side` last candidate) + `Grasp.last_resort` kept out of the retry rotation; stopped for v18 (robot slot), contained in it |
 | v18 | b99fd5dd4a9f | e981865 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 134 with four sims running) | v17 + main 4d93acb (perception hardening, bin row finder) + perception's layout is the only layout (no scene-file re-plan, no latch); known leg on sim `d`; soft sim 31/31, 0 empty picks |
 | v19 | ede4203ebfb1 | 6216ebb | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 115 at rtf 0.33–0.38) | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
+| v20 | b7468d515c78 | a3498c7 | +3.88 ± 0.78, 31/31 | stopped | – | – | PASS on the fixed leg | v19 + main 9a0dc50 (perception H10 / H11: bins as seen without a measured camera; soft lists; early obstacle rejection); stopped after its fixed leg for v21 |
+| v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
+| v22 | cb81d93c1969 | e318a23 (= main cae48ed) | see below | | | | | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
+| v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | see below | | | | | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -682,3 +686,73 @@ rejection) + v19's policy side (`release_rise` list, arm choice, `TOUCHING` impo
 change of its own. Why now: v18 on the real robot released in front of a box (no measured camera, so the scene
 file's bins). Mock on its tree: all suites clean; far-box world with source `nominal`: releases at x 0.508–0.518
 (v19 tree: 0.463); 8-object crowds at twice-priced planning 7/8 and 8/8 (v19 tree 5–6 of 8).
+
+### The real robot starts with its hands on the table (v22; the runs are analysed in `halal/logs/robot.md`)
+v18 on the robot, 14.11 evening: run 1 moved nothing (34 of 43 refusals at tick 0 of `to_pregrasp`, both view moves
+refused), run 2 moved one arm, never calibrated the hands (class `unknown`, threshold 0.02 inside the real empty-hand
+readings 0.014–0.026) and carried an empty hand to the box. The real `reset` does not home the arms: both hands lie on
+the table, lowest hand points at pelvis z 0.003–0.021, 6 mm BELOW the counter of the model.
+v22:
+- `transit.checked_move`: a move that starts lower than `transit_clearance` must only never sink below its start.
+- After the first frame went to the detector (which now also sets the planner's layout), hands that rest lower than
+  `transit_clearance` send both arms home together, hands opening on the way; if that is refused (a bin rim in the
+  way), by way of the clear-view pose (the motion engineer's finding). Then calibration close, looks, picks as always.
+  At `ARM_HOME` nothing changes.
+- An ERROR line when the head colour image is byte-identical to the last look's although an arm joint moved more
+  than `policy.frozen_frame_arm_move` (the organisers' colour stream was frozen in both runs; the kinematic mock
+  renders no arms, so the line appears there too).
+- `policy.grip_threshold.unknown` 0.02 → 0.05.
+Offline, both recorded start poses: home with the hands opening: 0 dry-run clips, clearance rising from tick 0
+(−3.5 / −5.9 mm → home). Holding run 1's fist as it was read gives 31 `hand_position` clips, so the hands must open.
+Run 1's right hand lies stretched forward: with the scene file's boxes it passes 13 mm below a rim 8 ticks into the
+move (our rim check, not the safety filter), hence the layout before the move and the detour.
+
+| Mock, episode starts in the recorded joints, seeds 11 / 13 | Result |
+|---|---|
+| run 2's pose (both hands open), boxes at the file's place | home at 0.8 s, 0 clips, hands classed at 4.5 s, first pick 4.8 s, 3/3 and 5/5, done |
+| run 1's pose (left fist, right flat), boxes at the file's place, before the detour | home refused, looks from the table, recovers at 40–60 s, 3/3 and 5/5 at the limit |
+| the same with the detour | clear-view pose at 1.1 s, 0 clips, first pick 5.5 s, 5/5 |
+| both poses, boxes 6 cm farther (seen by the detector, source `nominal`) | home at ~1 s, classed at 4.5–4.9 s, first pick 6–7 s, 3/3 and 5/5 |
+| both poses, boxes 12 cm farther | arms leave the table and calibrate; 1 object per episode gets a plan (near wall at x 0.52: reach) |
+| sim home | unchanged |
+
+Suites on that tree as v20's; two fast-mock episodes ran past 120 s under Mac load, nothing else lost.
+
+v22 tree, mock (18:55 UTC): neighbours_e2e 5/5 cases 3/3, grip suite 5/5, soft path 2/2, lying prisms with
+`ridge_opposed`, real colours clean; recorded start poses with the boxes at the file's place and 6 cm farther: 12 of 12
+episodes leave the table within ~1 s (run 1's pose by way of the clear-view pose when the boxes stand at the file's
+place), calibrate, and sort 3/3 and 5/5 (one 4/5 at the limit under Mac load), 0 clips.
+On `grip_check_patience` (asked after the real-look run rs20: 27 of 40 releases with "lowest grip score inf"): left at
+3. The patience is the net under an unvalidated threshold (no real HELD reading exists yet; `soft` 0.15 is an estimate
+from teleop data): a check that is never distrusted would open the hand above the counter on every pick if a held
+object read below it. Its cost, ~5 s per truly empty pick once it is off, only arises in episodes whose grasps miss
+anyway. To revisit with the first real "grip score after the lift" of a held object.
+
+### A frozen head stream fails the look (v23, bdddb09)
+Both robot runs had a frozen colour stream (run 2 saw run 1's picture). v22 only logs it. Mock (`frozen_rgb.py`: an
+episode is fed the previous episode's last colour picture): v22 tree: the stale picture shows an empty counter and
+the policy sends `done` at 16 s with 5 of 5 objects on the counter. v23: a head image (colour or depth)
+byte-identical to the one an earlier look saw from another arm pose (`policy.frozen_frame_arm_move`) makes the look
+fail: no pick, pause, look again; the reference keeps the pose the frame was first seen from and survives the reset.
+
+| Case | v22 tree | v23 tree |
+|---|---|---|
+| colour frozen until t = 40 s | `done` at 16 s, 0/5 | 9 failed looks, first pick at 51 s, 4/5 at the limit |
+| colour and depth frozen until 40 s | `done` at 16 s, 0/3 | first pick at 48 s, 3/3 |
+| colour frozen all episode | `done` at 16 s, 0/5 | nothing moved, no `done`, 27 error lines |
+| live camera | 3/3, 4/4 | the same |
+
+Limit: without an earlier frame (first episode of a fresh container, arms at home) the first pick is still planned
+from the first picture. The scratch mock backend now stamps a frame counter into one pixel (no two real frames are
+byte-identical; the stock mock's were).
+
+### `hand_lead_cap` (v23, 464b1b8, off): what a `hand_max_lead` in the runner's filter would do
+Recorded |command − measured| per hand joint: stock sim at most 0.27 rad; soft-hand sim 18–50 ticks per episode above
+0.3 (max 0.40); real robot run 2: 183 ticks above 0.3 (max 0.67). Top commanded hand speed 1.97 rad/s everywhere.
+So a filter with `hand_max_lead` 0.3 aborts (30 clipped steps) on the soft sim in about half the episodes and on the
+real hand always; `hand_max_vel` 2.0 costs nothing. The contingency clamps every hand target to the measured joints
+± `policy.hand_lead_cap`, rate-limits the result and shortens replies to `lead_cap_ticks`. Mock (`lead_cap.py`,
+soft-ish hand, filter 0.3): no clamp: abort within 9–43 s, 0 sorted; cap 0.28: 3/3 and 4/4, 11–14 clipped steps per
+episode (8 at 0.25), grip scores unchanged (they are taken against the planned closed posture). Not a zero-clip
+solution: a reply clamps to a measurement 2–5 ticks old. Holds would press with a third less torque; not measured in
+the soft sim.
