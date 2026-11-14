@@ -58,6 +58,8 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 |---|---|---|---|---|---|---|
 | v2 (78b1e61) | +3.38 ± 0.70, 27/31 | +6.75 ± 1.71, 27/28 | +6.25 ± 1.85, 25/28 | **+19.50** | PASS (0 clips, 30.0 Hz, rt ≥ 167) | sims a / b / c in parallel; pinch grasps; camera fixed by the hands on a and b (+1 cm in x) |
 
+| v3 (e7934c6, image `halal/policy:v3`) | +3.62 ± 0.48, 29/31 | – | – | – | PASS (fixed leg, through the image) | cage grasps; camera calibrated on a pre-reset frame, see below; language legs skipped in favour of v4 |
+
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
   wrong bin and none knocked off in any leg. Every lost object stayed on the counter after failed grasps.
@@ -145,5 +147,15 @@ Verdict: no gain on the fixed leg (27/31 as before) with pinch grasps: second an
 objects are.
 
 ### First frame of an episode (found in v3, fixed in v4)
-The observation of the first `act()` still shows the counter before the reset: a look at it sees 0 objects. v3
-loses one look (~1.5 s) per episode to it; v4 holds for the settle time before the first look.
+The observation of the first `act()` was rendered before the episode's reset and randomisation: the counter is
+still empty in it and the camera stands where the previous episode's DR put it. v3 looks at that frame (first look
+before the calibration close): it finds 0 objects and, worse, the detector fixes its camera pose on it for the
+whole episode. First-look detections against the layout card, mean per episode (v3 fixed leg): dx / dy =
++16/−16, −6/+14, −7/−18, +4/+8, −10/+23, −15/−14, +9/−12, −4/+14 mm (v1, which looked at t ≈ 2 s: all within
+±4.4 mm). v3 still sorted 29/31 because the cage grasp tolerates about a centimetre; seed 1004 burnt 5 empty
+picks on it. v4 holds 0.5 s before the first look and, if the counter is still empty then, looks again from the
+same pose before moving the arms.
+
+### Cage grasps (motion, in v3)
+Per pick on the v3 fixed leg (41 verdicts, with the calibration error above): 76 % held (pinch in v2: 51 %);
+triangles 6/6, cylinders 16/22, cubes 7/10; across the body 9/12, own side 13/15.
