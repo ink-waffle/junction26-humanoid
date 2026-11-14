@@ -57,7 +57,7 @@ def run_leg(args: argparse.Namespace, leg: Leg, tag: str, port: int, out_dir: Pa
     """One evaluator run against its own policy server; returns the eval.json summary."""
     env = sim_env(tag)
     team = f"{args.name}-{leg.key}"
-    cmd = [sys.executable, "-m", "halal.eval.sim_eval", "--instructions", leg.instructions, "--task", leg.task,
+    cmd = [sys.executable, "-m", args.evaluator, "--instructions", leg.instructions, "--task", leg.task,
            "--team", team, "--trials", str(args.trials), "--seed", str(args.seed), "--out", str(out_dir),
            "--policy", f"ws://localhost:{port}", "--time-limit", str(args.time_limit)]
     server = None
@@ -118,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--sims", default="a", help="comma-separated sim tags to spread the legs over")
     ap.add_argument("--legs", default="fixed,known,unseen")
     ap.add_argument("--port", type=int, default=8100)
+    ap.add_argument("--evaluator", default="halal.eval.sim_eval", help="evaluator module (halal.eval.real_eval: real words)")
     args = ap.parse_args(argv)
 
     out_dir = RUNS / "proxy" / f"{args.name}_{time.strftime('%m%d_%H%M%S')}"
