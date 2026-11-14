@@ -62,7 +62,7 @@ class SortPolicy:
         self.detector, self.planner, self.look_pose, self.settings = detector, planner, look_pose, settings
         self.episode_s = time_limit
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
-        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["relocate"])
+        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]))
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.reset(leave_everything)
@@ -144,7 +144,8 @@ class SortPolicy:
     def _start_calibration(self, obs: Mapping[str, Any]) -> None:
         """At the look pose, close both hands on nothing and record how they follow the command."""
         stream, planner, every = self.stream, self.planner, self.settings["calibration_sample_ticks"]
-        hand, closed_until = calibration_close(stream.hand_cmd, planner.post["closed"], self._grip_settle_ticks,
+        hand, closed_until = calibration_close(stream.hand_cmd, planner.post["closed"],
+                                               round(self.settings["calibration_hold_s"] * HZ),
                                                planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
         self.trace = CalibrationTrace(hand, closed_until)
         self.trace.add(float(obs["t"]), stream.hand_cmd, obs["hand_q"])
@@ -153,10 +154,10 @@ class SortPolicy:
         self.stage = Stage.CALIBRATING
 
     def _finish_calibration(self, t: float) -> None:
-        self.hands = self.trace.responses(self.settings["stiff_hand_lag_s"])
+        self.hands = self.trace.responses(self.settings["stiff_hand_bias"])
         for side, hand in self.hands.items():
-            log.info("t=%.1f %s hand: lag %.3f s (%s), empty-hand error %s", t, side, hand.lag_s,
-                     "stiff" if hand.stiff else "soft", np.round(hand.empty_error, 3).tolist())
+            log.info("t=%.1f %s hand is %s: steady bias %.4f rad, lag %.3f s, empty-hand error %s", t, side,
+                     "stiff" if hand.stiff else "soft", hand.bias, hand.lag_s, np.round(hand.empty_error, 3).tolist())
         self.stage, self.at_look_pose = Stage.MOVING, False   # settle with open hands before the look
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
@@ -175,7 +176,7 @@ class SortPolicy:
         inside = [det for det in detections if self.area.contains(det.top[:2])]
         outside = [det for det in detections if not self.area.contains(det.top[:2])]
         targets = self._targets(inside, bin_for, attempts)
-        pick, unplannable = self.chooser.choose(targets, inside, released, squeeze, arm_q, hand_q, cancelled)
+        pick, unplannable = self.chooser.choose(targets, released, squeeze, arm_q, hand_q, cancelled)
         return Look(detections, outside, pick, unplannable)
 
     def _targets(self, detections: list[ObjectDetection], bin_for: BinFor, attempts: Attempts) -> list[Target]:
@@ -231,16 +232,15 @@ class SortPolicy:
     def _start_pick(self, pick: Pick, t: float) -> None:
         self.empty_looks, self.empty_since = 0, math.inf
         self.attempts.record_pick(pick.target.xy)
-        self.tally.update(picks=1, relocations=int(pick.relocation))
+        self.tally.update(picks=1)
         watch = self.grip_trusted
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if watch else None
         self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS] if watch else ())
         self.active = ActivePick(pick, window)
         self.stage, self.at_look_pose = Stage.MOVING, False
         drop = pick.plan.waypoints["drop"]
-        log.info("t=%.1f pick %s: %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s%s", t, pick.target, pick.side,
-                 pick.grasp.name if pick.grasp else "default", drop[0], drop[1], pick.plan.duration,
-                 " (relocation)" if pick.relocation else "")
+        log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
+                 pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
 
     def _check_grip(self, obs: Mapping[str, Any]) -> None:
         """While the object should be in the hand: when the fingers say it is not, give the pick up."""

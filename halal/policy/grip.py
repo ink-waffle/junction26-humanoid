@@ -26,8 +26,9 @@ def phase(plan: Plan, name: str) -> tuple[int, int]:
 class HandResponse:
     """How one hand answered a close on nothing: its steady tracking error and how fast it follows a command."""
     empty_error: np.ndarray   # (7,) commanded minus measured, closed and at rest with nothing in the hand
-    lag_s: float              # mean delay of the joints behind the command
-    stiff: bool               # follows almost tick for tick (the sim's hand); False = the slow, soft real hand
+    bias: float               # mean size of that error over the joints: ~0 for the sim's hand, 0.02-0.04 rad for the real one
+    lag_s: float              # mean delay of the joints behind the command (sim ~0.1 s, real ~0.2 s)
+    stiff: bool               # the sim's stiff actuator (no steady error); False = the soft real hand
 
 
 def calibration_close(hand_q: np.ndarray, closed: np.ndarray, still_ticks: int, hand_vel: float, dt: float) -> tuple[np.ndarray, int]:
@@ -56,20 +57,21 @@ class CalibrationTrace:
         if 0 <= tick <= self.closed_until:
             self.add(t, self.hand[tick], hand_q)
 
-    def responses(self, stiff_below_s: float) -> dict[str, HandResponse]:
+    def responses(self, stiff_bias: float) -> dict[str, HandResponse]:
         times, commanded, measured = np.array(self.times), np.array(self.commanded), np.array(self.measured)
-        return {side: hand_response(times, commanded[:, hand_slice(side)], measured[:, hand_slice(side)], stiff_below_s)
+        return {side: hand_response(times, commanded[:, hand_slice(side)], measured[:, hand_slice(side)], stiff_bias)
                 for side in SIDES}
 
 
-def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray, stiff_below_s: float) -> HandResponse:
-    """One hand's calibration trace (samples x 7, open -> closed -> still) as its empty error, lag and class."""
+def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray, stiff_bias: float) -> HandResponse:
+    """One hand's calibration trace (samples x 7, open -> closed -> still) as its empty error, bias, lag and class."""
     error = commanded - measured
     travel = commanded[-1] - commanded[0]
     behind = (error - error[-1]) @ np.sign(travel)   # summed over the joints, beyond the steady error
     area = float(np.sum(0.5 * (behind[1:] + behind[:-1]) * np.diff(times)))
     lag_s = area / float(np.abs(travel - error[-1]).sum())   # time integral of a step's tracking error = step x mean delay
-    return HandResponse(error[-1], lag_s, lag_s < stiff_below_s)
+    bias = float(np.abs(error[-1]).mean())
+    return HandResponse(error[-1], bias, lag_s, bias < stiff_bias)
 
 
 @dataclass(frozen=True)
