@@ -48,6 +48,14 @@ All: image through the proxy (`serve_image.sh`), `sort_fixed`, seeds 1000-1007 (
 | rs-lying | v16 | `lying`, fraction 1.0 (5 lying prisms) | 27/31 | +3.38 ± 0.99 | 0 | 0 | PASS | 4 lying prisms: seen as `lying triangle` with the right colour every time, 3 picks each with `cage_lying`, grip score 0.000 after every lift, then left; 1 of 5 picked and sorted (seed 1007) |
 | rs-colours | v16 | `colours` | 31/31 | +3.88 ± 0.78 | 0 | 0 | PASS | none |
 | rs-boxes | v16 | `boxes` | 31/31 | +3.88 ± 0.78 | 0 | 0 | PASS | none |
+| rs18-all-soft | v18 | all (with offsets), soft hands, real words | 23/31 | +2.88 ± 0.60 | 0 | 0 | PASS, 4 time limits | 3 lying prisms (3 empty `cage_lying` picks each); 5 purple objects bound for the center box never planned ("no plan for any of N targets" until the time limit: seeds 1001 x2, 1002, 1003, 1005) |
+| rs18-nooff-soft | v18 | lying, colours, boxes, table, soft hands, real words | 28/31 | +3.50 ± 0.87 | 0 | 0 | PASS | the 3 lying prisms, same way; nothing else |
+
+v18 with offsets: every look says `layout from hands`, releases at x 0.493 to 0.513, all 23 released objects landed
+inside (the scene-file fallback of v16, below, is gone). The 5 purple objects are an effect of the offsets alone: the
+same objects plan at the first look when the row stands where the scene file says. Three other purple objects did go
+to the shifted center box (releases at +0.493 / +0.503, -0.030). v18's server log does not print the planner's reason
+per attempt, so the cause (reach or rim clearance at a center box 6 cm farther and 1 cm higher) is not known.
 
 Lying prisms: a failed pick pushes the prism 1 to 8 cm; none left the counter, none entered a wrong bin, no
 neighbour was lost, and each costs 25 to 30 s.
