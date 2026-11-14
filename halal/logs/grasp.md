@@ -438,3 +438,39 @@ sim, slippery-heavy corner, cubes at y −0.10 and 0.00 of the picking arm's sid
 Verdict: not decided by n = 12. The slower arm halves the slide of the cube in the hand, the losses are one each
 (the slow one is the lift-start slide of sweep 17, which speed does not touch). Slowing only lift and carry would
 cost ~1.6 s per pick; not adopted without a larger A/B.
+
+## Sweep 19: a second object beside the target, with and without `obstacles` (stock sim)
+
+Hypothesis: the obstacle check (digit centre lines stay 47 mm from another object's centre while below its top)
+prevents in physics what a blind plan does to a neighbour. Triangle neighbours 7.5–8 cm from the target, DR as it
+comes, candidates as the policy gets them; the bench records the planned digit gap to the neighbour's true centre
+(`PickPlanner.digit_gap`). Fine = target binned and neighbour neither moved more than 10 mm nor toppled.
+
+| case | variant | planned | target binned | neighbour moved > 10 mm / toppled | fine |
+|---|---|---|---|---|---|
+| the policy's knock-over: triangle, vertex-aligned heading towards a neighbour 7.5 cm inward | blind | 12/12 | 12 | 0 / 0 (gap 24–35 mm, largest shift 4 mm) | 12/12 |
+| | obstacles | 6/12 | 5 | 0 / 0 | 5/12 |
+| cube, neighbour 8 cm behind (towards the robot) | blind | 6/6 | 0 | 3 / 1 (gap 2–4 mm: under the thumb) | 0/6 |
+| | obstacles | 6/6 | 6 | 0 / 0 | 6/6 |
+| cube, neighbour diagonally ahead (6, 5.5 cm) | blind | 6/6 | 5 | 6 / 6 (gap 24–31 mm) | 0/6 |
+| | obstacles | 6/6 | 6 | 0 / 0 | 6/6 |
+| cube, neighbour 8 cm ahead (valid picks only) | blind | 3/3 | 3 | 2 / 2 (gap 24–25 mm; untouched at 31 mm) | 1/3 |
+| | obstacles | 2/2 | 2 | 0 / 0 | 2/2 |
+
+- Every pick planned with `obstacles` left the neighbour exactly where it was (26 of 26: 0.0 mm).
+- The preshaped thumb comes down 8 cm behind the grasp point: a neighbour there is hit from above and the target is
+  not even gripped (0/6). This is the commonest blind conflict in sampled layouts.
+- The policy's case is not reproduced: its vertex-aligned plan passes a flat side of the neighbour at 24–35 mm and
+  shifts it by at most 4 mm, while the obstacle check rejects that heading and finds no other in 6 of 12 (the default
+  hints then lose one of six). At the same gap a neighbour that turns a vertex to the finger is toppled 6/6.
+  Contact needs gap < the neighbour's extent in that direction + ~12 mm (finger half-width): triangle 15–30 mm, cube
+  22.5–32 mm, cylinder 22.5 mm; the 47 mm circle is the never-touch value for a vertex or a cube corner plus 3 mm.
+- Cost of the circle, offline (40 layouts, 169 targets, every neighbour present): the blind first candidate passes
+  within 47 mm of a neighbour in 31 % of the picks (within 26 mm: 12 %); with `obstacles` 17 % of the targets have no
+  plan at 47 mm, 11 % at 40 mm, 5 % at 34 mm.
+- Half of the "ahead" cells were void: a neighbour at pelvis x 0.38 spawns against the bin wall and is lying before
+  the pick starts (gaps of 64–258 mm). Neighbours must stay at x ≤ 0.36.
+
+Verdict: the check works and stays at 47 mm for objects of unknown shape and heading. What it rejects needlessly are
+flat sides and cylinders; the footprint (shape and yaw of the neighbour) would say which. Gap scan with cube, cylinder
+and triangle neighbours: sweep 26.

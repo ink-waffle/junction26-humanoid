@@ -303,7 +303,8 @@ class Bench:
         lying = name is not None and is_lying(case.shape, truth[name]["quat_xyzw"])
         top = pos + np.r_[error, self.scene.object_height() * (LYING_TOP if lying else 0.5)]
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
-        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
+        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw, lying=lying,
+                                    size=float(top[2] - self.scene.counter_z) if lying else None)
         beside = np.asarray(truth[neighbour]["pos"], float) if neighbour else None
         avoid = neighbour is not None and self.spec["variants"][case.variant].get("avoid", False)
         grasp, plan = self._plan(case, detection, [beside + [0.0, 0.0, self.scene.object_height() / 2]] if avoid else [])
@@ -321,7 +322,7 @@ class Bench:
         variant, planner = self.spec["variants"][case.variant], self.planners[case.variant]
         hand = variant.get("hand", "stiff")
         if variant.get("candidates"):
-            grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand)
+            grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand, detection.lying)
         else:
             base = strategy_params(variant["base"]) if "base" in variant else {}
             params = {**for_hand(base, hand), **variant}
