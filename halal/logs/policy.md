@@ -79,8 +79,9 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v19 | ede4203ebfb1 | 6216ebb | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 115 at rtf 0.33–0.38) | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
 | v20 | b7468d515c78 | a3498c7 | +3.88 ± 0.78, 31/31 | stopped | – | – | PASS on the fixed leg | v19 + main 9a0dc50 (perception H10 / H11: bins as seen without a measured camera; soft lists; early obstacle rejection); stopped after its fixed leg for v21 |
 | v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
-| v22 | cb81d93c1969 | e318a23 (= main cae48ed) | see below | | | | | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
+| v22 | cb81d93c1969 | e318a23 (= main cae48ed) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 119; soft sim 31/31) | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
 | v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | see below | | | | | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
+| v24 | e4869cbc1500 | 3d413a3 | not run | | | | pre-check only | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -756,3 +757,26 @@ soft-ish hand, filter 0.3): no clamp: abort within 9–43 s, 0 sorted; cap 0.28:
 episode (8 at 0.25), grip scores unchanged (they are taken against the planned closed posture). Not a zero-clip
 solution: a reply clamps to a measurement 2–5 ticks old. Holds would press with a third less torque; not measured in
 the soft sim.
+
+### v22 per leg (through the image, 14.11, 18:54–19:45 UTC; seeds 1000–1007; rtf 0.35–0.39)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 132 | PASS | 0 | scene 177 / 177 | cage 28, cage_apex 6 |
+| known | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 119 | PASS | 0 | scene 174 / 174 | cage 21, cage_apex 18 |
+| unseen | b | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 133 | PASS | 0 | scene 174 / 174 | cage 21, cage_apex 18 |
+| fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 125 | PASS | 0 | scene 177 / 177 | cage 19, cage_apex 6, cage_deep 9 |
+
+Soft leg: hands soft 16/16, lift scores 0.376–0.626, 7 same-bin pairs all scored correct (two rest tilted, top z 0.039 /
+0.043; smallest gap 51 mm). No error line, no "going home before" line (the start fix is a no-op at `ARM_HOME`), no
+landing or "no arm reaches" line. Equal to v19 on every leg.
+
+### No first pick on the nominal camera (v24, 3d413a3)
+Real-look sim, v22, arms starting on the table, robot-night camera error: the first pick was made on the nominal camera
+(4 cm off, the object pushed); the hand fit came one look later. Cause: after "leave the counter" there was one look
+from home before the pick; a home start has two, the first only for the detector. v24: the first look after leaving
+the counter is detector-only again; and a look that has a pick while the camera is `nominal`, hands in view, waits
+(settle, look again) at most `policy.nominal_camera_looks` (3) times per episode. Cost: ~1 s after leaving the table,
+up to ~3 s more once if the camera stays nominal; nothing where the camera is `scene` or `hands`. Mock: file-layout
+world unchanged; far-box world (the mock renders no arms, the camera stays nominal): three waits, then 3/3 and 5/5 from
+both recorded start poses. That the fit arrives before the first pick can only be shown in the real-look sim (asked).
