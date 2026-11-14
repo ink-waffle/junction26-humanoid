@@ -122,3 +122,28 @@ Findings:
 Verdict and what `candidate_grasps` returns now: `cage` for every shape with its own depth, cube 0.30, cylinder 0.45,
 triangle 0.80, unknown shape 0.75 (works for all three: 17/18 + 6/6); the organiser pinch stays as second candidate
 for cubes only. n is 6 per cell; confirmation with ≥ 24 per shape and with position error is the next sweep.
+
+## Planner: coverage, duration, planning time (offline, `python -m halal.eval.plan_bench`)
+
+Every object of N sampled layouts × every bin × both arms, first candidate grasp that plans, exact detections.
+
+| planner | pairs | plannable (either arm) | pick duration mean / worst | planning time ok plans | planning time failed plans |
+|---|---|---|---|---|---|
+| organiser (`--organiser`), home → home, hold 0.25 s | 393 | 100 % | 9.46 s / 14.50 s | 0.15 s mean, 1.40 s max | 3.61 s mean, 5.19 s max |
+| ours at ffbd071 (joint-space carry, shortcuts, reach check), home → home, hold 0.25 s | 393 | 100 % | 9.12 s / 13.83 s | 0.19 s, 2.10 s max | 0.00 s, 0.23 s max |
+| ours, look pose → retreat (`--start look --end retreat`), hold 0.45 s | 165 | 100 % | 7.53 s / 9.43 s | 0.10 s, 1.07 s max | 0.01 s |
+| ours with the low sequence (`motion.sequences: [low, organiser]`), look → retreat | 165 | 100 % | 6.11 s / 9.40 s | 0.10 s, 1.96 s max | 0.01 s |
+
+Phase means, organiser → ours low sequence: to_pregrasp 1.79 → 1.56 s, descend 1.18 → 0.67, close 0.53 → 0.80 (longer
+hold for lagging fingers), lift 1.13 → 0.66, carry 2.11 → 1.10, open 0.80 → 0.90, retreat 0.46 → 0.43, home 1.46 → none.
+
+- Left bin: left arm only; right bin: right arm only; centre bin: both arms, from anywhere in the object band. The
+  wrong-side arm is rejected by a cached reach check in 0 ms (the organiser planner searched 3.6 s per attempt).
+- Vertical moves cost ~6 rad/m at the wrist (keeping the palm level turns wrist yaw as the forearm tilts), so descend
+  and lift time is proportional to their height: 13.75 cm in the organiser sequence, 7 cm in ours.
+- to_pregrasp is dominated by wrist roll: 0 at the look / home pose, ~1.4 rad with the palm down. A look pose with the
+  wrists pre-rolled would save ~0.5 s on each side of a pick (offline: mean joint distance to pregrasp 1.51 → 0.97 rad);
+  not adopted yet, needs a sim image check.
+- Forcing the grasp's finger heading on pregrasp, descend and lift was tried and reverted: no time gained.
+- The low sequence is 88 % of the plans; the rest fall back to the organiser sequence when the rising joint-space carry
+  would bring the held object within 1.5 cm of a bin rim. It is OFF by default until the sim A/B.

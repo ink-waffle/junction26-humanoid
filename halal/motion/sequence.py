@@ -9,8 +9,6 @@ import numpy as np
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
 from aaltonomous.baselines.classical.planner import Plan, ramp, time_scale
 
-from halal import config
-
 if TYPE_CHECKING:
     from halal.motion.planner import PickPlanner
 
@@ -92,7 +90,7 @@ def _grasp_solution(planner: PickPlanner, det: Any, side: str, arm_q: np.ndarray
     preshape[cols] = planner.post["preshape"][cols]
     xy = det.top[:2] + np.asarray(g["arm_xy_offset"][side], float)
     z = counter + g["height_frac"] * planner.height
-    while z <= counter + planner.height - config.load()["motion"]["min_grip_below_top"]:
+    while z <= counter + planner.height - planner.motion["min_grip_below_top"]:
         q, ok = planner._ik(side, np.r_[xy, z], arm_q, "grasp", plan)
         if not ok:
             plan.reason = f"IK grasp {side}"
@@ -107,7 +105,7 @@ def _grasp_solution(planner: PickPlanner, det: Any, side: str, arm_q: np.ndarray
 
 def _points(planner: PickPlanner, grasp: np.ndarray, bin_name: str) -> dict[str, np.ndarray]:
     """Grasp-point targets of the sequence in the pelvis frame."""
-    motion, release = config.load()["motion"], planner.drop_xy(bin_name)
+    motion, release = planner.motion, planner.drop_xy(bin_name)
     up = np.array([0.0, 0.0, 1.0])
     return {"pregrasp": grasp + motion["approach_height"] * up, "grasp": grasp, "lift": grasp + motion["lift_height"] * up,
             "above_bin": np.r_[release, planner.carry_height()], "drop": np.r_[release, planner.release_height()],
@@ -118,7 +116,7 @@ def _rising_carry(planner: PickPlanner, side: str, lifted: np.ndarray, points: d
     """One joint-space move from the low lift to above the bin, if the held object never dips and clears the bin walls."""
     with planner._heading_free(True):
         above, ok = planner._ik(side, points["above_bin"], lifted, "carry", plan)
-    floor = points["lift"][2] - config.load()["motion"]["carry_dip"]
+    floor = points["lift"][2] - planner.motion["carry_dip"]
     path = [planner.kin.grasp_pose(side, lifted + f * (above - lifted))[0] for f in np.linspace(0, 1, CARRY_SAMPLES)]
     if ok and all(p[2] >= floor and planner.object_clears_bins(p) for p in path):
         return [above]
@@ -163,7 +161,7 @@ def _violation(planner: PickPlanner, plan: Plan, side: str, arm_q: np.ndarray, h
 
 def _counter_clearance(planner: PickPlanner, phase: str) -> float:
     """Height above the counter the hand must keep in a phase: over any object on the way in, fingertip margin at the pick."""
-    g, motion = planner.cfg["grasp"], config.load()["motion"]
+    g, motion = planner.cfg["grasp"], planner.motion
     if phase == "to_pregrasp":
         return planner.height + motion["over_object_clearance"]
     if phase == "close":
