@@ -56,6 +56,7 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
 | r3-servo-nofit-trans | servo3-servo-nofit-trans | 2/15 | +0.50 | 4 time limits | 0 | PASS | every look refused (rms 3.2-4.1 mm), open loop from the hover |
 | r3-servo | servo3-servo (home fit on) | 15/15 | +3.75 | 4 done | 0 | PASS | camera already fixed at home: does not hurt |
 | r3-servo-nofit | servo3-servo-nofit (hover arm fit allowed) | 3/15 | +0.75 | 4 time limits | 0 | PASS | first 20 looks: 6 applied, 6 "too large", 6 "visible", 2 rms |
+| r5-servo-nofit | servo5-servo-nofit (ca14b09, all three fixes) | 9/15 | +2.25 | 3 time limits, 1 done | 0 | PASS | 18 looks applied (25-45 mm), 12 corrected picks of which 9 held; 7 cross-body picks without a hover; refused: 10 visible, 5 rms/inliers, 1 points, 1 too large |
 
 - Translation-only under a 7.4 deg error: hand shifts 3-34 mm, inconsistent between the arms for the same object (e.g. x -31 /
   +11 mm), rms 3.2-4.1 mm. A rotation over the hand patch is no shift; the rms guard refused all, so servo ran open-loop
@@ -71,3 +72,8 @@ episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (tr
   neighbour ("hand would touch the object at" its old position) and fell back to open loop (seen in the first r4 episode:
   37 mm applied, look 2 converged at 1.9 mm, then no plan). The corrected plan now keeps clear of the other objects moved by
   the same correction. servo5-* is built from it.
+
+Verdict on the real-look sim: servo never hurt (stock 15/15, home fit on 15/15) and with the home hand fit off it took the
+robot-night variant from 1/15 to 9/15, as long as the hover's own arm fit is believed. With no believable arm fit anywhere it
+is open loop plus about 3 s per pick (2/15). Next, by the numbers: re-hover also when `visible` comes with another refusal
+(the arm-fit aim does not use the hand shift), and a hover for the cross-body arm (7 of 19 picks of r5 had none).
