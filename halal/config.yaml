@@ -40,6 +40,11 @@ perception:
         - [0.0, -0.015, 0.0]
         - [0.0, 0.0, 0.015]
         - [0.0, 0.0, -0.015]
+      turned_starts:          # camera turns (rotation vector, pelvis frame, rad), tried only when no shifted start gave a believable fit:
+        - [0.0, 0.052, 0.0]   # pitch +-3 and +-6 deg (pelvis y is the optical x axis); low hands under a +3 deg head error lie beyond
+        - [0.0, -0.052, 0.0]  # the shifts' reach (lowhands, typical: 2 of 20 believed), +-3 alone gets 12 of 20, with +-6 all 20
+        - [0.0, 0.105, 0.0]
+        - [0.0, -0.105, 0.0]
       settled_coverage: 0.8   # a result with depth on this share of the visible model needs no further start
       min_points: 300
       min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible

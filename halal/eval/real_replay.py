@@ -116,7 +116,7 @@ def calibration_row(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -
     """Every calibration stage of one look with its guard values, run beside the detector."""
     cal, nominal, depth = detector.calibration, detector.nominal, obs["head_depth"]
     plane, anchor = cal.counter_fit(depth, nominal), cal.scene_anchor(depth, nominal)
-    fit = cal.hands.fit(depth, nominal, obs["arm_q"], obs["hand_q"], plane, cal.band[-1])
+    fit = cal.hand_fit(depth, nominal, (obs["arm_q"], obs["hand_q"]), plane)
     camera = nominal if fit is None else fit.camera
     points, links = arm_model(detector, obs, camera)
     row = {"valid_depth": float(np.mean(depth > 0)), "plane_rms_mm": None if plane is None else 1e3 * plane.rms,

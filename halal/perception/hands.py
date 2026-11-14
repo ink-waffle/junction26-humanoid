@@ -90,22 +90,28 @@ class HandReference:
         self.prior = np.r_[np.full(3, np.radians(cfg["prior_turn_deg"])), np.full(3, cfg["prior_shift"])] ** -2.0
 
     def fit(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray, floor: PlaneFit | None,
-            anchor: np.ndarray) -> HandFit | None:
-        """The registration with the most depth pixels on the model among starts around `camera`; None if no arm is in view."""
+            anchor: np.ndarray, turned: bool = False) -> HandFit | None:
+        """The registration with the most depth pixels on the model among starts around `camera` (shifted, or turned); None if no arm is in view."""
         best = None
         surface = self.surface.posed(arm_q, hand_q, bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.cfg["open_curl"]))
-        for start in self.cfg["starts"]:
-            fit = self._register(depth, camera, np.r_[np.zeros(3), start], surface, floor, anchor)
+        for start in self._starts(turned):
+            fit = self._register(depth, camera, start, surface, floor, anchor)
             if fit is not None and (best is None or fit.points > best.points):
                 best = fit
             if best is None or best.settled >= self.cfg["settled_coverage"]:
                 break
         return best
 
+    def _starts(self, turned: bool) -> list[np.ndarray]:
+        """Start poses (rotation vector, shift) of the descent: the camera shifted, or turned about its optical centre."""
+        if turned:
+            return [np.r_[turn, np.zeros(3)] for turn in self.cfg["turned_starts"]]
+        return [np.r_[np.zeros(3), shift] for shift in self.cfg["starts"]]
+
     def _register(self, depth: np.ndarray, camera: Camera, start: np.ndarray, surface: tuple[np.ndarray, np.ndarray],
                   floor: PlaneFit | None, anchor: np.ndarray) -> HandFit | None:
-        """One point-to-plane descent from the camera shifted by `start` (turn, shift); the prior still pulls to `camera`."""
-        first = camera.moved(np.eye(3), start[3:])
+        """One point-to-plane descent from the camera moved by `start` (turn, shift); the prior still pulls to `camera`."""
+        first = camera.moved(Rotation.from_rotvec(start[:3]).as_matrix(), start[3:])
         front = self.facing(*surface, first, depth.shape)
         model, normals = surface[0][front], surface[1][front]
         pixels = self._pixels(depth, first, model, floor)
