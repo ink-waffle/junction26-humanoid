@@ -112,6 +112,7 @@ perception:
     straggler:                # coloured blobs on the counter that no top-face fit explains: toppled objects
       heights: [0.010, 0.060] # above the counter
       claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
+      yield_visible: 0.2      # a top face seen less than this does not claim them: noisy depth turns a prism's ridge into such a "top"
       min_px: 300
       max_extent: 0.09        # a longer blob is no single object (a wall, an arm)
     wall_guard:               # while the scene has not anchored the camera: bin footprints are guesses, walls reach the candidates
