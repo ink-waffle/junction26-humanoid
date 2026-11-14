@@ -52,13 +52,17 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
   rtf 0.44 give 128. It would fail at rtf < 0.09 with 10-tick replies; replies are 15 ticks (10 while planning)
   from v2 on. The true round trip is ~5 ms (replay through the container: p50 5.0 ms).
 
-## Results, three legs (8 seeds each, DR train, 120 s)
+## Versions (three legs, 8 seeds each, DR train, 120 s; images on the instance as `halal/policy:<version>`)
 
-| Version | Fixed | Known | Unseen | Proxy | Gate | Notes |
-|---|---|---|---|---|---|---|
-| v2 (78b1e61) | +3.38 ± 0.70, 27/31 | +6.75 ± 1.71, 27/28 | +6.25 ± 1.85, 25/28 | **+19.50** | PASS (0 clips, 30.0 Hz, rt ≥ 167) | sims a / b / c in parallel; pinch grasps; camera fixed by the hands on a and b (+1 cm in x) |
-
-| v3 (e7934c6, image `halal/policy:v3`) | +3.62 ± 0.48, 29/31 | – | – | – | PASS (fixed leg, through the image) | cage grasps; camera calibrated on a pre-reset frame, see below; language legs skipped in favour of v4 |
+| Version | Image id | Built from | Fixed | Known | Unseen | Proxy | Gate | Notes |
+|---|---|---|---|---|---|---|---|---|
+| floor | – | organiser baseline | +1.62 ± 0.86, 13/31 | – | – | – | PASS | ignores the instruction |
+| v0 | 62ae624ee6ea | 3085846 | – | – | – | – | pre-check only | organiser detector; never run through the image |
+| v1 | d35c253d992a | d27fbad | +3.38 ± 0.99, 27/31 | – | – | – | PASS | run C of the night; local server |
+| v2 | ee26f64beef6 | 78b1e61 | +3.38 ± 0.70, 27/31 | +6.75 ± 1.71, 27/28 | +6.25 ± 1.85, 25/28 | **+19.50** | PASS (0 clips, 30.0 Hz, rt ≥ 167) | local server on sims a / b / c; pinch grasps; camera fixed by the hands on a and b (+1 cm in x) |
+| v3 | c6a50633cd73 | e7934c6 | +3.62 ± 0.48, 29/31 | – | – | – | PASS (through the image) | cage grasps; camera calibrated on a pre-reset frame; language legs skipped in favour of v4 |
+| v4 | 994a14f7b199 | e3f9687 | +3.62 ± 0.70, 29/31 | +6.38 ± 1.87, 26/28 (1 wrong bin) | running | – | PASS (through the image; exact hand-in path `evaluate --container`: 8/8 in 2 episodes, rt 176) | start settle, visibility rule, clear looks before `done`; 3 of its 4 lost objects stayed wedged in the hand at the release |
+| v5 | 5a4d3187fcf0 | fe03f4c | – | – | – | – | pre-check only | superseded by v6 before it ran |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -159,3 +163,16 @@ same pose before moving the arms.
 ### Cage grasps (motion, in v3)
 Per pick on the v3 fixed leg (41 verdicts, with the calibration error above): 76 % held (pinch in v2: 51 %);
 triangles 6/6, cylinders 16/22, cubes 7/10; across the body 9/12, own side 13/15.
+
+### Hands that do not let go (found in v4, guarded in v6)
+Why: v4's grasps hold (2 empty picks in 16 episodes) and 3 of its 4 lost objects were released over the right
+bin without leaving the hand: a yellow triangle (thumb depth 0.80) rode back in the right hand and fell into the
+right bin at that hand's next release (our first −1; the next lift with that hand read 0.237 instead of
+0.10–0.13); a red triangle rode home and dropped on the counter at the next pick, toppled; a red cube retried
+with the unknown-shape depth 0.75 ended the episode in the hand (z = 0.355). The fingers show nothing after
+opening: the residual behind the released posture was 0.132–0.136 in all 60 releases.
+What (v6): after a grasp deeper than 0.6 rad the hand closes once more at the retreat pose above the bin, the
+grip score is read and the hand reopens: an open-close-open cycle with a verdict. Still holding → the cycle is
+repeated (3 closes at most), then the arm is not used again in the episode. A retry keeps the detected shape's
+depth (the unknown-shape depth only for `shape=None`) and varies arm, grasp and a 5 mm offset instead.
+Verdict: pending v6.
