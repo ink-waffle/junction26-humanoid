@@ -48,14 +48,18 @@ class PickChooser:
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
                hand_q: np.ndarray, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
-        """The first plannable target (least tried, then nearest its bin) and the targets before it without a plan; `hands` = usable arm -> hand class."""
+        """The first plannable target and the targets before it without a plan; `hands` = usable arm -> hand class."""
         unplannable: list[Target] = []
-        for target in sorted(targets, key=lambda target: (target.attempts, self._distance_to_bin(target))):
+        for target in sorted(targets, key=self._order):
             pick = self._plan(target, released.get(target.bin_name, 0), hands, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
             unplannable.append(target)
         return None, unplannable
+
+    def _order(self, target: Target) -> tuple[int, bool, float]:
+        """Sort key: least tried first, a known shape before an unknown one, then nearest its bin."""
+        return target.attempts, target.detection.shape is None, self._distance_to_bin(target)
 
     def _plan(self, target: Target, released: int, hands: Mapping[str, str], arm_q: np.ndarray, hand_q: np.ndarray,
               cancelled: Cancelled) -> Pick | None:

@@ -53,7 +53,7 @@ class HandCalibrator:
 
     def finish(self, t: float) -> None:
         """The close has run: classify both hands and release whoever waits for the result."""
-        self.hands = self.trace.responses(self.settings["stiff_hand_bias"])
+        self.hands = self.trace.responses(self.settings["stiff_hand_bias"], self.settings["stiff_hand_lag_s"])
         for side, hand in self.hands.items():
             log.info("t=%.1f %s hand is %s: steady bias %.4f rad, lag %.3f s, empty-hand error %s", t, side,
                      "stiff" if hand.stiff else "soft", hand.bias, hand.lag_s, np.round(hand.empty_error, 3).tolist())

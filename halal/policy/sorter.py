@@ -10,18 +10,18 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from aaltonomous.baselines.classical.planner import Plan
+from aaltonomous.baselines.classical.planner import Plan, ramp
 
 from halal.motion import PickPlanner
 from halal.perception import Detector
 from halal.policy.background import Background
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
-from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, phase
+from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, hand_slice, opening_in_turn, phase
 from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
-from halal.policy.picking import Pick
-from halal.policy.transit import checked_move
+from halal.policy.picking import Pick, Target
+from halal.policy.transit import checked_move, lowest_clearance
 
 log = logging.getLogger(__name__)
 HZ = 30.0
@@ -49,7 +49,8 @@ class ActivePick:
     carried: bool = False       # the carry is over: the window's ticks no longer apply
     check_tick: int | None = None   # trajectory tick at which the hand, closed once more after letting go, is read
     checks_left: int = 0
-    tail: tuple[np.ndarray, np.ndarray] | None = None   # the way home that follows a release check
+    stuck: bool = False         # a release check found the hand still holding something
+    tail: tuple[np.ndarray, np.ndarray] | None = None   # the way home from a release check: the closed hand opens on it
 
 
 def leave_everything(color: str, shape: str | None) -> None:
@@ -86,6 +87,8 @@ class SortPolicy:
         self.blocked: set[str] = set()
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
+        self.release_checked, self.unconfirmed_releases = True, 0
+        self.missed: Target | None = None
         self.stage = Stage.MOVING
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
@@ -182,7 +185,7 @@ class SortPolicy:
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
                               self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
-                              self.use_file_layout, calibrate, primer)
+                              self.use_file_layout, calibrate, primer, self.missed)
         self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -227,6 +230,7 @@ class SortPolicy:
         self.stage, self.next_view = Stage.MOVING, View.HOME
 
     def _note_look(self, t: float, look: Look) -> None:
+        self.missed = None
         for target in look.unplannable:
             self.attempts.record_plan_failure(target.xy)
         self.layout_source, self.use_file_layout = look.layout_source, self.use_file_layout or look.layout_rejected
@@ -265,48 +269,104 @@ class SortPolicy:
         self.tally.update(picks=1)
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)
-        if window is None:
-            self.stream.load(pick.plan.arm, pick.plan.hand)
-        else:
+        if window is not None and self._checks_release(pick):
             self._load_with_release_check(pick.plan, window)
+        else:
+            self.stream.load(pick.plan.arm, pick.plan.hand)
         self.stage, self.next_view = Stage.MOVING, View.HOME
         drop = pick.plan.waypoints["drop"]
         log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
 
+    def _checks_release(self, pick: Pick) -> bool:
+        """Whether the hand is closed once more after letting go: configured per shape, and only a calibrated hand has an empty reading."""
+        after = (pick.target.detection.shape or "unknown") in self.settings["release_check_after"]
+        return after and self.release_checked and self.calibrator.hand_class(pick.side) != "unknown"
+
     def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:
         """Queue the pick with one more close of the hand above the bin; it starts while the arm retreats."""
         active, stream, (start, end) = self.active, self.stream, phase(plan, "retreat")
-        check = self._release_check(plan.arm[end - 1], plan.hand[start - 1], window, open_s=0.0)
-        arm = np.vstack([plan.arm[start:end], check.arm[end - start:]])
+        check = self._release_check(plan.hand[start - 1], window, not_before=end - start)
+        arm = np.vstack([plan.arm[start:end], np.repeat(plan.arm[end - 1][None], len(check.hand) - (end - start), 0)])
         active.check_tick, active.checks_left = start + check.read_tick, self.settings["release_checks"] - 1
-        active.tail = (plan.arm[end:], plan.hand[end:])
-        stream.load(np.vstack([plan.arm[:start], arm, plan.arm[end:]]), np.vstack([plan.hand[:start], check.hand, plan.hand[end:]]),
+        active.tail = self._way_home(plan, check.hand[-1])
+        stream.load(np.vstack([plan.arm[:start], arm, active.tail[0]]), np.vstack([plan.hand[:start], check.hand, active.tail[1]]),
                     cuts=[window.first_tick + OBS_LAG_TICKS, active.check_tick + OBS_LAG_TICKS])
 
-    def _release_check(self, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_s: float) -> ReleaseCheck:
-        return ReleaseCheck.after(arm_q, hand_q, window, round(open_s * HZ), self._grip_settle_ticks,
-                                  round(self.settings["reopen_stagger_s"] * HZ), self.planner.cfg["motion"]["hand_max_vel"],
-                                  1.0 / HZ)
+    def _release_check(self, hand_q: np.ndarray, window: GripWindow, not_before: int = 0) -> ReleaseCheck:
+        return ReleaseCheck.closing(hand_q, window, self._grip_settle_ticks, not_before, self._hand_vel, 1.0 / HZ)
+
+    def _way_home(self, plan: Plan, hand_q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The plan's rows after the retreat for a hand closed at `hand_q`: it opens on the way if that stays clear, else first."""
+        end = phase(plan, "retreat")[1]
+        arm, hand = plan.arm[end:], plan.hand[end:]
+        on_the_way = catching_up(hand_q, hand, self._hand_vel, 1.0 / HZ)
+        floor = min(self.settings["transit_clearance"], lowest_clearance(self.planner, arm, hand))
+        if len(hand) and np.allclose(on_the_way[-1], hand[-1]) and lowest_clearance(self.planner, arm, on_the_way) >= floor:
+            return arm, on_the_way
+        opening = ramp(hand_q, plan.hand[end - 1], self._hand_vel, 1.0 / HZ)
+        return np.vstack([np.repeat(plan.arm[end - 1][None], len(opening), 0), arm]), np.vstack([opening, hand])
 
     def _check_release(self, obs: Mapping[str, Any], t: float) -> None:
-        """The hand has closed again after letting go: if it still holds something, open and close once more, then give the arm up."""
-        active, stream, window = self.active, self.stream, self.active.window
+        """The hand has closed again after letting go: read whether it still holds something."""
+        active, side = self.active, self.active.window.side
         score = self._grip_score(obs)
         active.check_tick, active.carried = None, True
-        if score < self._empty_below(window.side):
+        if score >= self._empty_below(side):
+            self._open_again(t, score)
+        elif active.stuck:
+            self.tally.update(freed=1)
+            log.info("t=%.1f the %s hand is empty after opening finger by finger (grip score %.3f)", t, side, score)
+            if active.checks_left < 0:
+                self._doubt_release_check(t)
+        else:
+            log.info("t=%.1f the %s hand is empty after letting go (grip score %.3f)", t, side, score)
+
+    def _doubt_release_check(self, t: float) -> None:
+        """Reads above the bin that the read back home did not confirm may be the grasp posture, not an object: stop after a few."""
+        self.unconfirmed_releases += 1
+        if self.unconfirmed_releases >= self.settings["release_check_patience"]:
+            log.warning("t=%.1f %d release checks not confirmed back home: no more of them in this episode", t,
+                        self.unconfirmed_releases)
+            self.release_checked = False
+
+    def _open_again(self, t: float, score: float) -> None:
+        """Something is still in the hand: open it finger by finger and close once more, above the bin, the last time back home."""
+        active, side = self.active, self.active.window.side
+        self.tally.update(stuck_in_hand=int(not active.stuck), still_stuck=int(active.stuck))
+        active.stuck = True
+        if active.checks_left < 0:
+            log.warning("t=%.1f the %s hand still holds something back home (grip score %.3f): arm not used again", t, side, score)
+            self.blocked.add(side)
+            self.stream.load(*self._opening_at_rest(self.stream.hand_cmd))
             return
-        self.tally.update(stuck_in_hand=1)
-        if active.checks_left == 0:
-            log.warning("t=%.1f the %s hand still holds something (grip score %.3f): arm not used again", t, window.side, score)
-            self.blocked.add(window.side)
-            return
-        log.warning("t=%.1f the %s hand still holds something after letting go (grip score %.3f): opening again", t,
-                    window.side, score)
-        check = self._release_check(stream.arm_cmd, stream.hand_cmd, window, self.planner.cfg["motion"]["open_hold_s"])
-        active.check_tick, active.checks_left = check.read_tick, active.checks_left - 1
-        stream.load(np.vstack([check.arm, active.tail[0]]), np.vstack([check.hand, active.tail[1]]),
-                    cuts=[check.read_tick + OBS_LAG_TICKS])
+        log.warning("t=%.1f the %s hand still holds something after letting go (grip score %.3f): opening finger by finger%s",
+                    t, side, score, "" if active.checks_left else ", next check back home")
+        self._load_reopening(home=active.checks_left == 0)
+
+    def _load_reopening(self, home: bool) -> None:
+        """Queue: open finger by finger where the arm is, stay open (or go home so), close and read the hand once more."""
+        active, stream, window, plan = self.active, self.stream, self.active.window, self.active.pick.plan
+        opening = opening_in_turn(stream.hand_cmd, window.both_hands(stream.hand_cmd, window.released), window.side,
+                                  round(self.settings["reopen_pause_s"] * HZ), self._hand_vel, 1.0 / HZ)
+        opened = np.repeat(opening[-1][None], round(self.planner.cfg["motion"]["open_hold_s"] * HZ), 0)
+        end = phase(plan, "retreat")[1] if home else len(plan.arm)
+        hand = np.vstack([opening, opened, plan.hand[end:]])
+        if home:
+            closed, opened = (self.planner.post[name][hand_slice(window.side)] for name in ("closed", "open"))
+            active.window = window = window.closing_to(closed, opened)   # the posture the empty-hand error was measured in
+        arm = np.vstack([np.repeat(stream.arm_cmd[None], len(opening) + len(opened), 0), plan.arm[end:]])
+        check = self._release_check(hand[-1], window)
+        after = self._opening_at_rest(check.hand[-1]) if home else active.tail
+        active.check_tick, active.checks_left = len(hand) + check.read_tick, active.checks_left - 1
+        stream.load(np.vstack([arm, np.repeat(arm[-1][None], len(check.hand), 0), after[0]]),
+                    np.vstack([hand, check.hand, after[1]]), cuts=[active.check_tick + OBS_LAG_TICKS])
+
+    def _opening_at_rest(self, hand_q: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Rows that open the hands from `hand_q` to where the running pick's plan leaves them, arms still at its end."""
+        plan = self.active.pick.plan
+        hand = ramp(hand_q, plan.hand[-1], self._hand_vel, 1.0 / HZ)
+        return np.repeat(plan.arm[-1][None], len(hand), 0), hand
 
     def _check_grip(self, obs: Mapping[str, Any]) -> None:
         """While the object should be in the hand: when the fingers say it is not, give the pick up."""
@@ -338,6 +398,7 @@ class SortPolicy:
         """The hand is empty: go home at once if the way is clear, else let the plan run out unwatched."""
         if not self.jobs.idle:
             return   # the planner is still busy with an abandoned look: decide at the next reply
+        self.missed = self.active.pick.target
         move = self._move_to(View.HOME)
         if move is None:
             log.info("t=%.1f hand empty (grip score %.3f) but no clear way home: finishing the plan", t, score)
@@ -373,3 +434,7 @@ class SortPolicy:
     @property
     def _grip_settle_ticks(self) -> int:
         return round(self.settings["grip_settle_s"] * HZ)
+
+    @property
+    def _hand_vel(self) -> float:
+        return self.planner.cfg["motion"]["hand_max_vel"]

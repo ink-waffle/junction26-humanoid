@@ -222,6 +222,7 @@ policy:
   blob_attempts: 3            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
@@ -230,9 +231,9 @@ policy:
   min_detection_confidence: 0.5   # colour certainty: 1.0 inside a hue basin, 0 from 6 degrees outside
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
-    left: [[0.0, 0.0], [0.0, 0.07]]
-    center: [[0.0, -0.035], [0.0, 0.035]]
-    right: [[0.0, 0.0], [0.0, -0.07]]
+    left: [[0.0, -0.02], [0.0, 0.045]]    # sideways only, 65 mm apart: the staggered release lands objects up to 8 cm ahead, 5 cm outward
+    center: [[0.0, -0.03], [0.0, 0.03]]
+    right: [[0.0, 0.02], [0.0, -0.045]]
   grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
   grip_joints: [1, 3, 5]      # joints the grip score sums, each hand's own order: thumb_1 and both finger_0 (thumb_2 sits on its limit)
   grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
@@ -240,13 +241,16 @@ policy:
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
     unknown: 0.02             # no calibration close: the value that never calls a full hand empty
-  reopen_stagger_s: 0.25      # after such a close one finger opens this much later than the rest: frees an object wedged between the fingers
-  release_checks: 3           # closes of the hand above the bin after letting go (each reopens it) before the arm is retired for the episode
+  release_check_after: [unknown]   # detected shapes (unknown = none) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
+  release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
+  release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
+  reopen_pause_s: 0.3         # a hand found full reopens thumb and one finger first, rests this long, then the last finger
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
   calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish
   calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
-  stiff_hand_bias: 0.01       # mean steady error (rad) under which a hand is the stiff sim kind (sim ~0.000, real 0.02-0.04)
+  stiff_hand_bias: 0.002      # mean steady error (rad) under which a hand is the stiff sim kind (sim 0.0001, soft-hand sim 0.0055, real 0.02-0.04)
+  stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
   transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
   background_nice: 10         # niceness of the planning thread (Linux)

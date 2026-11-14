@@ -50,14 +50,15 @@ class Background:
             self._job = None
 
     def _run(self, job: Job) -> None:
-        self._lower_priority()
-        with self._serial:
-            if not job.cancelled:
-                try:
+        try:
+            self._lower_priority()
+            with self._serial:
+                if not job.cancelled:
                     job.value = job.work(lambda: job.cancelled)
-                except Exception as error:
-                    job.error = error
-        job.finished = True
+        except Exception as error:
+            job.error = error
+        finally:
+            job.finished = True
 
     def _lower_priority(self) -> None:
         """Nice the calling thread (a per-thread setting on Linux only) so planning never starves `act()`."""

@@ -47,6 +47,7 @@ class Situation:
     file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
     primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
+    missed: Target | None = None   # the last pick came up empty on this target: the object has probably been pushed aside
 
 
 class Looker:
@@ -79,12 +80,23 @@ class Looker:
         self.planner.set_layout(layout)
         inside = [det for det in detections if self.area.contains(det.top[:2], layout.bins)]
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
+        self._follow_missed(inside, situation)
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
         pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
                                                 cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
+
+    def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
+        """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""
+        missed, attempts = situation.missed, situation.attempts
+        if missed is None:
+            return
+        moved = [det.top[:2] for det in detections if det.color == missed.detection.color]
+        nearest = min(moved, key=lambda xy: float(np.linalg.norm(xy - missed.xy)), default=None)
+        if nearest is not None and float(np.linalg.norm(nearest - missed.xy)) < self.settings["displaced_radius"]:
+            attempts.follow(missed.xy, nearest)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
         """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
