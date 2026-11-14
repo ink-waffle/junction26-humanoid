@@ -1,13 +1,13 @@
 #!/bin/bash
-# Isaac sims on the dev instance, one per tag (a|b|c), each with its own DDS domain, ports, cores, log and pid file.
+# Isaac sims on the dev instance, one per tag (a|b|c|d), each with its own DDS domain, ports, cores, log and pid file.
 #   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set;
 #                                              HAND_GAINS="kp,kd[,armature]" = dev-only sim with those Dex3 actuator gains;
 #                                              REAL_SIM="lying,colours,boxes,table,offsets" | all = dev-only real-look sim)
 #   sims.sh stop <tag> | status | env <tag>   (eval "$(sims.sh env b)" points clients at sim b)
 set -eo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
-TAGS=(a b c)
-CLIENT_CORES=12-29   # everything that is not a sim (env.sh pins client shells here)
+TAGS=(a b c d)
+CLIENT_CORES=16-29   # everything that is not a sim (env.sh pins client shells here)
 KIT_THREADS="--/plugins/carb.tasking.plugin/threadCount=4 --/persistent/physics/numThreads=2"
 
 tag_env() {
@@ -15,10 +15,11 @@ tag_env() {
     a) echo "unset AALTO_INSTANCE AALTO_DDS_DOMAIN AALTO_CAM_PORT_BASE AALTO_SCENE_PORT AALTO_RGBD_PORT AALTO_TELEIMAGER_REQ_PORT AALTO_CLOCK_PORT" ;;
     b) echo "export AALTO_INSTANCE=b AALTO_DDS_DOMAIN=7 AALTO_CAM_PORT_BASE=56555 AALTO_SCENE_PORT=56580 AALTO_RGBD_PORT=56560 AALTO_TELEIMAGER_REQ_PORT=61000; unset AALTO_CLOCK_PORT" ;;
     c) echo "export AALTO_INSTANCE=c AALTO_DDS_DOMAIN=8 AALTO_CAM_PORT_BASE=57555 AALTO_SCENE_PORT=57580 AALTO_RGBD_PORT=57560 AALTO_TELEIMAGER_REQ_PORT=62000; unset AALTO_CLOCK_PORT" ;;
-    *) echo "unknown sim tag '$1' (a|b|c)" >&2; exit 1 ;;
+    d) echo "export AALTO_INSTANCE=d AALTO_DDS_DOMAIN=9 AALTO_CAM_PORT_BASE=58555 AALTO_SCENE_PORT=58580 AALTO_RGBD_PORT=58560 AALTO_TELEIMAGER_REQ_PORT=63000; unset AALTO_CLOCK_PORT" ;;
+    *) echo "unknown sim tag '$1' (a|b|c|d)" >&2; exit 1 ;;
     esac
 }
-tag_cores() { case "$1" in a) echo 0-3 ;; b) echo 4-7 ;; c) echo 8-11 ;; esac; }
+tag_cores() { case "$1" in a) echo 0-3 ;; b) echo 4-7 ;; c) echo 8-11 ;; d) echo 12-15 ;; esac; }
 pidfile() { echo "/tmp/halal_sim_$1.pid"; }
 logfile() { echo "/tmp/halal_sim_$1.log"; }
 alive() { local p; p=$(cat "$(pidfile "$1")" 2>/dev/null) && kill -0 "$p" 2>/dev/null; }
