@@ -29,6 +29,8 @@ NEAR_OBJECTS_PHASES = ("descend", "close")
 OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
 DIGIT_SAMPLES = np.linspace(0.0, 1.0, 5)
+TOUCHING = "hand would touch"                      # start of a failed plan's reason when another object is in the hand's way
+LANDING = "release would land on a bin wall"    # reason when no release point keeps its landing box inside the bin
 
 
 class PickPlanner(Planner):
@@ -67,7 +69,7 @@ class PickPlanner(Planner):
             tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
             for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
                 if place_xy is None and not self._lands_inside(side, bin_name):
-                    plan = plan if tried else replace(plan, reason="release would land on a bin wall")
+                    plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
                     plan, tried = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy), True
@@ -318,7 +320,7 @@ class PickPlanner(Planner):
         for obstacle in self.obstacles if plan.ok else ():
             if self.digit_gap(plan, side, obstacle) < limits["finger_radius"] + limits["margin"]:
                 plan.ok = False
-                plan.reason = "hand would touch the object at ({:+.3f},{:+.3f})".format(*top_of(obstacle)[:2])
+                plan.reason = TOUCHING + " the object at ({:+.3f},{:+.3f})".format(*top_of(obstacle)[:2])
                 break
         return plan
 
