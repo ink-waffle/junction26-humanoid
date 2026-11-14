@@ -249,9 +249,10 @@ class GraspServo:
         """One line per hover look: what was measured, what is applied, the fit's support and the cost."""
         look, mm = measured.look, lambda v: "(n/a)" if v is None else "({:+.1f},{:+.1f},{:+.1f})".format(*(1e3 * np.asarray(v)))
         verdict = "applied" if not measured.refused else f"not applied: {measured.refused}"
-        log.info("t=%.1f servo look %d (%s, camera %s) %s, %s arm: target top %s mm, hand->object measured %s planned %s mm, tracking %s mm, "
+        log.info("t=%.1f servo look %d (%s, camera %s, at the hover %s) %s, %s arm: target top %s mm, hand->object measured %s planned %s mm, tracking %s mm, "
                  "step %s mm %s, total %s mm; fit rms %.1f mm, coverage %.2f, inliers %.2f, %d points, spread %.1f mm, top visible %.2f; "
-                 "look %.2f s, %.2f s since the hover began", t, state.looks, self.mode, state.source, state.pick.target, state.pick.side,
+                 "look %.2f s, %.2f s since the hover began", t, state.looks, self.mode, state.source,
+                 "the episode's" if look.camera is None else "its own arm fit", state.pick.target, state.pick.side,
                  mm(state.pick.target.detection.top), mm(measured.vector), mm(measured.planned), mm(measured.tracking), mm(measured.step),
                  verdict, mm(state.correction), 1e3 * look.rms, look.coverage, look.inliers, look.points, 1e3 * look.spread, look.visible,
                  seconds, t - state.started)
