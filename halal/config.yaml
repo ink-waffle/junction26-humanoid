@@ -136,6 +136,7 @@ motion:
     lift: 0.004
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.0      # at release one finger starts opening this long after the thumb and the other finger (0 = together)
+  release_vel: 2.0            # rad/s of the opening hand (the organiser sequence opens at motion.hand_max_vel)
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
     cube: [cage, pinch]
     cylinder: [cage]
