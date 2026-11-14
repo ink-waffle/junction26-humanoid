@@ -68,8 +68,27 @@ mapping differs from the fixed one.
 | yaw error, median / p95 | not produced | 0.5° / 1.6° |
 | runtime | 21 ms | 40 ms |
 
-- Open: the counter height is anchored to the scene file (exact in sim, unknown on the robot); a reference from
-  the robot's own hands is being built. Sim effect on sorting: to be measured against the organiser detector.
+- Sim effect on sorting: being measured against the organiser detector (policy A/B legs).
+
+### 2b. Camera pose from the robot's own arms, perceived scene layout, 03:30
+- **What:** depth pixels on both forearms and hands are registered against the surface posed by forward kinematics
+  of the measured joints (6-DOF, 28 ms, once per episode): that ties the camera to the frame the arm moves in.
+  The scene-anchored pose (plane + bin row) is used only when the hands confirm it within 10 mm; otherwise the
+  hand pose decides and the bins and counter plane are reported where they are seen (`Detector.layout()`).
+- **Why:** on the real recordings the bins and table sit centimetres and degrees away from the scene file
+  relative to the robot, and the nominal head calibration is 30–90 px off; anchoring the camera to the bins there
+  would move every object by centimetres. Only the arm is rigidly tied to the arm frame.
+
+| 120 DR frames | xy error median / p95 / max | z error median / p95 / max |
+|---|---|---|
+| nominal calibration | 11.1 / 22.4 / 29.1 mm | 6.2 / 17.9 / 22.2 mm |
+| hands only | 2.2 / 2.9 / 3.8 mm | 3.7 / 4.2 / 4.4 mm |
+| scene anchor (plane + bins), also the fusion in sim | 1.7 / 2.5 / 2.7 mm | 0.0 / 0.3 / 0.3 mm |
+
+- Bins found by depth geometry alone (anchor off): centres within 4.9 mm median, 7.5 mm max.
+- Caveat: sim has exact kinematics, exact meshes and clean depth. Real wrists carry a camera mount and cables,
+  and glossy black fingers are hard for stereo depth; unmeasured until a drop with depth arrives.
+- Colour is now three hue basins; hues between them (orange) are not returned.
 
 ### 3. Sim throughput, 02:50
 - **What:** start every sim with `OMP_NUM_THREADS=1`.
@@ -78,6 +97,11 @@ mapping differs from the fixed one.
 - **Effect:** real-time factor of a third sim under load 0.29 → 0.44, CPU per sim 5.5 → 2.4 cores; an oracle
   episode on the tuned sim behaves normally (3/3, gate pass). All three sims restarted with it by 03:10 and
   running jobs: 0.40 + 0.36 + 0.49 = 1.25 sim-seconds per second, against 0.54 with two untuned sims.
+- **Final settings (03:25, now the `sims.sh` defaults):** plus four pinned cores per sim, Kit task pool 4, PhysX 2
+  threads: 0.58 idle and ~0.45 under an evaluator on the test sim (like for like: 0.44 → 0.585 idle, 0.37 → 0.445
+  with a client). Pinning alone changed nothing. Not yet measured with all three sims on the final settings.
+- **Found on the way:** the sim is not deterministic run to run (same seed, same policy, a grasp fails in some
+  runs); the DR camera corruption in organiser code costs 5 ms per step once a client has called `randomize`.
 - **Failed:** dropping the wrist cameras from the sim crashes the task.
 
 ### 4. Motion planning, 03:00

@@ -4,7 +4,8 @@
 
 Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise ([{pos, yaw_deg, yaw_known}]),
-variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `noise`, `squeeze`, `candidates`, `overrides`}).
+variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `noise`, `squeeze`, `candidates`, `overrides`,
+`progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
 from __future__ import annotations
 
@@ -38,7 +39,8 @@ from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
 BIN_COLOR = {bin_name: color for color, bin_name in FIXED_MAPPING.items()}
-MARKS = {"close": ("close", 1.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
+MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
+GRIP_JOINTS = [1, 3, 5]
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,7 @@ class Pick:
     detection: ObjectDetection
     grasp: Grasp | None
     plan: Plan
+    squeeze: float
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
@@ -159,13 +162,12 @@ class Bench:
         truth = {o["name"]: o for o in self.scene_client.state()["objects"]}
         rng = np.random.default_rng(seed)
         picks = [self._prepare(c, truth, rng) for c in cases]
-        arm, hand = self._merge(picks)
-        trace = self._execute(arm, hand, [p.name for p in picks])
+        trace = self._execute(picks)
         evaluate.settle(self.scene_client, 8.0, float(self.scene.cfg["success"]["at_rest_speed"]))
         outcomes = {o["name"]: o["outcome"] for o in self.scene_client.evaluate("sort_fixed", dict(FIXED_MAPPING))["outcomes"]}
         final = {o["name"]: o["pos"] for o in self.scene_client.state()["objects"]}
-        np.savez_compressed(self.out / "traces" / f"episode_{index:04d}.npz", arm_cmd=arm, hand_cmd=hand, **trace)
-        return [self._record(index, seed, p, k, arm, hand, trace, outcomes, final, dr) for k, p in enumerate(picks)]
+        np.savez_compressed(self.out / "traces" / f"episode_{index:04d}.npz", **trace)
+        return [self._record(index, seed, p, k, trace, outcomes, final, dr) for k, p in enumerate(picks)]
 
     def _layout_entry(self, case: Case) -> dict[str, Any]:
         xy, yaw = mirrored(case)
@@ -187,7 +189,7 @@ class Bench:
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
         detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
         grasp, plan = self._plan(case, detection)
-        return Pick(case, name, pos, yaw, detection, grasp, plan)
+        return Pick(case, name, pos, yaw, detection, grasp, plan, self.spec["variants"][case.variant].get("squeeze", 0.0))
 
     def _plan(self, case: Case, detection: ObjectDetection) -> tuple[Grasp | None, Plan]:
         """First of the variant's grasps (one, or the policy's candidate list) that plans."""
@@ -205,48 +207,61 @@ class Bench:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan
 
-    def _merge(self, picks: list[Pick]) -> tuple[np.ndarray, np.ndarray]:
-        """Both arms' plans on one timeline; an arm without a plan, or done earlier, holds."""
-        good = [p for p in picks if p.plan.ok]
-        ticks = max((len(p.plan.arm) for p in good), default=0)
-        arm = np.repeat(self.env.filter.arm_cmd[None], ticks, 0)
-        hand = np.repeat(self.env.filter.hand_cmd[None], ticks, 0)
-        for p in good:
-            cols, n = ArmKinematics.sl(p.case.side), len(p.plan.arm)
-            arm[:n, cols], arm[n:, cols] = p.plan.arm[:, cols], p.plan.arm[-1, cols]
-            hand[:n, cols], hand[n:, cols] = p.plan.hand[:, cols], p.plan.hand[-1, cols]
-        return arm, hand
-
-    def _execute(self, arm: np.ndarray, hand: np.ndarray, names: list[str | None]) -> dict[str, np.ndarray]:
-        """Run the trajectory through the env; per tick measured joints, every few ticks the objects' poses."""
-        every = self.settings["trace_every"]
-        arm_q, hand_q, poses = [], [], []
-        for k, (a, h) in enumerate(zip(arm, hand)):
-            obs, info = self.env.step({"arm_q_target": a, "hand_q_target": h})
+    def _execute(self, picks: list[Pick]) -> dict[str, np.ndarray]:
+        """Run both arms' plans side by side; per tick commanded and measured joints, every few ticks the objects' poses."""
+        every, names = self.settings["trace_every"], [p.name for p in picks]
+        rows: dict[str, list] = {key: [] for key in ("arm_cmd", "hand_cmd", "arm_q", "hand_q", "poses")}
+        tick = 0
+        while any(p.plan.ok and tick < len(p.plan.arm) for p in picks):
+            arm, hand = self._targets(picks, tick)
+            obs, info = self.env.step({"arm_q_target": arm, "hand_q_target": hand})
             if info["clipped"]:
                 raise RuntimeError(f"safety clip during a dry-run-checked plan: {info['clip_reasons']}")
-            arm_q.append(obs["arm_q"])
-            hand_q.append(obs["hand_q"])
-            if k % every == 0:
+            for key, value in (("arm_cmd", arm), ("hand_cmd", hand), ("arm_q", obs["arm_q"]), ("hand_q", obs["hand_q"])):
+                rows[key].append(value)
+            if tick % every == 0:
                 state = {o["name"]: o for o in self.scene_client.state()["objects"]}
-                poses.append([state[n]["pos"] + state[n]["quat_xyzw"] if n else [np.nan] * 7 for n in names])
-        return {"arm_q": np.array(arm_q), "hand_q": np.array(hand_q), "poses": np.array(poses, float).reshape(-1, len(names), 7)}
+                rows["poses"].append([state[n]["pos"] + state[n]["quat_xyzw"] if n else [np.nan] * 7 for n in names])
+            for pick in picks:
+                self._deepen_if_weak(pick, tick, obs["hand_q"] - hand)
+            tick += 1
+        trace = {key: np.array(value, float) for key, value in rows.items()}
+        return {**trace, "poses": trace["poses"].reshape(-1, len(names), 7)}
+
+    def _targets(self, picks: list[Pick], tick: int) -> tuple[np.ndarray, np.ndarray]:
+        """Arm and hand targets of this tick: each arm follows its own plan and holds once it is done or has none."""
+        arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
+        for pick in picks:
+            if pick.plan.ok:
+                cols, row = ArmKinematics.sl(pick.case.side), min(tick, len(pick.plan.arm) - 1)
+                arm[cols], hand[cols] = pick.plan.arm[row, cols], pick.plan.hand[row, cols]
+        return arm, hand
+
+    def _deepen_if_weak(self, pick: Pick, tick: int, error: np.ndarray) -> None:
+        """Progressive variants: at the end of a close or squeeze phase, squeeze one step deeper unless the grip is firm."""
+        rule = self.spec["variants"][pick.case.variant].get("progressive")
+        if not rule or not pick.plan.ok:
+            return
+        last = max(stop for name, _, stop in pick.plan.phases if name in ("close", "squeeze")) - 1
+        grip = np.abs(error[ArmKinematics.sl(pick.case.side)][GRIP_JOINTS]).max()
+        if tick == last and grip < rule["firm"] and pick.squeeze + rule["step"] <= rule["max"] + 1e-9:
+            pick.squeeze += rule["step"]
+            pick.plan = self.planners[pick.case.variant].resqueezed(pick.plan, pick.grasp, pick.case.side, pick.squeeze)
 
     # ------------------------------------------------------------------ summary of one pick
-    def _record(self, index: int, seed: int, pick: Pick, slot: int, arm: np.ndarray, hand: np.ndarray,
-                trace: Mapping[str, np.ndarray], outcomes: Mapping[str, str], final: Mapping[str, list[float]],
-                dr: Mapping[str, Any]) -> dict[str, Any]:
+    def _record(self, index: int, seed: int, pick: Pick, slot: int, trace: Mapping[str, np.ndarray],
+                outcomes: Mapping[str, str], final: Mapping[str, list[float]], dr: Mapping[str, Any]) -> dict[str, Any]:
         record: dict[str, Any] = {"episode": index, "seed": seed, **asdict(pick.case), "object": pick.name,
                                   "true_pos": pick.true_pos.round(4).tolist(), "true_yaw": pick.true_yaw,
                                   "seen_yaw": pick.detection.yaw, "grasp": pick.grasp.name if pick.grasp else None,
                                   "finger_yaw": pick.grasp.finger_yaw if pick.grasp else None,
-                                  "planned": bool(pick.plan.ok), "plan_reason": pick.plan.reason,
+                                  "planned": bool(pick.plan.ok), "plan_reason": pick.plan.reason, "squeeze": pick.squeeze,
                                   "dr": (dr.get("objects") or {}).get(pick.name)}
         if not pick.plan.ok:
             return {**record, "outcome": outcomes.get(pick.name), "failure": "no_plan"}
         marks = {key: self._tick(pick.plan, phase, fraction) for key, (phase, fraction) in MARKS.items()}
         cols = ArmKinematics.sl(pick.case.side)
-        error = trace["hand_q"][:, cols] - hand[:, cols]
+        error = (trace["hand_q"] - trace["hand_cmd"])[:, cols]
         left_order = (lambda e: e) if pick.case.side == "left" else right_hand
         record["finger_error"] = {key: np.round(left_order(error[t]), 4).tolist() for key, t in marks.items()}
         record["phases_s"] = {name: round((end - start) / 30.0, 2) for name, start, end in pick.plan.phases}

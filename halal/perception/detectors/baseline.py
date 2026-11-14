@@ -8,14 +8,18 @@ from aaltonomous.interface.calibration import Calibration
 from aaltonomous.scene.scene import Scene
 
 from halal import config
-from halal.perception import ObjectDetection
+from halal.perception import ObjectDetection, SceneLayout, scene_layout
 
 
 class BaselineDetector:
     name = "baseline"
 
     def __init__(self) -> None:
-        self.perception = Perception(config.baseline_config(), Scene.load(), Calibration.load())
+        self.scene = Scene.load()
+        self.perception = Perception(config.baseline_config(), self.scene, Calibration.load())
+
+    def layout(self) -> SceneLayout:
+        return scene_layout(self.scene)
 
     def detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]:
         found = self.perception.detect(obs["head_rgb"], obs["head_depth"])
