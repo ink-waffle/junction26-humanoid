@@ -28,8 +28,9 @@ class Background:
         self._job: Job | None = None
 
     @property
-    def active(self) -> bool:
-        return self._job is not None
+    def idle(self) -> bool:
+        """No job thread is running, not even an abandoned one: the planner state is free for the caller."""
+        return not self._serial.locked()
 
     def submit(self, work: Callable[[Cancelled], Any]) -> None:
         self._job = Job(work)

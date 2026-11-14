@@ -147,7 +147,7 @@ grasp_bench:
   hard_dr: {friction_max: 0.82, mass_min: 1.2}   # `dr: hard` keeps seeds giving every placed object such scales
 
 policy:
-  look_pose: home             # arm pose the head image is taken from, where picks start and end: `home` or a key of `motion`
+  look_pose: home             # arm pose for every look after the first, where picks end: `home` or a key of `motion`
   counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
   bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
   time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
@@ -156,11 +156,11 @@ policy:
   hold_ticks: 10              # ticks per reply while the planner works
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
-  max_plan_failures: 2        # looks in which no plan was found for an object before it is left alone
+  replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
-  min_detection_confidence: 0.5
+  min_detection_confidence: 0.3   # correct detections of the topface detector come back as low as 0.34
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
     left: [[0.0, 0.0], [0.0, 0.07]]
@@ -177,6 +177,7 @@ policy:
     soft: 0.2                 # the real hand needs a closure >= 0.2 rad past contact for grip and for a readable signal
     unknown: 0.0
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
+  calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
   calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
   stiff_hand_bias: 0.01       # mean steady error (rad) under which a hand is the stiff sim kind (sim ~0.000, real 0.02-0.04)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)

@@ -31,31 +31,32 @@ class HandResponse:
     stiff: bool               # the sim's stiff actuator (no steady error); False = the soft real hand
 
 
-def calibration_close(hand_q: np.ndarray, closed: np.ndarray, still_ticks: int, hand_vel: float, dt: float) -> tuple[np.ndarray, int]:
-    """Hand trajectory (T, 14): close both hands on nothing, keep still, reopen; and the last tick that is still closed."""
-    closing = ramp(hand_q, closed, hand_vel, dt)
-    still = np.repeat(closed[None], still_ticks + OBS_LAG_TICKS, 0)
-    return np.vstack([closing, still, ramp(closed, hand_q, hand_vel, dt)]), len(closing) + len(still) - 1
+def calibration_close(hand_q: np.ndarray, opened: np.ndarray, closed: np.ndarray, still_ticks: int, hand_vel: float,
+                      dt: float) -> tuple[np.ndarray, int, int]:
+    """Hand trajectory (T, 14): open if needed, close on nothing, keep still, reopen; and the first closing and last sampled tick."""
+    start = hand_q if np.abs(closed - hand_q).sum() >= np.abs(closed - opened).sum() else opened
+    opening = ramp(hand_q, start, hand_vel, dt)
+    closing = ramp(start, closed, hand_vel, dt)
+    still = np.repeat(closed[None], still_ticks + 2 * OBS_LAG_TICKS, 0)   # stays closed past the last sample: an observation may be newer than assumed
+    trajectory = np.vstack([opening, closing, still, ramp(closed, opened, hand_vel, dt)])
+    return trajectory, len(opening), len(opening) + len(closing) + still_ticks - 1
 
 
 class CalibrationTrace:
     """Both hands during a calibration close, sampled from the observations of successive `act()` calls."""
 
-    def __init__(self, hand: np.ndarray, closed_until: int) -> None:
-        self.hand, self.closed_until = hand, closed_until
+    def __init__(self, hand: np.ndarray, closing_from: int, last_sample: int) -> None:
+        self.hand, self.closing_from, self.last_sample = hand, closing_from, last_sample
         self.times: list[float] = []
         self.commanded: list[np.ndarray] = []
         self.measured: list[np.ndarray] = []
 
-    def add(self, t: float, commanded: np.ndarray, hand_q: np.ndarray) -> None:
-        self.times.append(t)
-        self.commanded.append(np.asarray(commanded, float))
-        self.measured.append(np.asarray(hand_q, float))
-
     def add_tick(self, t: float, tick: int, hand_q: np.ndarray) -> None:
-        """Sample for trajectory tick `tick`; ticks outside the close-and-hold part are ignored."""
-        if 0 <= tick <= self.closed_until:
-            self.add(t, self.hand[tick], hand_q)
+        """Sample for trajectory tick `tick`; only the open hand just before the close, the close and the hold count."""
+        if self.closing_from - 1 <= tick <= self.last_sample:
+            self.times.append(t)
+            self.commanded.append(self.hand[max(tick, 0)])
+            self.measured.append(np.asarray(hand_q, float))
 
     def responses(self, stiff_bias: float) -> dict[str, HandResponse]:
         times, commanded, measured = np.array(self.times), np.array(self.commanded), np.array(self.measured)
@@ -69,7 +70,8 @@ def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray
     travel = commanded[-1] - commanded[0]
     behind = (error - error[-1]) @ np.sign(travel)   # summed over the joints, beyond the steady error
     area = float(np.sum(0.5 * (behind[1:] + behind[:-1]) * np.diff(times)))
-    lag_s = area / float(np.abs(travel - error[-1]).sum())   # time integral of a step's tracking error = step x mean delay
+    moved = float(np.abs(travel - error[-1]).sum())
+    lag_s = area / moved if moved > 0 else 0.0   # time integral of a step's tracking error = step x mean delay
     bias = float(np.abs(error[-1]).mean())
     return HandResponse(error[-1], bias, lag_s, bias < stiff_bias)
 
@@ -81,7 +83,7 @@ class GripWindow:
     closed: np.ndarray       # commanded posture of the closed hand (7,)
     direction: np.ndarray    # per joint +1 / -1 / 0: the way it moves when the hand closes
     first_tick: int          # the lift is over and the hand command has been still for the settle time
-    last_tick: int           # last tick before the hand opens
+    last_tick: int           # a little before the hand opens: an observation may be newer than assumed
 
     @classmethod
     def of(cls, plan: Plan, side: str, settle_ticks: int) -> GripWindow:
@@ -90,7 +92,7 @@ class GripWindow:
         closed, before = plan.hand[close_end - 1, joints], plan.hand[close_start - 1, joints]
         still_from = close_start + int(np.argmax(np.all(plan.hand[close_start:close_end, joints] == closed, axis=1)))
         first_tick = max(still_from + settle_ticks, phase(plan, "lift")[1] - 1)
-        return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1)
+        return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS)
 
     def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float) -> float:
         """Summed shortfall of the joints behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
