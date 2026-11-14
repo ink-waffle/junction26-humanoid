@@ -6,7 +6,8 @@ Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = gripp
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
-`repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `overrides`
+`repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `neighbour` ([forward, outward] m: a second object beside the target),
+`avoid` (pass the neighbour to the planner as an obstacle), `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
@@ -74,6 +75,8 @@ class Pick:
     grasp: Grasp | None
     plan: Plan
     squeeze: float
+    neighbour: str | None
+    neighbour_start: np.ndarray | None
 
 
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
@@ -164,14 +167,15 @@ class Bench:
     def run(self, index: int, cases: list[Case]) -> list[dict[str, Any]]:
         """Home, randomise, place the objects, plan one pick per arm, execute both, score and summarise."""
         evaluate.home_arms(self.env, self.scene_client)
-        names = [f"obj_{BIN_COLOR[c.bin_name]}_{c.shape}_0" for c in cases if c.present]
+        neighbours = self._neighbour_names(cases)
+        names = [f"obj_{BIN_COLOR[c.bin_name]}_{c.shape}_0" for c in cases if c.present] + [n for n in neighbours if n]
         seed = self.seeds.take(names)
         dr = self.scene_client.randomize(seed).get("params") or {}
-        self.scene_client.reset([self._layout_entry(c) for c in cases if c.present])
+        self.scene_client.reset([entry for c, n in zip(cases, neighbours) if c.present for entry in self._layout_entries(c, n)])
         self._hold(self.settings["settle_ticks"])
         truth = {o["name"]: o for o in self.scene_client.state()["objects"]}
         rng = np.random.default_rng(seed)
-        picks = [self._prepare(c, truth, rng) for c in cases]
+        picks = [self._prepare(c, n, truth, rng) for c, n in zip(cases, neighbours)]
         trace = self._execute(picks)
         evaluate.settle(self.scene_client, 8.0, float(self.scene.cfg["success"]["at_rest_speed"]))
         outcomes = {o["name"]: o["outcome"] for o in self.scene_client.evaluate("sort_fixed", dict(FIXED_MAPPING))["outcomes"]}
@@ -179,17 +183,34 @@ class Bench:
         np.savez_compressed(self.out / "traces" / f"episode_{index:04d}.npz", **trace)
         return [self._record(index, seed, p, k, trace, outcomes, final, dr) for k, p in enumerate(picks)]
 
-    def _layout_entry(self, case: Case) -> dict[str, Any]:
+    def _neighbour_names(self, cases: list[Case]) -> list[str | None]:
+        """Sim object next to each case's target (variant key `neighbour`), None where the variant has none."""
+        spare = next(color for color in BIN_COLOR.values() if color not in {BIN_COLOR[c.bin_name] for c in cases})
+        names: list[str | None] = []
+        for case in cases:
+            variant = self.spec["variants"][case.variant]
+            name = f"obj_{spare}_{variant.get('neighbour_shape', 'triangle')}_{sum(n is not None for n in names)}"
+            names.append(name if case.present and "neighbour" in variant else None)
+        return names
+
+    def _layout_entries(self, case: Case, neighbour: str | None) -> list[dict[str, Any]]:
+        """Layout entries of a case: its target and, when the variant asks for one, the neighbour at its offset (forward, outward)."""
         xy, yaw = mirrored(case)
-        mat = self.scene.pelvis_to_mat(np.r_[xy, 0.0])
-        return {"color": BIN_COLOR[case.bin_name], "shape": case.shape, "x": float(mat[0]), "y": float(mat[1]), "yaw": float(yaw)}
+        spots = [(BIN_COLOR[case.bin_name], case.shape, xy, yaw)]
+        if neighbour is not None:
+            _, color, shape, _ = neighbour.split("_")
+            forward, outward = self.spec["variants"][case.variant]["neighbour"]
+            spots.append((color, shape, xy + [forward, outward if case.side == "left" else -outward], 0.0))
+        mats = [(color, shape, self.scene.pelvis_to_mat(np.r_[at, 0.0]), turn) for color, shape, at, turn in spots]
+        return [{"color": color, "shape": shape, "x": float(mat[0]), "y": float(mat[1]), "yaw": float(turn)}
+                for color, shape, mat, turn in mats]
 
     def _hold(self, ticks: int) -> None:
         action = {"arm_q_target": self.env.filter.arm_cmd.copy(), "hand_q_target": self.env.filter.hand_cmd.copy()}
         for _ in range(ticks):
             self.env.step(action)
 
-    def _prepare(self, case: Case, truth: Mapping[str, Any], rng: np.random.Generator) -> Pick:
+    def _prepare(self, case: Case, neighbour: str | None, truth: Mapping[str, Any], rng: np.random.Generator) -> Pick:
         """Detection with the case's perception error, the variant's grasp for it, and the plan."""
         name = f"obj_{BIN_COLOR[case.bin_name]}_{case.shape}_0" if case.present else None
         pos = np.asarray(truth[name]["pos"], float) if name else np.r_[mirrored(case)[0], self.rest_z]
@@ -200,16 +221,19 @@ class Bench:
         top = pos + np.r_[error, self.scene.object_height() / 2]
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
         detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
-        grasp, plan = self._plan(case, detection)
+        beside = np.asarray(truth[neighbour]["pos"], float) if neighbour else None
+        avoid = neighbour is not None and self.spec["variants"][case.variant].get("avoid", False)
+        grasp, plan = self._plan(case, detection, [beside + [0.0, 0.0, self.scene.object_height() / 2]] if avoid else [])
         depth = self._squeeze_override(case.variant)
-        return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth)
+        return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth,
+                    neighbour, beside)
 
     def _squeeze_override(self, variant: str) -> float | None:
         """A variant's `squeeze` when it is one number for every shape; None leaves the depth to the grasp."""
         depth = self.spec["variants"][variant].get("squeeze")
         return float(depth) if isinstance(depth, (int, float)) else None
 
-    def _plan(self, case: Case, detection: ObjectDetection) -> tuple[Grasp | None, Plan]:
+    def _plan(self, case: Case, detection: ObjectDetection, obstacles: list[np.ndarray]) -> tuple[Grasp | None, Plan]:
         """First of the variant's grasps (one, or the policy's candidate list) that plans."""
         variant, planner = self.spec["variants"][case.variant], self.planners[case.variant]
         hand = variant.get("hand", "stiff")
@@ -223,7 +247,7 @@ class Bench:
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
                                      self.env.filter.hand_cmd.copy(), end=self.spec["end"],
-                                     squeeze=self._squeeze_override(case.variant))
+                                     squeeze=self._squeeze_override(case.variant), obstacles=obstacles)
             if plan.ok:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan
@@ -292,6 +316,10 @@ class Bench:
         record.update(self._object_metrics(pick, slot, marks, trace))
         record["outcome"], record["final_pos"] = outcomes[pick.name], np.round(final[pick.name]["pos"], 4).tolist()
         record["final_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.name]["quat_xyzw"]))), 1)
+        if pick.neighbour is not None:
+            moved = np.subtract(final[pick.neighbour]["pos"], pick.neighbour_start)
+            record["neighbour_shift_mm"] = round(1000 * float(np.linalg.norm(moved[:2])), 1)
+            record["neighbour_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.neighbour]["quat_xyzw"]))), 1)
         record["failure"] = self._failure(record)
         return record
 
