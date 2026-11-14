@@ -15,7 +15,7 @@ from aaltonomous.baselines.classical.planner import Plan, ramp
 from halal.motion import PickPlanner
 from halal.perception import Detector
 from halal.policy.background import Background
-from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
+from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream, arm_travel
 from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, hand_slice, opening_in_turn, phase
 from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
@@ -68,6 +68,7 @@ class SortPolicy:
         self.looker = Looker(detector, planner, self.calibrator, settings)
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
+        self.arm_travel = 0.0   # rad the commanded arms have travelled since the server started: the frozen-stream check outlives episodes
         self.reset(leave_everything)
 
     def reset(self, bin_for: BinFor) -> None:
@@ -109,7 +110,9 @@ class SortPolicy:
         except Exception:
             log.exception("policy step failed: starting over from a look")
             self._start_over()
+        before = self.stream.arm_cmd
         action = self.stream.next_chunk() if self.stream.busy else self.stream.hold(done=self.stage is Stage.DONE)
+        self.arm_travel += arm_travel(before, action["arm_q_target"])
         return self._within_hand_lead(action, obs)
 
     def _within_hand_lead(self, action: Action, obs: Mapping[str, Any]) -> Action:
@@ -203,7 +206,7 @@ class SortPolicy:
         stream, primer = self.stream, self.view in (View.START, View.HOME) and not self.primed
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
-        situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
+        situation = Situation(stream.arm_cmd.copy(), self.arm_travel, hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
                               self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
                               calibrate, primer, self.missed)
         self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
