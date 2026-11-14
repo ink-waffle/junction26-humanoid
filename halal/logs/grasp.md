@@ -391,3 +391,35 @@ release by 10 mm, to be measured in sim (sweep 20) before it becomes the default
 
 Bench: planning with obstacles can take more than a second, which tripped the env's watchdog stop (sweep 19 died in
 its first episode); the bench now plans in a thread while the arms hold.
+
+## Sweep 17: the soft-hand sim again, both DR corners (`HAND_GAINS="1.5,0.2,0.0075"`)
+
+Hypotheses: the candidates as the policy gets them with `hand="soft"` (fingers closing too, lift and carry at 4 rad/s²)
+hold every shape in both DR corners; a cube at 0.45 is a usable second candidate now that the pinch is not offered on a
+soft hand; a shallower soft triangle might suit the stiff hand as well (stiff half: sweep 20). Exact pose, own-side
+bin, staggered release, 182 picks.
+
+| cell | slippery-heavy corner | grippy-light corner | largest grip joint error, held |
+|---|---|---|---|
+| candidates, cube (0.30) | 11/13 (1 not lifted, 1 lost in lift) | 11/12 (1 not lifted) | 0.16–0.27 |
+| candidates, cylinder (0.45) | 19/19 | 12/12 | |
+| candidates, triangle (vertex-aligned, 0.80) | 17/18 (1 lost in lift) | 11/12 (1 lost in lift) | |
+| cube at 0.45 | 19/20 (1 not lifted) | | 0.22–0.31 |
+| triangle at 0.40 | 4/9 (lost in lift and carry, 4 of 5 toppled) | | 0.05–0.06 |
+| triangle at 0.50 | 19/19 | | 0.10–0.11 |
+| triangle at 0.60 | 12/12 | | 0.15–0.17 |
+
+- Every carried object was out of the hand within the open phase (140/140).
+- Sum of |error| on thumb_1 and both finger_0 joints with a triangle held, lift end / mid-carry: at 0.80 0.53–0.55 /
+  0.52–0.54, at 0.60 0.31–0.32 / 0.30–0.31, at 0.50 0.19–0.21; an empty hand reads 0.01–0.12 at the lift end and 0.02
+  in the carry. The policy's threshold (0.15 on the sum) leaves a factor 2 at 0.60 and none at 0.50.
+- All six losses look the same in the traces, in both corners: the grip reads firm (0.22–0.33), and when the lift
+  starts the cube slides DOWN out of the hand: the object's distance below the palm goes 83 → 93 → 115 mm within 0.4 s
+  while the finger errors fall to 0. Good picks show the start of the same slide (83 → 86–95 mm, tilt 15–20°) and
+  then catch. The thumb presses 10 mm below the centre and the fingers above it; a kp 1.5 hand cannot resist that
+  couple once the counter no longer supports the object. Soft-hand totals with sweep 12: cube 28/31, cylinder
+  37/37, triangle 34/36.
+
+Verdict: the soft candidates stand (about one cube or triangle in twelve needs the policy's retry); cube at 0.45 is
+offered as the second soft candidate; the soft triangle stays at 0.80 (0.60 is the lowest depth the policy's contact
+threshold can see). Open: a closed posture with the thumb tip level with the fingertips.
