@@ -55,17 +55,27 @@ class Looker:
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings)
         self.detect_patience_s = float(settings["detect_deadline_s"])
+        self.last_frame: tuple[int, np.ndarray] | None = None   # hash of the last head colour image looked at, and the arm pose then
 
     def look(self, obs: Mapping[str, Any], situation: Situation, cancelled: Cancelled) -> Look | None:
         """Background job: detect and plan the next pick; None when a head image has not arrived."""
         if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
             return None
+        self._check_frame_is_new(obs["head_rgb"], situation.arm_q)
         detections = self._detect(obs)
         if situation.primer:
+            self.planner.set_layout(self.detector.layout())   # moves checked before the first plan see the bins where they stand
             return Look(detections, [], None, [], 0, self.detector.layout().source, True)
         if situation.hands_pending:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
         return self._plan(self.detector.layout(), detections, situation, cancelled)
+
+    def _check_frame_is_new(self, head_rgb: np.ndarray, arm_q: np.ndarray) -> None:
+        """A colour image byte-identical to the last look's although the arms moved since is a frozen stream: say so."""
+        frame, last = hash(head_rgb.tobytes()), self.last_frame
+        if last is not None and frame == last[0] and float(np.abs(arm_q - last[1]).max()) > self.settings["frozen_frame_arm_move"]:
+            log.error("the head colour image is byte-identical to the last look's although the arms moved: the stream is frozen, colours and shapes are stale")
+        self.last_frame = (frame, np.array(arm_q, float))
 
     def _detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]:
         """The detector's answer; a call that outlasts its deadline is left behind and the next one gets twice as long."""

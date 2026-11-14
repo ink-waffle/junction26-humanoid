@@ -151,7 +151,7 @@ class PickChooser:
         """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side."""
         near = target.bin_name if target.bin_name in SIDES else ("left" if target.xy[1] > 0 else "right")
         far = "right" if near == "left" else "left"
-        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name)]
+        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name, target.detection)]
 
     def _distance_to_bin(self, target: Target) -> float:
         return float(np.linalg.norm(target.xy - self.planner.bin_xy(target.bin_name)))

@@ -13,11 +13,17 @@ CHECK_EVERY_TICKS = 3
 
 def checked_move(planner: PickPlanner, arm_q: np.ndarray, hand_q: np.ndarray, arm_to: np.ndarray, hand_to: np.ndarray,
                  clearance: float) -> tuple[np.ndarray, np.ndarray] | None:
-    """Straight joint-space move, or None if the safety filter would clip it or a hand comes near the counter or a bin rim."""
+    """Straight joint-space move, or None if the safety filter would clip it or a hand comes near the counter or a bin rim; a move that starts lower than `clearance` must only never sink below its start."""
     arm, hand = planner.go_to(arm_q, hand_q, arm_to, hand_to)
-    if planner.dry_run_safety(arm_q, hand_q, arm, hand) or lowest_clearance(planner, arm, hand) < clearance:
+    floor = min(clearance, resting_clearance(planner, arm_q, hand_q))
+    if planner.dry_run_safety(arm_q, hand_q, arm, hand) or lowest_clearance(planner, arm, hand) < floor:
         return None
     return arm, hand
+
+
+def resting_clearance(planner: PickPlanner, arm_q: np.ndarray, hand_q: np.ndarray) -> float:
+    """Height of the lower hand above the counter or a bin rim in one pose (negative: the model has it below the surface)."""
+    return lowest_clearance(planner, np.asarray(arm_q, float)[None], np.asarray(hand_q, float)[None])
 
 
 def lowest_clearance(planner: PickPlanner, arm: np.ndarray, hand: np.ndarray) -> float:

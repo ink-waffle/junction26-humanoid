@@ -733,3 +733,46 @@ No plan the full check accepts is refused early, none it refuses gets through. I
 names a different neighbour (the first one in the hand's way at the grasp pose rather than on the way down); the
 text still starts with `TOUCHING`. Refusals the early check does not catch (a neighbour touched only during the
 descent) take as long as before: 21 of 108 with outlines, 11 of 118 with tops.
+
+## Landing rule with three measured boxes (offline; landing data from the reach workstream, `halal/logs/reach.md`)
+
+The rule "no release whose landing box crosses an inner wall" now picks its box by the release: `nominal` (rise 0;
+backward bound −28 mm, was −32: one drop in 232 lay beyond, and 12/12 landed inside from a 3 cm inset), `risen`
+(`release_rise` > 0; p2.5..p97.5 of 172 drops on both hands) and `limit` (near inset ≤ `landing.limit_inset` 2 cm
+AND no larger inset in reach: at the reach limit objects leave the hand forward, +6..+117 mm). A 2 cm inset that is
+tried only because a larger one failed to plan is judged with the ordinary box and refused. `drop_inset.near` gains 0.02.
+
+Offline, bins moved so that the near wall stands at x, every bin x arm x both policy slots, 4 objects each, stiff and soft:
+
+| near wall | planned stiff / soft | releases used (inset cm, rise cm, box) | box to the nearest wall, min |
+|---|---|---|---|
+| 0.40 | 32/32, 32/32 | (6, 0, nominal) only: unchanged | 17 mm |
+| 0.46 | 32/32, 32/32 | (6, 6) (5, 9) (4, 6) (6, 9), risen | 1 mm (centre bin's outward slot, sideways) |
+| 0.48 | 32/32, 32/32 | (4, 6) (3, 9) (4, 9) risen; (2, 6) limit on the centre bin's cross-body slot | 1 mm |
+| 0.50 | 22/32, 20/32 | (2, 6) (2, 9) (2, 12), limit | 12 mm |
+
+At 0.50 every bin still has a slot that plans with each arm that serves it, except the side bins' +4.5 cm slot on the
+soft hand and the centre bin's cross-body slot (out of reach). The 1 mm cases are the `risen` box's outward p97.5
+(71 mm) against the 72 mm the centre slot leaves: 3 of 172 measured drops went further.
+
+## Sweep 29 (soft-hand sim): vertex-aligned triangles at soft depth 0.60 against 0.80
+
+Both DR corners, exact pose and 10 mm position error in a random direction, 12 per cell. Contact sum = |error| on
+thumb_1 + both finger_0 joints (the policy's threshold is 0.15).
+
+| depth | slippery-heavy exact / 10 mm | grippy-light exact / 10 mm | total | contact sum at lift end, min / median | mid-carry, min |
+|---|---|---|---|---|---|
+| 0.60 | 12/12, 12/12 | 12/12, 11/12 (not lifted) | 47/48 | 0.30 / 0.31 | 0.28 |
+| 0.80 | 12/12, 12/12 | 11/12, 11/12 (both lost in the lift) | 46/48 | 0.52 / 0.54 | 0.51 |
+
+With sweep 17: 0.60 holds 59/60, 0.80 holds 80/84 on the soft hand; on a stiff hand given the soft closure 0.60
+holds 12/12 and 0.80 6/12 (sweeps 20b, 14). 0.60 is at least as good on the soft hand and its weakest contact reading
+is 1.9 times the threshold (0.80: 3.4 times). Not changed here: proposed to the coordinator; it needs the soft depths
+as one map on `cage.soft` (cube 0.45, cylinder 0.45, triangle 0.60, unknown 0.75) and `cage_deep` removed, because a
+soft squeeze map on `cage` overrides `cage_deep`'s cube depth.
+
+## Sweep 30: cylinders lying on their side, perceived as an object of unknown shape (in progress)
+
+The scripted push tips a cylinder only about one time in three (the rest slide and stay upright). Soft-hand sim,
+first run: 5 of 16 lying, all 5 binned with the unknown-shape cage at 0.75 (grip signal 0.26–0.41); the 11 upright
+ones binned 11/11 as cylinders. A second soft run (s30b, 32 picks) and the stock run (s30, 32 picks) were queued.
