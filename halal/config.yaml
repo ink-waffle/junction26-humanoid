@@ -56,7 +56,7 @@ perception:
       independent_points: 50  # ... of which this many are worth as independent (model errors are systematic)
       max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted,
       max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band,
-      min_coverage: 0.5       # nor one with depth on less than this share of the visible model (it matched something else),
+      min_coverage: 0.7       # nor one with depth on less than this share of the visible model that returned any (it matched something else),
       min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
       max_turn_deg: 6.0       # nor one that moves the camera further than a head calibration can be wrong
       max_shift: 0.05
@@ -165,6 +165,37 @@ perception:
     occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`
     sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
+    shifts:                   # --shift: where the table stands against the scene file (real: drops 1 and 2, realdata.md B7)
+      near: {bins_x: 0.05, counter_z: 0.020, pitch_deg: 1.5}   # bins further (m), counter higher (m), far edge up (deg)
+      real: {bins_x: 0.07, counter_z: 0.015, pitch_deg: 7.0}
+      far: {bins_x: 0.14, counter_z: 0.0, pitch_deg: 9.0}
+    shift:                    # how a frame is taken apart for the re-rendering (halal.eval.scene_shift)
+      arm_reach: 0.010        # depth this close to the arm model is arm: it stays where it is
+      arm_height: 0.068       # so does everything this far above the counter (bin walls end at 0.060)
+      below: 0.02             # table points lie no further than this under the counter surface
+      bin_margin: 0.004       # points this close to a bin footprint move with the bins
+    d435:                     # --depth: RealSense D435i model (halal.eval.depth_sensor); px are those of the aligned 640x480 image
+      depth_focal: 425.0      # px of the IR imagers at 848x480 (HFOV about 90 deg)
+      baseline: 0.050         # m between the IR imagers
+      shadow_baseline: 0.065  # m from the colour sensor to the right imager: what colour sees and that imager does not has no depth
+      disparity_steps: 32     # subpixel steps per px of disparity
+      correlated_share: 0.7   # share of the disparity noise that is smooth over the matching window (the rest is per pixel)
+      window_px: 4            # scale (sigma) of the matching window
+      edge_step: 0.015        # m between neighbouring pixels that makes a depth edge
+      hole_px: 10             # scale of the holes on reflecting surfaces
+      arm_reach: 0.006        # depth this close to the model of a dark arm link is that link
+      hand: &hand [hand_palm_link, thumb_0_link, thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
+      levels:                 # subpixel rms 0.05 / 0.08 / 0.2: Intel's best, well tuned, "recalibrate"; bias 0.2 px = 2 % at 2 m (datasheet limit)
+        mild:                 # black_parts: arm links (name endings) that are glossy black; black_fill: share of them that returns depth
+          {subpixel_rms: 0.05, disparity_bias: 0.0, edge_jitter_px: 0.5, fatten_px: 0, smooth_px: 3, shadow_margin_px: 1, fly_rate: 0.05,
+           edge_drop: 0.1, black_parts: [thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link],
+           black_fill: 0.8, dark_value: 0, dark_fill: 1.0, dark_noise_gain: 1.5, hole_share: 0.005}
+        typical:              # dark_value: image value (0..255) below which a pixel is dark; dark_fill: share of those that returns depth
+          {subpixel_rms: 0.08, disparity_bias: 0.05, edge_jitter_px: 1.0, fatten_px: 1, smooth_px: 5, shadow_margin_px: 2, fly_rate: 0.15,
+           edge_drop: 0.3, black_parts: *hand, black_fill: 0.4, dark_value: 0, dark_fill: 1.0, dark_noise_gain: 2.5, hole_share: 0.02}
+        bad:                  # nothing at all from the hands, a third from every other dark surface (the sim arm is black all over)
+          {subpixel_rms: 0.2, disparity_bias: 0.2, edge_jitter_px: 2.0, fatten_px: 2, smooth_px: 5, shadow_margin_px: 4, fly_rate: 0.4,
+           edge_drop: 0.5, black_parts: *hand, black_fill: 0.0, dark_value: 60, dark_fill: 0.3, dark_noise_gain: 4.0, hole_share: 0.06}
     camera_edges_mm: [5, 10, 15]
     gain_edges: [0.97, 1.03]
     key_light_edges: [0.87, 1.13]

@@ -11,7 +11,7 @@ from scipy.spatial.transform import Rotation
 from aaltonomous.scene.scene import Scene
 
 from halal.perception.geometry import Camera, PlaneFit, fit_line, fit_plane, rotation_between, yaw_rotation
-from halal.perception.hands import HandReference
+from halal.perception.hands import HandFit, HandReference
 
 UP = np.array([0.0, 0.0, 1.0])
 LOG = logging.getLogger(__name__)
@@ -52,23 +52,23 @@ class SelfCalibration:
 
     def scene_anchor(self, depth: np.ndarray, nominal: Camera) -> Camera | None:
         """The pose that makes the counter level at its scene height and puts the bin row where the scene file has it."""
-        floor = self._counter(depth, nominal)
+        floor = self.counter_fit(depth, nominal)
         return self._anchored(depth, nominal, floor) if floor else None
 
     def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray]) -> Camera | None:
         """The pose that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
-        return self._by_hands(depth, nominal, joints, self._counter(depth, nominal))
+        return self._by_hands(depth, nominal, joints, self.counter_fit(depth, nominal))
 
     def counter(self, depth: np.ndarray, camera: Camera) -> PlaneFit:
         """The counter plane as this camera sees it now; the scene file's level plane when it cannot be fitted."""
-        return self._counter(depth, camera) or PlaneFit(UP, self.counter_z)
+        return self.counter_fit(depth, camera) or PlaneFit(UP, self.counter_z)
 
     def _apart(self, a: Camera, b: Camera) -> float:
         """Largest distance between where two poses put the same pixels of the object band."""
         return float(np.linalg.norm(b.deproject(a.project(self.band)) - self.band, axis=1).max())
 
-    def _counter(self, depth: np.ndarray, camera: Camera) -> PlaneFit | None:
-        """The counter plane in front of the bins as this camera sees it."""
+    def counter_fit(self, depth: np.ndarray, camera: Camera) -> PlaneFit | None:
+        """The counter plane in front of the bins as this camera sees it; None when no plane is found there."""
         c = self.cfg["plane"]
         points = camera.cloud(depth, c["pixel_step"]).reshape(-1, 3)
         near = ((points[:, 0] > c["x_range"][0]) & (points[:, 0] < c["x_range"][1]) & (np.abs(points[:, 1]) < c["y_half"])
@@ -79,19 +79,23 @@ class SelfCalibration:
         return plane if plane.inliers >= c["min_points"] and plane.rms <= c["max_rms"] else None
 
     def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> Camera | None:
-        c = self.cfg["hands"]
         fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
         if fit is None:
             LOG.info("arms: too little of them in view")
             return None
-        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ camera.T[:3, :3].T).as_rotvec()))
-        shift = np.linalg.norm(fit.camera.T[:3, 3] - camera.T[:3, 3])
-        trusted = (fit.rms <= c["max_rms"] and fit.spread.max() <= c["max_spread"] and fit.coverage >= c["min_coverage"]
-                   and fit.inliers >= c["min_inliers"] and turn <= c["max_turn_deg"] and shift <= c["max_shift"])
-        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f, pixels on model %.2f, spread %.1f mm, camera moved %.1f deg %.1f mm: %s",
-                 fit.points, 1e3 * fit.rms, fit.coverage, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
-                 "trusted" if trusted else "rejected")
-        return fit.camera if trusted else None
+        checks = self.hand_checks(fit, camera)
+        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth, pixels on model %.2f, spread %.1f mm: %s",
+                 fit.points, 1e3 * fit.rms, fit.coverage, fit.known, fit.inliers, 1e3 * fit.spread.max(),
+                 "trusted" if all(checks.values()) else f"rejected {checks}")
+        return fit.camera if all(checks.values()) else None
+
+    def hand_checks(self, fit: HandFit, start: Camera) -> dict[str, bool]:
+        """Every test a hand fit must pass to be believed, by name."""
+        c = self.cfg["hands"]
+        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ start.T[:3, :3].T).as_rotvec()))
+        shift = np.linalg.norm(fit.camera.T[:3, 3] - start.T[:3, 3])
+        return {"rms": fit.rms <= c["max_rms"], "spread": fit.spread.max() <= c["max_spread"], "coverage": fit.coverage >= c["min_coverage"],
+                "inliers": fit.inliers >= c["min_inliers"], "turn": turn <= c["max_turn_deg"], "shift": shift <= c["max_shift"]}
 
     def _anchored(self, depth: np.ndarray, camera: Camera, floor: PlaneFit) -> Camera | None:
         levelled = self._level(camera, floor)
