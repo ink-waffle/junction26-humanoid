@@ -87,10 +87,10 @@ class BinFinder:
         return np.mean(rows, axis=0)
 
     def _front_x(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, y: np.ndarray, x_range: tuple[float, float],
-                 needed: tuple[int, float]) -> float | None:
+                 needed: tuple[int, float], thick: int = 1) -> float | None:
         """x of the nearest wall in `x_range` over the stretch `y`: `needed` = seen cells, and the share of them that is wall."""
         for x in np.arange(x_range[0], x_range[1], self.cfg["cell"]):
-            labels = self._wall_labels(depth, camera, counter, x, y)
+            labels = np.max([self._wall_labels(depth, camera, counter, x + k * self.cfg["cell"], y) for k in range(thick)], axis=0)
             wall, open_ = int((labels > 0.5).sum()), int((labels < -0.5).sum())
             if wall + open_ >= needed[0] and wall >= needed[1] * (wall + open_):
                 return float(x)
@@ -100,4 +100,9 @@ class BinFinder:
         """x of the row's front wall: the nearest wall over half of what is seen of the row's width (objects fill a third)."""
         c, ys = self.cfg, [centre[1] for centre in self.expected.values()]
         y = np.arange(min(ys) - self.size[0] / 2, max(ys) + self.size[0] / 2, c["cell"]) + c["cell"] / 2
-        return self._front_x(depth, camera, counter, y, c["x_range"], (c["min_visible"], c["row_fill"]))
+        needed = (c["min_visible"], c["row_fill"])
+        smeared = self._front_x(depth, camera, counter, y, c["x_range"], needed, c["row_smear"])
+        if smeared is None:
+            return None
+        sharp = self._front_x(depth, camera, counter, y, (smeared, smeared + c["row_smear"] * c["cell"]), needed)
+        return smeared + (c["row_smear"] - 1) * c["cell"] / 2 if sharp is None else sharp

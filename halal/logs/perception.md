@@ -576,6 +576,10 @@ Detector end to end, dev, `real` / `narrow` / `left7` / `right7`, two looks: cle
 26.0 in all four; typical 0.958, 1.000, 2.3 / 4.5 / 17.1 in all four. `lowhands --shift real --depth typical`: precision 0.926
 -> 1.000 (the phantoms were torn pieces of moved bins).
 
+Added after H4 (`row_smear`): the row's x is first judged over three x cells taken together (wall where any of them shows wall),
+then sharpened inside them: bad depth spreads a wall over 1 to 2 cm and no single cell reached half. Table as recorded, bad:
+5.3 / 11.6 / 220.0 -> 5.3 / 11.6 / 39.2; every other figure of the table above, and all of clean to typical, unchanged to the digit.
+
 **H5. A roof face must still be sloped after its refit** (`roof.py`, one line). Cause of the upright prisms called `lying`:
 `sloped_face` picks the best trial plane among those tilted 45 to 75 deg, then refits it to its points and never looked at the
 tilt again. The front face of an upright prism under a thumb (its top hidden or in IR shadow) is caught by a 74 deg trial plane
