@@ -2,9 +2,12 @@
 
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
-Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
-(layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise ([{pos, yaw_deg, yaw_known}]),
-variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `noise`, `squeeze`, `candidates`, `overrides`,
+Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
+(layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
+minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
+variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
+`repeats`, `squeeze`, `candidates`, `overrides`
+(organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
 """
 from __future__ import annotations
@@ -53,6 +56,7 @@ class Case:
     side: str
     bin_name: str
     pos_noise: float
+    offset: tuple[float, float]
     yaw_noise_deg: float
     yaw_known: bool
     present: bool
@@ -74,8 +78,8 @@ class Pick:
 def list_cases(spec: Mapping[str, Any]) -> list[Case]:
     """Every variant on every shape, spot, yaw and noise level in a seeded random order, arms alternating."""
     grid = [(name, *rest) for name, variant in spec["variants"].items()
-            for rest in itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"],
-                                          variant.get("noise", spec["noise"]), range(spec["repeats"]))]
+            for rest in itertools.product(*(variant.get(key, spec[key]) for key in ("shapes", "spots", "yaws_deg", "noise")),
+                                          range(variant.get("repeats", spec["repeats"])))]
     order = np.random.default_rng(spec["seed"]).permutation(len(grid))
     return [_case(spec, *grid[k], SIDES[i % 2]) for i, k in enumerate(order)]
 
@@ -83,8 +87,10 @@ def list_cases(spec: Mapping[str, Any]) -> list[Case]:
 def _case(spec: Mapping[str, Any], variant: str, shape: str, spot: list[float], yaw: float, noise: Mapping[str, Any],
           _repeat: int, side: str) -> Case:
     return Case(variant=variant, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])), side=side,
-                bin_name=side if spec["bin"] == "side" else spec["bin"], pos_noise=float(noise["pos"]),
-                yaw_noise_deg=float(noise["yaw_deg"]), yaw_known=bool(noise["yaw_known"]), present=not spec["empty"])
+                bin_name=side if spec["bin"] == "side" else spec["bin"], pos_noise=float(noise.get("pos", 0.0)),
+                offset=(float(noise.get("dx", 0.0)), float(noise.get("dy", 0.0))),
+                yaw_noise_deg=float(noise.get("yaw_deg", 0.0)), yaw_known=bool(noise.get("yaw_known", True)),
+                present=not spec["empty"])
 
 
 def mirrored(case: Case) -> tuple[np.ndarray, float]:
@@ -144,8 +150,11 @@ class Bench:
         self.rest_z = self.scene.counter_z + self.scene.object_height() / 2
 
     def _planner(self, variant: Mapping[str, Any]) -> PickPlanner:
+        """A variant's own planner: organiser config with its `overrides`, our motion settings with its `motion`."""
         overrides = {**config.load()["baseline_overrides"], **variant.get("overrides", {})}
-        return PickPlanner.create(self.env.filter.cfg, baseline.load_config(profile="sim", overrides=overrides))
+        planner = PickPlanner.create(self.env.filter.cfg, baseline.load_config(profile="sim", overrides=overrides))
+        planner.motion.update(variant.get("motion", {}))
+        return planner
 
     def close(self) -> None:
         self.env.close()
@@ -185,11 +194,19 @@ class Bench:
         pos = np.asarray(truth[name]["pos"], float) if name else np.r_[mirrored(case)[0], self.rest_z]
         yaw = perceived_yaw(case.shape, truth[name]["quat_xyzw"]) if name else None
         angle, sign = rng.uniform(0, 2 * np.pi), rng.choice([-1.0, 1.0])
-        top = pos + np.r_[case.pos_noise * np.cos(angle), case.pos_noise * np.sin(angle), self.scene.object_height() / 2]
+        outward = 1.0 if case.side == "left" else -1.0
+        error = case.pos_noise * np.r_[np.cos(angle), np.sin(angle)] + [case.offset[0], outward * case.offset[1]]
+        top = pos + np.r_[error, self.scene.object_height() / 2]
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
         detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw)
         grasp, plan = self._plan(case, detection)
-        return Pick(case, name, pos, yaw, detection, grasp, plan, self.spec["variants"][case.variant].get("squeeze", 0.0))
+        depth = self._squeeze_override(case.variant)
+        return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth)
+
+    def _squeeze_override(self, variant: str) -> float | None:
+        """A variant's `squeeze` when it is one number for every shape; None leaves the depth to the grasp."""
+        depth = self.spec["variants"][variant].get("squeeze")
+        return float(depth) if isinstance(depth, (int, float)) else None
 
     def _plan(self, case: Case, detection: ObjectDetection) -> tuple[Grasp | None, Plan]:
         """First of the variant's grasps (one, or the policy's candidate list) that plans."""
@@ -202,7 +219,8 @@ class Bench:
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
-                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"], squeeze=variant.get("squeeze", 0.0))
+                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"],
+                                     squeeze=self._squeeze_override(case.variant))
             if plan.ok:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan
@@ -315,9 +333,10 @@ class Bench:
         return "off_counter" if record["outcome"] == "off" else "missed_bin"
 
 
-def episodes(cases: list[Case]) -> Iterator[list[Case]]:
-    for k in range(0, len(cases), 2):
-        yield cases[k:k + 2]
+def episodes(cases: list[Case], arms: int) -> Iterator[list[Case]]:
+    """Cases in groups of `arms`: 2 = one pick per arm at once, 1 = a single arm working (centre bin, cross-body spots)."""
+    for k in range(0, len(cases), arms):
+        yield cases[k:k + arms]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -333,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     bench = Bench(spec, args.out, args.host)
     try:
         with open(args.out / "picks.jsonl", "a") as log:
-            for index, cases in enumerate(episodes(list_cases(spec))):
+            for index, cases in enumerate(episodes(list_cases(spec), spec.get("arms", 2))):
                 for record in bench.run(index, cases):
                     log.write(json.dumps(record) + "\n")
                     log.flush()

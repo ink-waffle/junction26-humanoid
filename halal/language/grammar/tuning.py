@@ -49,6 +49,7 @@ W_DECISIVE = 2                   # a lead this large settles the overlap without
 # Confidence factors (multiplied; 1.0 = no doubt).
 TYPO = 0.9
 ORDINAL_ASSUMED = 0.85           # "second bin" with no counting direction
+LETTER_BIN = 0.85                # undefined one-letter bin names: "red -> L, blue -> R"
 VIEWPOINT = 0.4                  # "my left" may be mirrored
 BLOCKS_AS_CUBES = 0.85
 GENERIC_CUBE = 0.8               # "cubes" used for every group: read as "objects"

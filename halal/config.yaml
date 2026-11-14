@@ -155,6 +155,13 @@ motion:
   counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
   squeeze_axis: [0.0, 1.0, -1.15, 0.0, 0.0, 0.0, 0.0]   # LEFT order, per rad of `squeeze`: the thumb tip advances 41 mm at constant height
   hand_limit_margin: 0.03     # squeezed postures stay this far inside the hand joint limits (the filter clamps at 0.02)
+  approach_height: 0.07       # pregrasp above the grasp point: preshaped fingertips pass 3.5 cm over other objects
+  lift_height: 0.07           # straight lift before the carry: the held object passes 2.5 cm over other objects
+  over_object_clearance: 0.015    # hand above the counter by an object height plus this on the way to the pregrasp
+  carry_dip: 0.005            # the rising carry may sink this far below the lift height
+  carry_margin: 0.03          # held object's bottom above a bin rim at carry height
+  rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
+  min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
   drop_inset:                 # release point inside a bin's inner walls (objects land within +-2 cm of it in sim)
     near: [0.05, 0.04, 0.03]  # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.07                # from the side walls
@@ -163,15 +170,23 @@ motion:
     default: 0.01
     descend: 0.004
     lift: 0.004
+  sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
+  release_thumb_lead_s: 0.0   # at release the thumb opens this long before the fingers (0 = together)
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
-    cube: [pinch_face, pinch]
-    cylinder: [pinch]
-    triangle: [pinch]
-    unknown: [pinch]
+    cube: [cage, pinch]
+    cylinder: [cage]
+    triangle: [cage]
+    unknown: [cage]
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
-  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis. Unset keys keep the organiser pinch.
+  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`).
+  # Unset keys keep the organiser pinch.
   grasps:
-    pinch: {}
+    # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
+    # follows how far each shape nests between the fingertips (40 mm apart): cube not at all, triangle apex 34 mm.
+    cage:
+      point_in_palm: [0.092, -0.084, 0.0]
+      squeeze: {cube: 0.30, cylinder: 0.45, triangle: 0.80, unknown: 0.75}
+    pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}
 
@@ -181,3 +196,44 @@ grasp_bench:
   held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
   lifted_height: 0.03         # and at least this far above its resting height
   hard_dr: {friction_max: 0.82, mass_min: 1.2}   # `dr: hard` keeps seeds giving every placed object such scales
+
+policy:
+  counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
+  bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
+  time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
+  time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
+  chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
+  hold_ticks: 10              # ticks per reply while the planner works
+  settle_s: 0.3               # hold after every motion before the head image is used
+  max_attempts: 5             # picks started on one spot before the object is left alone
+  replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
+  same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
+  empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
+  min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
+  clear_view_pose: look_arm_q # key of `motion`: arm pose with nothing between the head camera and the counter
+  min_detection_confidence: 0.3   # correct detections of the topface detector come back as low as 0.34
+  min_instruction_confidence: 0.5
+  release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
+    left: [[0.0, 0.0], [0.0, 0.07]]
+    center: [[0.0, -0.035], [0.0, 0.035]]
+    right: [[0.0, 0.0], [0.0, -0.07]]
+  grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
+  grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
+  grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
+    stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.04-0.18 with the organiser pinch
+    soft: 0.3                 # the real hand: empty 0.07-0.15, holding 0.5-1.4 in the organisers' teleop data
+    unknown: 0.02             # no calibration close: the value that never calls a full hand empty
+  squeeze:                    # `plan_pick(squeeze=...)` per hand class; null = the depth each grasp carries for its shape
+    stiff: null
+    soft: 1.0                 # thumb limit: ~6 N on a cube, 4-5 N on a triangle at the real hand's kp 1.5
+    unknown: null
+  grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
+  calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
+  calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish
+  calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
+  stiff_hand_bias: 0.01       # mean steady error (rad) under which a hand is the stiff sim kind (sim ~0.000, real 0.02-0.04)
+  calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
+  transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
+  background_nice: 10         # niceness of the planning thread (Linux)
+  gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often

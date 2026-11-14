@@ -56,7 +56,7 @@ def collect(planner: Planner, layouts: int, organiser: bool, end: str, start: st
                 for side in SIDES:
                     start = time.perf_counter()
                     plan = plan_one(planner, det, side, bin_name, organiser, end, start)
-                    rows.append({"y": float(det.top[1]), "bin": bin_name, "side": side, "ok": plan.ok,
+                    rows.append({"y": float(det.top[1]), "bin": bin_name, "side": side, "ok": plan.ok, "low": getattr(planner, "low", False),
                                  "wall": time.perf_counter() - start, "reason": plan.reason, "duration": plan.duration,
                                  "phases": {name: (stop - first) / 30.0 for name, first, stop in plan.phases}})
     return rows
@@ -75,6 +75,7 @@ def report(rows: list[dict[str, Any]]) -> None:
     print(f"  any bin: either arm {np.mean([p['left']['ok'] or p['right']['ok'] for p in pairs.values()]):.1%}")
     best = [min((p[s] for s in SIDES if p[s]["ok"]), key=lambda r: r["duration"]) for p in pairs.values()
             if p["left"]["ok"] or p["right"]["ok"]]
+    print(f"low sequence used in {np.mean([r['low'] for r in rows if r['ok']]):.0%} of the plans")
     print(f"plan duration (faster arm): mean {np.mean([r['duration'] for r in best]):.2f} s  worst {max(r['duration'] for r in best):.2f} s")
     for name in best[0]["phases"]:
         times = [r["phases"][name] for r in best]

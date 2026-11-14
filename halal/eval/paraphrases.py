@@ -49,6 +49,13 @@ def _entries() -> tuple[Paraphrase, ...]:
                             dict(e.get("words") or {})) for e in raw)
 
 
+def use(path: Path) -> None:
+    """Switch the loader to another benchmark file in the same format."""
+    global PATH
+    PATH = path
+    _entries.cache_clear()
+
+
 def load(split: str | None = None, categories: Iterable[str] | None = None) -> list[Paraphrase]:
     """Entries of one split (None: both), restricted to the given categories (None: all)."""
     wanted = None if categories is None else set(categories)

@@ -6,6 +6,18 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 10:30
+- **Best measured version: v2, proxy +19.50, sim gate PASS on all 24 episodes** (0 clips, 30 Hz, policy
+  real-time rate ≥ 167 Hz). Fixed +3.38 (27/31), known template +6.75 (27/28), unseen paraphrase +6.25 (25/28).
+  The organiser baseline scores +1.62 on the fixed leg and cannot follow instructions.
+- No object went to a wrong bin and none was knocked off in any episode; all 8 lost objects stayed on the counter
+  after failed grasps (cylinders and triangles with the organiser pinch).
+- **Hand-in images on the instance:** `halal/policy:v2` (the version of this table, 1.48 GB, starts in 0.5 s,
+  passes the synthetic pre-check) and `halal/policy:v3` (v2 + cage grasps + perception fix), which is running the
+  three legs through the container right now.
+- Not pushed to a registry yet: needs `write:packages` on the GitHub token or a Docker Hub login.
+- Organisers (Discord 10:06): still no deadlines, no hand-in form, no new data drop.
+
 ### Sat 14.11, 10:00
 - **Outage:** the Mac lost its network from about 04:15 to 10:00; every agent stopped and the instance sat idle.
   Nothing committed was lost; agents are resumed.
@@ -51,6 +63,17 @@ mapping differs from the fixed one.
 | v1: + grasp verification | 27/31 (87 %) | +3.38 ± 0.99 | 8 done | pass |
 | v1 + look pose | 24/31 (77 %) | +3.00 ± 1.12 | 8 done | pass |
 
+Full proxy (three legs, 8 seeds each, DR train):
+
+| Version | Fixed | Known template | Unseen paraphrase | Proxy | Gate |
+|---|---|---|---|---|---|
+| v2: topface, verification, retries, organiser pinch | +3.38 (27/31) | +6.75 (27/28) | +6.25 (25/28) | **+19.50** | pass |
+
+v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
+27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16
+parsed to the true mapping. v2 ran with a perception bug (hand-based camera fit overriding the scene anchor,
++11–13 mm in x) on two of the three legs.
+
 The detector is the jump: same policy, 39 % → 87 %. Verification is neutral on score here; the look-pose variant is
 3 objects lower, not yet explained (the sim varies by 1–2 objects run to run).
 
@@ -68,6 +91,11 @@ The detector is the jump: same policy, 39 % → 87 %. Verification is neutral on
 | dev (2781 cases), v1 → v2 | 99.1 → 100 % exact | 95.0 → 98.7 % | 3.0 → 1.3 % |
 | test (2853 cases), v1 → v2 | 100 → 100 % | 93.5 → 93.5 % | 4.0 → 1.5 % |
 
+- Final (v6, 10:25) on text it had never seen: a fresh blind set by a second author (136 templates, 4087 cases)
+  97.9 % exact, 2.1 % wrong with confidence; 60 instructions in a non-native researcher's voice 55/60 with no
+  object sent to a wrong bin. After fixing the mechanisms behind those misses: 100 % on all three sets. Every
+  round found a new family (ordered lists anchored to one side; "right" meaning "correct"; "round" as in "this
+  round"), so the next unseen wording may too.
 - v2 (03:10): a stated counting side governs ordinals, rules are resolved over the nine object types by
   specificity, explicit pairs beat enumerations. Remaining test misses: ad-hoc bin labels ("call the bins A, B,
   C"), a list ordered by direction of travel, self-corrections, one colour+shape form, elimination puzzles.
@@ -129,6 +157,17 @@ The detector is the jump: same policy, 39 % → 87 %. Verification is neutral on
 - **Failed:** dropping the wrist cameras from the sim crashes the task.
 
 ### 4. Motion planning, 03:00
+- **Grasp per shape (10:15):** one centred three-finger grasp ("cage": object between index and middle, thumb
+  behind) with a thumb depth per shape replaces the organiser pinch. Single object, hard DR corner, exact pose:
+
+| | cube | cylinder | triangle |
+|---|---|---|---|
+| organiser pinch | 12/12 | 8/12 | 1/12 |
+| cage, per-shape thumb depth | 30/30 | 18/18 | 12/12 |
+
+  Why the pinch fails: the fingertips are 40 mm apart, a cylinder nests 10 mm and a triangle 34 mm between
+  them, and the organiser thumb stops short (finger error 0.001 rad: never pinched, not spun out). Unknown shape
+  (one depth for all): 17/18. Six trials per cell; a 24-per-shape confirmation with position error is running.
 - **What:** joint-space carries first, Cartesian segments shortcut to one joint move when the grasp point stays
   on the line, cached reach check, bin margin 0; options on `plan_pick` for a release offset inside the bin,
   ending above the bin instead of at home, and placing on the counter; counter height from the detection.
