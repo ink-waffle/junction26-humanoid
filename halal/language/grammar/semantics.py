@@ -47,7 +47,7 @@ class _Ledger:
 def interpret(reading: Reading, mentions: list[Mention], exclusive: bool = False) -> Interpretation:
     """Mapping stated by `reading`; `exclusive` = the text says every colour has a bin of its own."""
     ledger = _Ledger()
-    _collect(ledger, _with_remaining_bin(_with_companion_bins(reading, mentions), ledger), mentions)
+    _collect(ledger, _with_remaining_bin(_with_companion_bins(reading, mentions, ledger), ledger), mentions)
     _drop_correct_bin_opening(ledger, reading, mentions)
     if exclusive and ledger.bans:
         _solve_exclusive(ledger)
@@ -62,19 +62,30 @@ def interpret(reading: Reading, mentions: list[Mention], exclusive: bool = False
 
 
 # ---------------------------------------------------------------- rules from the reading
-def _with_companion_bins(reading: Reading, mentions: list[Mention]) -> Reading:
+def _with_companion_bins(reading: Reading, mentions: list[Mention], ledger: _Ledger) -> Reading:
     """Replace 'the bin of yellow' by the bin another unit gives yellow; without one, that unit names no bin."""
     units = list(reading.units)
-    if not any(bin_name.startswith(BIN_OF) for unit in units for bin_name in unit.bins):
-        return reading
-    for _ in units:
-        stated = {mentions[index].key: bin_name for unit in units
-                  for index, bin_name in zip(unit.objects, unit.bins * (len(unit.objects) if len(unit.bins) == 1 else 1))
-                  if not bin_name.startswith(BIN_OF)}
-        units = [replace(unit, bins=tuple(stated.get(b[len(BIN_OF):], b) if b.startswith(BIN_OF) else b
-                                          for b in unit.bins)) for unit in units]
-    return replace(reading, units=tuple(replace(unit, bins=tuple(b for b in unit.bins if not b.startswith(BIN_OF)))
-                                        for unit in units))
+    for _ in [unit for unit in units if _awaits_companion(unit)]:      # one pass per link of a chain
+        stated = _stated_bins(units, mentions)
+        units = [replace(unit, bins=(stated.get(unit.bins[0][len(BIN_OF):], unit.bins[0]),))
+                 if _awaits_companion(unit) else unit for unit in units]
+    if any(_awaits_companion(unit) for unit in units):
+        ledger.issues.append(Issue("a group is sent 'with' another group that has no bin", tuning.F_UNDETERMINED))
+    return replace(reading, units=tuple(replace(unit, bins=()) if _awaits_companion(unit) else unit for unit in units))
+
+
+def _awaits_companion(unit: Unit) -> bool:
+    return any(bin_name.startswith(BIN_OF) for bin_name in unit.bins)
+
+
+def _stated_bins(units: list[Unit], mentions: list[Mention]) -> dict[str, str]:
+    """Object key -> bin over the units whose bin is known."""
+    stated: dict[str, str] = {}
+    for unit in units:
+        bins = unit.bins * len(unit.objects) if len(unit.bins) == 1 else unit.bins
+        stated.update((mentions[index].key, bin_name) for index, bin_name in zip(unit.objects, bins)
+                      if not bin_name.startswith(BIN_OF))
+    return stated
 
 
 def _with_remaining_bin(reading: Reading, ledger: _Ledger) -> Reading:
@@ -103,7 +114,8 @@ def _collect(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None
         mention = mentions[index]
         if unit is not None:
             opened.add(mention.topic)
-            group = _add_rules(ledger, _within(topics.get(mention.topic), _unit_rules(ledger, unit, mentions, residual)))
+            rules = _unit_rules(ledger, unit, mentions, residual)
+            group = _add_rules(ledger, _within(topics.get(mention.topic), rules))
             pending = _cut(ledger, group, pending | _excepted(unit, mentions))
         elif not isinstance(mention, ObjectMention) or not mention.known:
             continue

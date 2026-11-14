@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, replace
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import DEFAULT_KEY, Tag
+from halal.language.grammar.lexicon import COLOURS, DEFAULT_KEY, SHAPES, Tag
 from halal.language.grammar.mentions import BinMention, Gap, Mention, Negation, ObjectMention, Scope, gap_between
 from halal.language.grammar.tokens import Issue, Token
 
@@ -244,12 +244,33 @@ def _unit_cost(sequence: _Sequence, start: int, end: int, turn: int,
     members = sequence.mentions[start:end]
     charges = [_run_charge(sequence, i) for i in range(start, end - 1) if i != turn]
     charges.append(_transition_charge(sequence.gaps[turn], isinstance(members[0], BinMention)))
-    if distributes and not any(sequence.cued[start:end]):
+    objects = [mention for mention in members if isinstance(mention, ObjectMention)]
+    cued = any(sequence.cued[start:end])
+    if distributes and not cued:
         charges.append((tuning.DISTRIBUTION, Issue("lists paired in order without 'respectively'",
                                                    tuning.F_DISTRIBUTION)))
-    charges.append(_object_charge([m for m in members if isinstance(m, ObjectMention)]))
+    if cued and not distributes and len({mention.key for mention in objects}) > 1:
+        charges.append((tuning.ORDER_IGNORED, Issue("the text asks for an order, yet a whole list goes to one bin",
+                                                    tuning.F_ORDER_IGNORED)))
+    collective = sequence.gaps[turn].has(Tag.ALL) or any(mention.scope is Scope.ALL for mention in objects)
+    plainly_stated = isinstance(members[0], ObjectMention) and _links_plainly(sequence.gaps[turn])
+    if not distributes and not collective and not plainly_stated and _names_whole_set(objects):
+        charges.append((tuning.WHOLE_SET_ONE_BIN, Issue("every colour (or shape) is listed for one bin without 'all'",
+                                                        tuning.F_WHOLE_SET_ONE_BIN)))
+    charges.append(_object_charge(objects))
     cost = sum(charge for charge, _ in charges)
     return cost, tuple(dict.fromkeys(issue for _, issue in charges if issue))
+
+
+def _links_plainly(gap: Gap) -> bool:
+    """Only a known verb or preposition stands in the gap: 'red, yellow and blue objects go in the left bin'."""
+    return gap.has(Tag.LINK) and not gap.separated and not gap.has(Tag.ARROW, Tag.OTHER)
+
+
+def _names_whole_set(objects: list[ObjectMention]) -> bool:
+    """The list names all three colours or all three shapes, one item each."""
+    keys = {mention.key for mention in objects if mention.negated is Negation.NONE}
+    return keys >= set(COLOURS) or keys >= set(SHAPES)
 
 
 def _run_charge(sequence: _Sequence, index: int) -> tuple[float, Issue | None]:

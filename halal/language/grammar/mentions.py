@@ -452,7 +452,8 @@ def _apply_universal(mentions: list[Mention], tokens: list[Token], position: int
     objects = [i for i, mention in enumerate(mentions) if isinstance(mention, ObjectMention)]
     before = [i for i in objects if mentions[i].end <= position and same_sentence(mentions[i].end, position)]
     after = [i for i in objects if mentions[i].start > position and same_sentence(position, mentions[i].start)]
-    for index in _run_back(mentions, tokens, before[-1]) if before else _list_run(mentions, tokens, after[0]) if after else []:
+    forward = _list_run(mentions, tokens, after[0]) if after else []
+    for index in _run_back(mentions, tokens, before[-1]) if before else forward:
         mentions[index].universal = True
 
 
