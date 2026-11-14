@@ -391,3 +391,86 @@ release by 10 mm, to be measured in sim (sweep 20) before it becomes the default
 
 Bench: planning with obstacles can take more than a second, which tripped the env's watchdog stop (sweep 19 died in
 its first episode); the bench now plans in a thread while the arms hold.
+
+## Sweep 17: the soft-hand sim again, both DR corners (`HAND_GAINS="1.5,0.2,0.0075"`)
+
+Hypotheses: the candidates as the policy gets them with `hand="soft"` (fingers closing too, lift and carry at 4 rad/s²)
+hold every shape in both DR corners; a cube at 0.45 is a usable second candidate now that the pinch is not offered on a
+soft hand; a shallower soft triangle might suit the stiff hand as well (stiff half: sweep 20). Exact pose, own-side
+bin, staggered release, 182 picks.
+
+| cell | slippery-heavy corner | grippy-light corner | largest grip joint error, held |
+|---|---|---|---|
+| candidates, cube (0.30) | 11/13 (1 not lifted, 1 lost in lift) | 11/12 (1 not lifted) | 0.16–0.27 |
+| candidates, cylinder (0.45) | 19/19 | 12/12 | |
+| candidates, triangle (vertex-aligned, 0.80) | 17/18 (1 lost in lift) | 11/12 (1 lost in lift) | |
+| cube at 0.45 | 19/20 (1 not lifted) | | 0.22–0.31 |
+| triangle at 0.40 | 4/9 (lost in lift and carry, 4 of 5 toppled) | | 0.05–0.06 |
+| triangle at 0.50 | 19/19 | | 0.10–0.11 |
+| triangle at 0.60 | 12/12 | | 0.15–0.17 |
+
+- Every carried object was out of the hand within the open phase (140/140).
+- Sum of |error| on thumb_1 and both finger_0 joints with a triangle held, lift end / mid-carry: at 0.80 0.53–0.55 /
+  0.52–0.54, at 0.60 0.31–0.32 / 0.30–0.31, at 0.50 0.19–0.21; an empty hand reads 0.01–0.12 at the lift end and 0.02
+  in the carry. The policy's threshold (0.15 on the sum) leaves a factor 2 at 0.60 and none at 0.50.
+- All six losses look the same in the traces, in both corners: the grip reads firm (0.22–0.33), and when the lift
+  starts the cube slides DOWN out of the hand: the object's distance below the palm goes 83 → 93 → 115 mm within 0.4 s
+  while the finger errors fall to 0. Good picks show the start of the same slide (83 → 86–95 mm, tilt 15–20°) and
+  then catch. The thumb presses 10 mm below the centre and the fingers above it; a kp 1.5 hand cannot resist that
+  couple once the counter no longer supports the object. Soft-hand totals with sweep 12: cube 28/31, cylinder
+  37/37, triangle 34/36.
+
+Verdict: the soft candidates stand (about one cube or triangle in twelve needs the policy's retry); cube at 0.45 is
+offered as the second soft candidate; the soft triangle stays at 0.80 (0.60 is the lowest depth the policy's contact
+threshold can see). Open: a closed posture with the thumb tip level with the fingertips.
+
+## Sweep 18: cross-body carry on the soft hand (one arm at a time)
+
+Hypothesis: a cube carried across the body is lost because of the arm speed (a policy episode lost one). Soft-hand
+sim, slippery-heavy corner, cubes at y −0.10 and 0.00 of the picking arm's side, own-side bin, soft candidates
+(lift and carry at 4 rad/s²), arm speed 0.97 rad/s against 0.6 rad/s (here on every phase).
+
+| arm speed | binned | slip in the hand, close → mid-carry (median) | pick duration |
+|---|---|---|---|
+| 0.97 rad/s | 11/12 (1 lost in the carry, at y 0.00) | 23 mm (17 at y −0.10, 24 at y 0.00) | 9.0–9.6 s |
+| 0.6 rad/s | 11/12 (1 lost at the start of the lift) | 10 mm | 12.3–13.5 s |
+
+Verdict: not decided by n = 12. The slower arm halves the slide of the cube in the hand, the losses are one each
+(the slow one is the lift-start slide of sweep 17, which speed does not touch). Slowing only lift and carry would
+cost ~1.6 s per pick; not adopted without a larger A/B.
+
+## Sweep 19: a second object beside the target, with and without `obstacles` (stock sim)
+
+Hypothesis: the obstacle check (digit centre lines stay 47 mm from another object's centre while below its top)
+prevents in physics what a blind plan does to a neighbour. Triangle neighbours 7.5–8 cm from the target, DR as it
+comes, candidates as the policy gets them; the bench records the planned digit gap to the neighbour's true centre
+(`PickPlanner.digit_gap`). Fine = target binned and neighbour neither moved more than 10 mm nor toppled.
+
+| case | variant | planned | target binned | neighbour moved > 10 mm / toppled | fine |
+|---|---|---|---|---|---|
+| the policy's knock-over: triangle, vertex-aligned heading towards a neighbour 7.5 cm inward | blind | 12/12 | 12 | 0 / 0 (gap 24–35 mm, largest shift 4 mm) | 12/12 |
+| | obstacles | 6/12 | 5 | 0 / 0 | 5/12 |
+| cube, neighbour 8 cm behind (towards the robot) | blind | 6/6 | 0 | 3 / 1 (gap 2–4 mm: under the thumb) | 0/6 |
+| | obstacles | 6/6 | 6 | 0 / 0 | 6/6 |
+| cube, neighbour diagonally ahead (6, 5.5 cm) | blind | 6/6 | 5 | 6 / 6 (gap 24–31 mm) | 0/6 |
+| | obstacles | 6/6 | 6 | 0 / 0 | 6/6 |
+| cube, neighbour 8 cm ahead (valid picks only) | blind | 3/3 | 3 | 2 / 2 (gap 24–25 mm; untouched at 31 mm) | 1/3 |
+| | obstacles | 2/2 | 2 | 0 / 0 | 2/2 |
+
+- Every pick planned with `obstacles` left the neighbour exactly where it was (26 of 26: 0.0 mm).
+- The preshaped thumb comes down 8 cm behind the grasp point: a neighbour there is hit from above and the target is
+  not even gripped (0/6). This is the commonest blind conflict in sampled layouts.
+- The policy's case is not reproduced: its vertex-aligned plan passes a flat side of the neighbour at 24–35 mm and
+  shifts it by at most 4 mm, while the obstacle check rejects that heading and finds no other in 6 of 12 (the default
+  hints then lose one of six). At the same gap a neighbour that turns a vertex to the finger is toppled 6/6.
+  Contact needs gap < the neighbour's extent in that direction + ~12 mm (finger half-width): triangle 15–30 mm, cube
+  22.5–32 mm, cylinder 22.5 mm; the 47 mm circle is the never-touch value for a vertex or a cube corner plus 3 mm.
+- Cost of the circle, offline (40 layouts, 169 targets, every neighbour present): the blind first candidate passes
+  within 47 mm of a neighbour in 31 % of the picks (within 26 mm: 12 %); with `obstacles` 17 % of the targets have no
+  plan at 47 mm, 11 % at 40 mm, 5 % at 34 mm.
+- Half of the "ahead" cells were void: a neighbour at pelvis x 0.38 spawns against the bin wall and is lying before
+  the pick starts (gaps of 64–258 mm). Neighbours must stay at x ≤ 0.36.
+
+Verdict: the check works and stays at 47 mm for objects of unknown shape and heading. What it rejects needlessly are
+flat sides and cylinders; the footprint (shape and yaw of the neighbour) would say which. Gap scan with cube, cylinder
+and triangle neighbours: sweep 26.
