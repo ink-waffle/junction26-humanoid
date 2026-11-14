@@ -733,3 +733,24 @@ No plan the full check accepts is refused early, none it refuses gets through. I
 names a different neighbour (the first one in the hand's way at the grasp pose rather than on the way down); the
 text still starts with `TOUCHING`. Refusals the early check does not catch (a neighbour touched only during the
 descent) take as long as before: 21 of 108 with outlines, 11 of 118 with tops.
+
+## Landing rule with three measured boxes (offline; landing data from the reach workstream, `halal/logs/reach.md`)
+
+The rule "no release whose landing box crosses an inner wall" now picks its box by the release: `nominal` (rise 0;
+backward bound −28 mm, was −32: one drop in 232 lay beyond, and 12/12 landed inside from a 3 cm inset), `risen`
+(`release_rise` > 0; p2.5..p97.5 of 172 drops on both hands) and `limit` (near inset ≤ `landing.limit_inset` 2 cm
+AND no larger inset in reach: at the reach limit objects leave the hand forward, +6..+117 mm). A 2 cm inset that is
+tried only because a larger one failed to plan is judged with the ordinary box and refused. `drop_inset.near` gains 0.02.
+
+Offline, bins moved so that the near wall stands at x, every bin x arm x both policy slots, 4 objects each, stiff and soft:
+
+| near wall | planned stiff / soft | releases used (inset cm, rise cm, box) | box to the nearest wall, min |
+|---|---|---|---|
+| 0.40 | 32/32, 32/32 | (6, 0, nominal) only: unchanged | 17 mm |
+| 0.46 | 32/32, 32/32 | (6, 6) (5, 9) (4, 6) (6, 9), risen | 1 mm (centre bin's outward slot, sideways) |
+| 0.48 | 32/32, 32/32 | (4, 6) (3, 9) (4, 9) risen; (2, 6) limit on the centre bin's cross-body slot | 1 mm |
+| 0.50 | 22/32, 20/32 | (2, 6) (2, 9) (2, 12), limit | 12 mm |
+
+At 0.50 every bin still has a slot that plans with each arm that serves it, except the side bins' +4.5 cm slot on the
+soft hand and the centre bin's cross-body slot (out of reach). The 1 mm cases are the `risen` box's outward p97.5
+(71 mm) against the 72 mm the centre slot leaves: 3 of 172 measured drops went further.
