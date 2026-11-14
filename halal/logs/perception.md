@@ -533,7 +533,7 @@ fits are 12 to 17 mm off and pass every check (coverage 0.69 to 0.77, one reject
 lanes the far wall (21 cm on) was the first that qualified, and the row's median followed two wrong lanes. Now the row's front
 wall is the nearest x that fills the seen cells of all three lanes together, and each bin's own wall is looked for within
 `row_window` (3 cm) of it with 3 seen cells. Bins through the hand camera, bad, `--shift real`: 2.9 / 67.9 / 212.1 -> 2.9 / 9.6 /
-65.1, frames with a bin more than 2 cm off 8 -> 3 (wrong y from a wall end); table as recorded: 5.0 / 12.6 / 43.1 -> 5.0 / 10.9 /
+65.1, frames with a bin more than 2 cm off 9 -> 3 of 90 (wrong y from a wall end); table as recorded: 5.0 / 12.6 / 43.1 -> 5.0 / 10.9 /
 43.1. Clean, mild, typical: unchanged within 1 mm (typical, real: 2.9 / 4.0 / 13.4).
 
 **H3. `SceneLayout.rim_z`.** Heights (above the counter plane) of the points over the found bin footprints are counted in 2 mm
