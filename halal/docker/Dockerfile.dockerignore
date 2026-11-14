@@ -1,0 +1,19 @@
+# BuildKit reads this file for halal/docker/Dockerfile; the legacy builder would need it as .dockerignore in the repo root.
+*
+!aaltonomous
+!halal
+aaltonomous/cloud
+aaltonomous/data
+aaltonomous/docker
+aaltonomous/docs
+aaltonomous/scene/assets
+aaltonomous/sim
+halal/docker
+!halal/docker/requirements.txt
+halal/eval
+halal/logs
+halal/ops
+**/__pycache__
+**/*.pyc
+**/test_*.py
+**/*.md

@@ -190,3 +190,44 @@ grasp_bench:
   held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
   lifted_height: 0.03         # and at least this far above its resting height
   hard_dr: {friction_max: 0.82, mass_min: 1.2}   # `dr: hard` keeps seeds giving every placed object such scales
+
+policy:
+  counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
+  bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
+  time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
+  time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
+  chunk_ticks: 15             # ticks per reply while a trajectory runs (in a slow sim the rate gate is ticks per reply x rtf x 30)
+  hold_ticks: 10              # ticks per reply while the planner works
+  settle_s: 0.3               # hold after every motion before the head image is used
+  max_attempts: 5             # picks started on one spot before the object is left alone
+  replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
+  same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
+  empty_span_before_done_s: 2.0   # and they must span this long (late depth frames, a calibration that needs a second look)
+  min_visible: 0.5            # top-face fraction a look must have seen before an object is grasped on that look
+  clear_view_pose: look_arm_q # key of `motion`: arm pose with nothing between the head camera and the counter
+  min_detection_confidence: 0.3   # correct detections of the topface detector come back as low as 0.34
+  min_instruction_confidence: 0.5
+  release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
+    left: [[0.0, 0.0], [0.0, 0.07]]
+    center: [[0.0, -0.035], [0.0, 0.035]]
+    right: [[0.0, 0.0], [0.0, -0.07]]
+  grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
+  grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
+  grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
+    stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.04-0.18 with the organiser pinch
+    soft: 0.3                 # the real hand: empty 0.07-0.15, holding 0.5-1.4 in the organisers' teleop data
+    unknown: 0.02             # no calibration close: the value that never calls a full hand empty
+  squeeze:                    # `plan_pick(squeeze=...)` per hand class; null = the depth each grasp carries for its shape
+    stiff: null
+    soft: 1.0                 # thumb limit: ~6 N on a cube, 4-5 N on a triangle at the real hand's kp 1.5
+    unknown: null
+  grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
+  calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
+  calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish
+  calibration_hold_s: 0.6     # how long the hands stay closed on nothing before their steady error is read
+  stiff_hand_bias: 0.01       # mean steady error (rad) under which a hand is the stiff sim kind (sim ~0.000, real 0.02-0.04)
+  calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
+  transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home
+  background_nice: 10         # niceness of the planning thread (Linux)
+  gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often
