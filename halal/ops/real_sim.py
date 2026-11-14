@@ -93,6 +93,18 @@ def patch_scene_file(cfg: dict, features: set[str]) -> None:
         return scene
 
     Scene.load = staticmethod(load_real)
+    if "offsets" in features:
+        patch_box_overhang(Scene)
+
+
+def patch_box_overhang(scene_class: type) -> None:
+    """An object inside a box counts as on the counter, also where a moved box row overhangs the counter's footprint."""
+    on_counter = scene_class.on_counter
+
+    def on_counter_or_in_box(self: Any, p_mat: np.ndarray) -> bool:
+        return on_counter(self, p_mat) or self.bin_of(p_mat) is not None
+
+    scene_class.on_counter = on_counter_or_in_box
 
 
 def liner_boxes(scene_cfg: ModuleType, cfg: dict) -> dict[str, Any]:
