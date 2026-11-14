@@ -102,8 +102,8 @@ grasp_bench:
 
 policy:
   look_pose: home             # arm pose the head image is taken from, where picks start and end: `home` or a key of `poses`
-  band_margin: 0.05           # a detection further than this outside the layout band is not an object
-  bin_clearance: 0.03         # nor is one this close to a bin footprint (washed-out bin rims look like yellow objects)
+  counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
+  bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
   time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
   chunk_ticks: 10             # ticks per reply while a trajectory runs

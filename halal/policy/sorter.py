@@ -61,7 +61,7 @@ class SortPolicy:
                  time_limit: float) -> None:
         self.detector, self.planner, self.look_pose, self.settings = detector, planner, look_pose, settings
         self.episode_s = time_limit
-        self.area = ObjectArea(planner.scene, settings["band_margin"], settings["bin_clearance"])
+        self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["relocate"])
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
