@@ -70,7 +70,7 @@ class PickPlanner(Planner):
             releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name)
             tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
             for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
-                if place_xy is None and not self._lands_inside(side, bin_name):
+                if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, releases[0][0])):
                     plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
@@ -79,13 +79,19 @@ class PickPlanner(Planner):
                     break
         return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
 
-    def _lands_inside(self, side: str, bin_name: str) -> bool:
-        """Whether the whole landing box around the release point lies inside the bin's inner walls."""
-        box, outward = self.motion["landing"], -INWARD[side]
+    def _landing_box(self, rise: float, furthest_inset: float) -> str:
+        """Which measured landing box the current release has: `limit` (the arm at its reach limit: a small inset and no larger one in reach), `risen` or `nominal`."""
+        at_limit = self.near_inset <= self.motion["landing"]["limit_inset"] and self.near_inset == furthest_inset
+        return "limit" if at_limit else "risen" if rise > 0 else "nominal"
+
+    def _lands_inside(self, side: str, bin_name: str, box_name: str) -> bool:
+        """Whether the whole landing box of that name around the release point lies inside the bin's inner walls."""
+        landing, outward = self.motion["landing"], -INWARD[side]
+        box = landing[box_name]
         spans = np.array([box["forward"], sorted(outward * np.asarray(box["outward"], float))]).T
         inner = self.scene.mat_to_pelvis(np.array(self.scene.bin_inner_box(bin_name)))[:, :2]
         lands = self.drop_xy(bin_name) + spans
-        return bool(np.all(lands[0] >= inner.min(0) + box["margin"]) and np.all(lands[1] <= inner.max(0) - box["margin"]))
+        return bool(np.all(lands[0] >= inner.min(0) + landing["margin"]) and np.all(lands[1] <= inner.max(0) - landing["margin"]))
 
     def _carried_gently(self, plan: Plan, grasp: Grasp) -> Plan:
         """The plan with lift and carry re-timed to the grasp's own arm acceleration; unchanged when the grasp sets none."""
