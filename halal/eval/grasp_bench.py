@@ -9,7 +9,7 @@ minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, y
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
 `repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `neighbour` ([forward, outward] m: a second object beside the target),
 `avoid` (pass the neighbour to the planner as an obstacle: true = its bare top, footprint = its detection), `topple_deg` (before the pick a scripted push in about this
-pelvis direction, mirrored for the right arm, tips the upright prism onto a side; it is then perceived as lying),
+pelvis direction, mirrored for the right arm, tips the upright prism or cylinder onto a side; a prism is then perceived as lying, a cylinder as an object of unknown shape),
 `drop_shift` ([forward, outward] m added to the release point), `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
 `progressive` ({firm, step, max}: squeeze one step deeper after each close until the largest grip joint error reaches `firm`)}).
@@ -141,13 +141,13 @@ def quat_axis(quat_xyzw: list[float]) -> np.ndarray:
 
 
 def is_lying(shape: str, quat_xyzw: list[float]) -> bool:
-    """Whether a prism rests on one of its rectangular sides."""
-    return bool(shape == "triangle" and quat_tilt(quat_xyzw) > LYING_TILT)
+    """Whether a prism rests on one of its rectangular sides, or a cylinder on its round one."""
+    return bool(shape in ("triangle", "cylinder") and quat_tilt(quat_xyzw) > LYING_TILT)
 
 
 def perceived_yaw(shape: str, quat_xyzw: list[float]) -> float | None:
     """Sim pose -> the perception convention: cube = a face normal, triangle = apex direction (lying: its ridge), cylinder = none."""
-    if is_lying(shape, quat_xyzw):
+    if shape == "triangle" and is_lying(shape, quat_xyzw):
         axis = quat_axis(quat_xyzw)
         return float(np.arctan2(axis[1], axis[0]))
     offset = {"cube": 0.0, "triangle": np.pi / 2}.get(shape)
@@ -251,10 +251,10 @@ class Bench:
         return {o["name"]: o for o in self.scene_client.state()["objects"]}
 
     def _push(self, case: Case, state: Mapping[str, Any]) -> Plan:
-        """Closed hand through the prism's upper part, from the vertex nearest the variant's direction towards the opposite face."""
+        """Closed hand through the object's upper part in the variant's direction (a prism: from the vertex nearest it towards the opposite face)."""
         planner, cfg, cols = self.planners[case.variant], self.settings["topple"], ArmKinematics.sl(case.side)
         wanted = np.radians(self.spec["variants"][case.variant]["topple_deg"]) * (1.0 if case.side == "left" else -1.0)
-        headings = perceived_yaw("triangle", state["quat_xyzw"]) + np.pi + np.radians([0.0, 120.0, 240.0])
+        headings = [wanted] if case.shape != "triangle" else perceived_yaw("triangle", state["quat_xyzw"]) + np.pi + np.radians([0.0, 120.0, 240.0])
         heading = min(headings, key=lambda h: abs((h - wanted + np.pi) % (2 * np.pi) - np.pi))
         along, centre, up = np.array([np.cos(heading), np.sin(heading), 0.0]), np.asarray(state["pos"], float), np.array([0.0, 0.0, 1.0])
         arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
@@ -314,10 +314,12 @@ class Bench:
         outward = 1.0 if case.side == "left" else -1.0
         error = case.pos_noise * np.r_[np.cos(angle), np.sin(angle)] + [case.offset[0], outward * case.offset[1]]
         lying = name is not None and is_lying(case.shape, truth[name]["quat_xyzw"])
-        top = pos + np.r_[error, self.scene.object_height() * (LYING_TOP if lying else 0.5)]
+        prism = lying and case.shape == "triangle"
+        top = pos + np.r_[error, self.scene.object_height() * (LYING_TOP if prism else 0.5)]
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
-        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw, lying=lying,
-                                    size=float(top[2] - self.scene.counter_z) if lying else None)
+        seen_shape = None if lying and not prism else case.shape   # perception does not classify a cylinder on its side
+        detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=seen_shape, yaw=seen_yaw if seen_shape else None,
+                                    lying=prism, size=float(top[2] - self.scene.counter_z) if prism else None)
         beside = self._neighbour_detection(truth[neighbour]) if neighbour else None
         avoid = self.spec["variants"][case.variant].get("avoid", False) if neighbour else False
         grasp, plan = self._plan(case, detection, [beside if avoid == "footprint" else beside.top] if avoid else [])
