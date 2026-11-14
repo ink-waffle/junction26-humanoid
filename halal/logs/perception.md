@@ -576,10 +576,34 @@ Detector end to end, dev, `real` / `narrow` / `left7` / `right7`, two looks: cle
 26.0 in all four; typical 0.958, 1.000, 2.3 / 4.5 / 17.1 in all four. `lowhands --shift real --depth typical`: precision 0.926
 -> 1.000 (the phantoms were torn pieces of moved bins).
 
-### Clean depth after H1 to H4
+**H5. A roof face must still be sloped after its refit** (`roof.py`, one line). Cause of the upright prisms called `lying`:
+`sloped_face` picks the best trial plane among those tilted 45 to 75 deg, then refits it to its points and never looked at the
+tilt again. The front face of an upright prism under a thumb (its top hidden or in IR shadow) is caught by a 74 deg trial plane
+and refits to 84 to 86 deg: a wall, reported as a lying prism 17 mm from the object with `visible` 0.95.
+
+| | before | after |
+|---|---|---|
+| `dr_train` dev, called lying without being one: clean / mild / typical / bad (of 358) | 0 / 4 / 5 / 7 | 0 / 0 / 0 / 1 |
+| `motion` clean: called lying without being one, lying prisms seen as such | 6, 0.781 | 0, 0.814 |
+| `motion` clean: shape right of decided, xy p95 / max | 0.997, 5.6 / 29.2 | 1.000, 5.4 / 27.4 |
+| `motion` mild: false lying, seen as such, shape right | 8, 0.717, 0.997 | 0, 0.776, 1.000 |
+| `motion` typical | 7, 0.688, 0.997 | 1, 0.743, 0.999 |
+| `motion` bad | 8, 0.447, 0.991 | 0, 0.443, 0.996 |
+
+So the six "called lying without being one" of the lying-prism section above were this bug, not something next to a cube.
+More true lying prisms are seen because a wall-like second face no longer displaces the ridge. Ridge under typical depth
+(`motion`): direction 1.1 / 4.5 / 8.5 deg, centre 2.7 median / 18.9 max mm (clean 0.3 / 2.7 / 3.7, 2.4 / 13.0). Recall, precision and
+colour of `motion` and all other sets unchanged. What is left of the objects under a thumb with noisy depth: they come back as
+fallback blobs (`visible` 0, centre about 2 cm off, on the front face) instead of top-face fits with `visible` 0.1; neither is
+graspable from that view, both need the look with the arm away.
+
+`motion` under depth noise, whole set (recall / precision / xy median / p95): clean 0.906 / 1.000 / 1.9 / 5.4, mild 0.855 / 1.000 /
+1.6 / 5.4, typical 0.853 / 0.998 / 1.4 / 6.2, bad 0.849 / 0.991 / 2.6 / 11.7.
+
+### Clean depth after H1 to H5
 
 Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-out, `lookpose`, `lowhands`, `closedhands`,
-`movinghands`, `armless`, `--stale`, `--looks 2`); `motion` not rerun yet.
+`movinghands`, `armless`, `--stale`, `--looks 2`); `motion`: recall 0.906, precision 1.000, colour 1.000 as before, the rest as in H5.
 
 ## Next
 

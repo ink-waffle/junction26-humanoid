@@ -52,7 +52,8 @@ def sloped_face(points: np.ndarray, up: np.ndarray, cfg: Mapping[str, Any], faci
     off = np.abs(points @ normal - centre @ normal)
     on = off < cfg["tolerance"]
     flat = on.sum() >= cfg["min_flat"] * (off < cfg["flat_band"]).sum()
-    return Face(normal, float(centre @ normal), on) if flat else None
+    sloped = cfg["tilt_deg"][0] < np.degrees(np.arccos(min(1.0, normal @ up))) < cfg["tilt_deg"][1]   # the refit can leave the range
+    return Face(normal, float(centre @ normal), on) if flat and sloped else None
 
 
 def meet(face: Face, level: np.ndarray, target: float) -> tuple[np.ndarray, np.ndarray]:
