@@ -267,14 +267,18 @@ class SortPolicy:
         self.tally.update(picks=1)
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)
-        if window is None or not self.release_checked:
-            self.stream.load(pick.plan.arm, pick.plan.hand)
-        else:
+        if window is not None and self._checks_release(pick.side):
             self._load_with_release_check(pick.plan, window)
+        else:
+            self.stream.load(pick.plan.arm, pick.plan.hand)
         self.stage, self.next_view = Stage.MOVING, View.HOME
         drop = pick.plan.waypoints["drop"]
         log.info("t=%.1f pick %s (try %d): %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s", t, pick.target,
                  pick.target.attempts + 1, pick.side, pick.grasp.name, drop[0], drop[1], pick.plan.duration)
+
+    def _checks_release(self, side: str) -> bool:
+        """Whether this hand is closed once more after letting go: only a calibrated hand has an empty reading to compare with."""
+        return self.release_checked and self.calibrator.hand_class(side) != "unknown"
 
     def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:
         """Queue the pick with one more close of the hand above the bin; it starts while the arm retreats."""
