@@ -20,7 +20,7 @@ from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, hand
 from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
-from halal.policy.picking import Pick, Target
+from halal.policy.picking import Pick, Target, grasp_hints
 from halal.policy.transit import checked_move, lowest_clearance
 
 log = logging.getLogger(__name__)
@@ -283,7 +283,7 @@ class SortPolicy:
 
     def _checks_release(self, pick: Pick) -> bool:
         """Whether the hand is closed once more after letting go: configured per shape, and only a calibrated hand has an empty reading."""
-        after = (pick.target.detection.shape or "unknown") in self.settings["release_check_after"]
+        after = (grasp_hints(pick.target.detection)[0] or "unknown") in self.settings["release_check_after"]
         return after and self.release_checked and self.calibrator.hand_class(pick.side) != "unknown"
 
     def _load_with_release_check(self, plan: Plan, window: GripWindow) -> None:

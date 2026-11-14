@@ -20,13 +20,17 @@ Obstacles = Sequence[np.ndarray]    # top centres (pelvis xyz) of every detectio
 TOUCHING = "hand would touch"       # how the planner's reason for a failed plan names an object in the hand's way
 
 
+def grasp_hints(det: ObjectDetection) -> tuple[str | None, float | None]:
+    """Shape and yaw a grasp is built for: none for a prism lying on a side, until motion's grasp for it is on main (then pass `lying`)."""
+    return (None, None) if det.lying else (det.shape, det.yaw)
+
+
 @dataclass(frozen=True)
 class Target:
     """A detected object, the bin the instruction sends it to and the picks already tried on it."""
     detection: ObjectDetection
     bin_name: str
     attempts: int = 0
-    neighbours: int = 0         # other detections close enough to be knocked over by a grasp
 
     @property
     def xy(self) -> np.ndarray:
@@ -34,7 +38,7 @@ class Target:
 
     def __str__(self) -> str:
         d = self.detection
-        return f"{d.color} {d.shape or 'object'} at ({d.top[0]:+.3f},{d.top[1]:+.3f}) -> {self.bin_name}"
+        return f"{d.color} {'lying ' * d.lying}{d.shape or 'object'} at ({d.top[0]:+.3f},{d.top[1]:+.3f}) -> {self.bin_name}"
 
 
 @dataclass(frozen=True)
@@ -70,21 +74,27 @@ class PickChooser:
             if pick is not None:
                 return pick, unplannable
             (waiting if touching else unplannable).append(target)
-        pick = self._as_if_alone(waiting, start)
+        pick = self._as_if_alone(waiting, start, obstacles)
         return pick, unplannable if pick is not None else unplannable + waiting
 
-    def _as_if_alone(self, waiting: Sequence[Target], start: PlanStart) -> Pick | None:
-        """No target is clear of its neighbours (objects that touch, or that are not to be sorted): the first one goes regardless."""
-        for target in waiting:
-            pick, _ = self._plan(target, start, [])
-            if pick is not None:
-                log.warning("no target is clear of its neighbours: picking %s as if it stood alone", target)
-                return pick
-        return None
+    def _as_if_alone(self, waiting: Sequence[Target], start: PlanStart, obstacles: Obstacles) -> Pick | None:
+        """No target is clear of its neighbours: of the least tried, the one whose plan as if it stood alone keeps furthest from them."""
+        picks = [pick for pick, _ in (self._plan(target, start, []) for target in waiting) if pick is not None]
+        pick = min(picks, key=lambda pick: (*self._order(pick.target)[:2], -self._room(pick, obstacles)), default=None)
+        if pick is not None:
+            log.warning("no target is clear of its neighbours: picking %s as if it stood alone, fingers %.0f mm from the nearest",
+                        pick.target, 1000 * self._room(pick, obstacles))
+        return pick
 
-    def _order(self, target: Target) -> tuple[int, bool, int, float]:
-        """Sort key: least tried first, a known shape before an unknown one, fewest close neighbours, then nearest its bin."""
-        return target.attempts, target.detection.shape is None, target.neighbours, self._distance_to_bin(target)
+    def _room(self, pick: Pick, obstacles: Obstacles) -> float:
+        """Smallest distance (m) between the pick's fingers, while they are down, and the centre of another object."""
+        own = self.planner.motion["obstacles"]["radius"]
+        others = [top for top in obstacles if float(np.linalg.norm(top[:2] - pick.target.xy)) > own]
+        return min((self.planner.digit_gap(pick.plan, pick.side, top) for top in others), default=np.inf)
+
+    def _order(self, target: Target) -> tuple[int, bool, float]:
+        """Sort key: least tried first, a shape the grasp knows before one it does not, then nearest its bin."""
+        return target.attempts, grasp_hints(target.detection)[0] is None, self._distance_to_bin(target)
 
     def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
         """`_first_plan`; whatever one target's data breaks on the way counts as no plan, so the other targets keep their turn."""
@@ -115,7 +125,7 @@ class PickChooser:
         shifts = self.slots.candidates(target.bin_name, released)
         arms = _rotated([side for side in self._arms(target) if side in hands], turns)
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
-                         for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side, hands[side]), turns)]
+                         for grasp in _rotated(candidate_grasps(*grasp_hints(det), side, hands[side]), turns)]
                   for side in arms}
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
 
