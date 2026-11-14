@@ -236,9 +236,14 @@ class GraspServo:
         vector = look.object_top - measured_hand
         step = (look.object_top + tracking - top) * np.r_[1.0, 1.0, float(self.cfg["correct_z"])]
         total = state.correction + step
-        refused = ("too large" if np.linalg.norm(total) > self.cfg["max_correction"] or abs(total[2]) > self.cfg["max_z_correction"]
-                   else "measure only" if self.mode == "measure" else "")
+        refused = "too large" if self._too_large(total, parts[0]) else "measure only" if self.mode == "measure" else ""
         return Measured(look, vector, planned, tracking, step, refused, parts)
+
+    def _too_large(self, total: np.ndarray, turn: np.ndarray) -> bool:
+        """Whether a total correction is beyond belief: the look's own arm-fit turn has the hand fit's guards and a cap of its own, the rest the local caps."""
+        local = total - turn
+        return bool(np.linalg.norm(turn) > self.cfg["max_turn_correction"] or np.linalg.norm(local) > self.cfg["max_correction"]
+                    or abs(local[2]) > self.cfg["max_z_correction"])
 
     def _hover_again(self, state: Hovering, arm_q: np.ndarray, hand_q: np.ndarray) -> Hover | None:
         """The hover re-centred on the corrected target, reached from where the hand hovers now."""
