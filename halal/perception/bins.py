@@ -11,19 +11,57 @@ from halal.perception.geometry import Camera, PlaneFit
 
 
 class BinFinder:
-    """Looks for the row's front wall over the whole width, then for each box's stretch of it and that stretch's ends."""
+    """Looks for the row's front wall, then lays three equal boxes with one gap width along it; the scene file gives the box size."""
 
     def __init__(self, scene: Scene, cfg: Mapping[str, Any]) -> None:
         self.cfg = cfg
         self.size = np.asarray(scene.cfg["bins"]["outer_size"], float)
         self.expected = {name: scene.mat_to_pelvis([*c, 0.0])[:2] for name, c in scene.cfg["bins"]["centers"].items()}
+        self.names = sorted(self.expected, key=lambda name: self.expected[name][1])
+        self.middle = float(np.mean([xy[1] for xy in self.expected.values()]))
+        self.y = np.arange(-cfg["row_half"], cfg["row_half"], cfg["span_step"]) + cfg["span_step"] / 2
+        slides = np.arange(-cfg["side_reach"], cfg["side_reach"] + 1e-9, cfg["span_step"])
+        gaps = np.arange(cfg["gap_range"][0], cfg["gap_range"][1] + 1e-9, cfg["span_step"])
+        self.rows = [(self.middle + slide, self.size[0] + gap) for gap in gaps for slide in slides]
+        self.combs = np.stack([self._comb(centre, pitch) for centre, pitch in self.rows])
+        scene_pitch = float(np.ptp([xy[1] for xy in self.expected.values()])) / (len(self.names) - 1)
+        self.prior = cfg["prior"] * np.array([abs(centre - self.middle) + abs(pitch - scene_pitch) for centre, pitch in self.rows])
 
     def find(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> dict[str, np.ndarray]:
-        """Centre xy of every bin; bins that are not seen are placed from the seen ones by the scene's spacing."""
+        """Centre xy of every bin as seen; the scene file's where no row of boxes is found."""
         row = self._row_x(depth, camera, counter)
-        seen = {} if row is None else self._boxes(depth, camera, counter, row)
-        offset = np.mean([seen[n] - self.expected[n] for n in seen], axis=0) if seen else np.zeros(2)
-        return {name: seen.get(name, self.expected[name] + offset) for name in self.expected}
+        placed = None if row is None else self._placed(depth, camera, counter, row)
+        return dict(self.expected) if placed is None else self._boxes(depth, camera, counter, row, placed)
+
+    def _comb(self, centre: float, pitch: float) -> np.ndarray:
+        """Over `self.y`: +1 where the front wall of a row of boxes centred at `centre` with this pitch stands, else -1."""
+        index = np.arange(len(self.names)) - (len(self.names) - 1) / 2
+        on = np.any(np.abs(self.y[:, None] - (centre + index * pitch)) < self.size[0] / 2, axis=1)
+        return np.where(on, 1.0, -1.0)
+
+    def _placed(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, row: float) -> tuple[float, float] | None:
+        """Middle and pitch of the row of boxes that best explains wall and seen-past cells along the front wall; None if none does."""
+        c = self.cfg
+        labels = np.sign(np.round(self._wall_labels(depth, camera, counter, row + c["cell"] / 2, self.y)))
+        scores = self.combs @ labels - self.prior
+        best = int(np.argmax(scores))
+        if not scores[best] >= c["min_agreement"] * np.abs(labels).sum() > 0:
+            return None
+        fine = np.arange(-c["span_step"], c["span_step"] + 1e-9, c["fine_step"])
+        near = [(self.rows[best][0] + slide, self.rows[best][1] + stretch) for stretch in fine for slide in fine]
+        agreement = [self._comb(centre, pitch) @ labels for centre, pitch in near]
+        return tuple(np.mean([row for row, score in zip(near, agreement) if score == max(agreement)], axis=0))
+
+    def _boxes(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, row: float, placed: tuple[float, float]) -> dict[str, np.ndarray]:
+        """Centre of every box of the placed row, each forwards from its own front wall where that is seen near the row's."""
+        c, found = self.cfg, {}
+        lane = np.arange(-c["lane_half"], c["lane_half"], c["cell"]) + c["cell"] / 2
+        window = (row - c["row_window"], row + c["row_window"] + c["cell"] / 2)
+        for k, name in enumerate(self.names):
+            y = placed[0] + (k - (len(self.names) - 1) / 2) * placed[1]
+            front = self._front_x(depth, camera, counter, y + lane, window, (c["min_lane_visible"], c["min_fill"]))
+            found[name] = np.array([(row if front is None else front) + self.size[1] / 2, y])
+        return found
 
     def rim_z(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, bins: Mapping[str, np.ndarray]) -> float | None:
         """Pelvis z of the highest bin rim: where the walls over the bin footprints stop, lifted to the row's highest corner."""
@@ -48,54 +86,18 @@ class BinFinder:
             rows.append(camera.surface_labels(depth, np.c_[xy, z], self.cfg["depth_tolerance"]))
         return np.mean(rows, axis=0)
 
-    def _filled(self, labels: np.ndarray, needed: int) -> bool:
-        """True when enough of a stretch is seen and a wall fills what is seen of it (objects and fingers are narrower)."""
-        wall, open_ = int((labels > 0.5).sum()), int((labels < -0.5).sum())
-        return wall + open_ >= needed and wall >= self.cfg["min_fill"] * (wall + open_)
-
     def _front_x(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, y: np.ndarray, x_range: tuple[float, float],
-                 needed: int) -> float | None:
-        """x of the nearest wall in `x_range` that fills what is visible of the stretch `y`."""
+                 needed: tuple[int, float]) -> float | None:
+        """x of the nearest wall in `x_range` over the stretch `y`: `needed` = seen cells, and the share of them that is wall."""
         for x in np.arange(x_range[0], x_range[1], self.cfg["cell"]):
-            if self._filled(self._wall_labels(depth, camera, counter, x, y), needed):
+            labels = self._wall_labels(depth, camera, counter, x, y)
+            wall, open_ = int((labels > 0.5).sum()), int((labels < -0.5).sum())
+            if wall + open_ >= needed[0] and wall >= needed[1] * (wall + open_):
                 return float(x)
         return None
 
     def _row_x(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> float | None:
-        """x of the row's front wall: the nearest wall that fills the lanes of all three bins taken together."""
-        c = self.cfg
-        lane = np.arange(-c["lane_half"], c["lane_half"], c["cell"]) + c["cell"] / 2
-        y = np.concatenate([centre[1] + lane for centre in self.expected.values()])
-        return self._front_x(depth, camera, counter, y, c["x_range"], c["min_visible"])
-
-    def _boxes(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, row: float) -> dict[str, np.ndarray]:
-        """Centre of every bin whose own stretch of the row's front wall is seen."""
-        c, found = self.cfg, {}
-        lane = np.arange(-c["lane_half"], c["lane_half"], c["cell"]) + c["cell"] / 2
-        for name, expected in self.expected.items():
-            window = (row - c["row_window"], row + c["row_window"] + c["cell"] / 2)
-            front = self._front_x(depth, camera, counter, expected[1] + lane, window, c["min_lane_visible"])
-            centre = None if front is None else self._centre(depth, camera, counter, front, expected[1])
-            if centre is not None:
-                found[name] = centre
-        return found
-
-    def _centre(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, front: float, lane_y: float) -> np.ndarray | None:
-        """Bin centre from its front wall: sideways from the wall's seen ends, forwards by half its width."""
-        c = self.cfg
-        y = lane_y + np.arange(-c["span_reach"], c["span_reach"], c["span_step"]) + c["span_step"] / 2
-        labels = self._wall_labels(depth, camera, counter, front + c["cell"] / 2, y)
-        middle = len(y) // 2
-        below, above = np.flatnonzero(labels[:middle] < -0.5), np.flatnonzero(labels[middle:] < -0.5)
-        lo = y[below[-1]] + c["span_step"] / 2 if len(below) and self._solid(labels[below[-1] + 1:middle]) else np.nan
-        hi = y[middle + above[0]] - c["span_step"] / 2 if len(above) and self._solid(labels[middle:middle + above[0]]) else np.nan
-        width = hi - lo if np.isfinite(hi - lo) else self.size[0]
-        if not c["width_range"][0] <= width <= c["width_range"][1]:
-            return None
-        centre_y = np.nanmean([lo + width / 2, hi - width / 2]) if np.isfinite([lo, hi]).any() else lane_y
-        return np.array([front + width / 2, centre_y])
-
-    @staticmethod
-    def _solid(stretch: np.ndarray) -> bool:
-        """True when the stretch between the lane centre and a wall end is seen as wall, not hidden."""
-        return len(stretch) > 0 and float(np.mean(stretch > 0.5)) > 0.8
+        """x of the row's front wall: the nearest wall over half of what is seen of the row's width (objects fill a third)."""
+        c, ys = self.cfg, [centre[1] for centre in self.expected.values()]
+        y = np.arange(min(ys) - self.size[0] / 2, max(ys) + self.size[0] / 2, c["cell"]) + c["cell"] / 2
+        return self._front_x(depth, camera, counter, y, c["x_range"], (c["min_visible"], c["row_fill"]))
