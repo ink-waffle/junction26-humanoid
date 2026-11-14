@@ -212,7 +212,7 @@ policy:
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
   retry_offsets: [[0.0, 0.0], [0.005, 0.0], [-0.005, 0.0], [0.0, 0.005], [0.0, -0.005]]   # pelvis xy added to the grasp point on the n-th pick of an object
-  blob_attempts: 1            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
+  blob_attempts: 3            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
