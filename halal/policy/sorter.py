@@ -211,6 +211,9 @@ class SortPolicy:
             self._pause(self.settings["replan_pause_s"])
         elif look.pick is None:
             self._nothing_to_pick(t, look)
+        elif self.view is View.START and self.calibrator.missing:
+            log.info("t=%.1f no room here for the hands' calibration close: going home for it before the first pick", t)
+            self.stage, self.next_view = Stage.MOVING, View.HOME
         elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING

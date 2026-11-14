@@ -29,6 +29,11 @@ class HandCalibrator:
         self.hands: dict[str, HandResponse] = {}
         self.trace: CalibrationTrace | None = None
 
+    @property
+    def missing(self) -> bool:
+        """Wanted this episode and not started yet: so far the hands had no room to close where the arms were."""
+        return self.enabled and self.trace is None
+
     def due(self, arm_q: np.ndarray) -> bool:
         """Not done yet this episode, and both hands could close where they are without touching anything."""
         if not self.enabled or self.trace is not None:
