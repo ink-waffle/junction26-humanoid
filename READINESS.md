@@ -2,18 +2,18 @@
 
 Aaltonomous Humanoid, Junction 2026. Team: Damir Kairov, Maksim Kruglov. Code: this repository (`halal/`).
 Image (public, CPU only, 1.5 GB, starts in 0.5 s):
-`ghcr.io/ink-waffle/halal-policy@sha256:e061f54d6437c359f9b35851f2ae571caf2316e9ceb3b87d12b8229ecfd8b39a`
+`ghcr.io/ink-waffle/halal-policy@sha256:ae811fa244d1e2bc1e3d389e015af157b07df1a3d0f0bcd2d20756fdc7aae03c`
 
 ## In simulation, through the submitted container
 
 Organisers' evaluator, training domain randomisation, 8 seeds per task, sim gate on every episode.
 
-| Task | Organiser baseline | Ours (v14) |
+| Task | Organiser baseline | Ours (v16) |
 |---|---|---|
-| `sort_fixed` | +1.62 (13/31 objects) | +3.75 (30/31) |
+| `sort_fixed` | +1.62 (13/31 objects) | +3.88 (31/31) |
 | `sort_language`, training template | not applicable | +7.00 (28/28) |
 | `sort_language`, unseen paraphrase | not applicable | +7.00 (28/28) |
-| Gate (0 clipped steps, ≥ 27 Hz, real-time rate) | pass | pass on 24 of 24 episodes, real-time rate ≥ 190 Hz |
+| Gate (0 clipped steps, ≥ 27 Hz, real-time rate) | pass | pass on 24 of 24 episodes, real-time rate ≥ 149 Hz |
 
 No object in a wrong bin and none knocked off the counter in any measured episode of the last five versions.
 
@@ -22,7 +22,7 @@ No object in a wrong bin and none knocked off the counter in any measured episod
 - **Hands.** The sim's finger actuators are about 67× stiffer than the robot's (kp 1.5 / kd 0.2). We built a
   second sim with the real gains, fitted to the finger step response in the teleop drops (50 % at 0.14 s, 90 % at
   0.3–0.4 s). The policy closes each empty hand once per episode, recognises which kind of hand it has, and
-  chooses grasp closure, lift acceleration and contact threshold from that. On the soft-hand sim: 30/31 objects,
+  chooses grasp closure, lift acceleration and contact threshold from that. On the soft-hand sim: 31/31 objects,
   gate pass, hands recognised in 16 of 16 episodes.
 - **Camera.** The head camera pose is re-estimated in every episode from depth alone: counter plane, the box row,
   and the robot's own forearms against forward kinematics (the only reference tied to the arm). Position error

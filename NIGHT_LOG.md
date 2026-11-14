@@ -6,6 +6,20 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 16:25
+- **Hand-in candidate: v16, proxy +21.38 of a possible 21.38 (87 of 87 objects), sim gate PASS on all 24 episodes
+  through its container; soft-hand sim 31/31, gate PASS; no empty pick in any of the 32 episodes.**
+  `ghcr.io/ink-waffle/halal-policy@sha256:ae811fa244d1e2bc1e3d389e015af157b07df1a3d0f0bcd2d20756fdc7aae03c`
+  v15 measured the same on all four legs (174/174 stock objects and 62/62 soft over the two); v16 already passes
+  lying prisms through `candidate_grasps(..., lying)`, so a measured lying grasp becomes a config change.
+- **Organisers, 15:07 (answer to our questions):** real `sort_fixed` is yellow → left, purple → center, orange →
+  right (our policy reads the sentence: parsed correctly); objects are cubes, prisms and cylinders, colours, count
+  and placement vary at random, prisms on a face or on a side; arms start at home with open hands; head depth exists
+  on the real robot; 120 s; layout values in `INTERFACE.md` are a plan, final only once measured at the venue.
+  Hand-in form, team ids and deadlines: "later today, probably this evening".
+- **Now:** lying-prism grasp and the 70 mm rim (motion); v16 on more seeds; full episodes in a sim that looks like
+  the real setup (real colours, lying prisms, 70 mm walls, soft hands); detector and camera fit on realistic depth.
+
 ### Sat 14.11, 15:00
 - **Hand-in candidate: v14, proxy +21.25, sim gate PASS on all 24 episodes through its container; soft-hand sim
   30/31, gate PASS.** First published version that sees and names the real robot's colours.
@@ -137,6 +151,8 @@ Full proxy (three legs, 8 seeds each, DR train):
 | v12: + vertex-aligned triangle grasp, soft-hand identification and carry profile (soft sim: fixed 31/31) | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
 | v13: + obstacle check, neighbour-count order, narrow release slots (soft sim 29/31) | +3.75 (30/31) | +6.75 (27/28) | +7.00 (28/28) | +21.00 | pass |
 | v14: + colour families and real colour words, v12's slots, waiting rule (soft sim 30/31) | +3.75 (30/31) | +7.00 (28/28) | +7.00 (28/28) | **+21.25** | pass |
+| v15: + v12's pick order, per-episode orange/yellow boundary, lying prisms, `done` after 10 s of empty looks (soft sim 31/31) | +3.88 (31/31) | +7.00 (28/28) | +7.00 (28/28) | **+21.38** | pass |
+| v16: v15 with grasps keyed through `candidate_grasps(..., lying)` (soft sim 31/31) | +3.88 (31/31) | +7.00 (28/28) | +7.00 (28/28) | **+21.38** | pass |
 
 v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
 27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16
