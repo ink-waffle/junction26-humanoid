@@ -102,3 +102,22 @@ there, so the policy's arm filter left no arm and `plan_pick` was never called. 
 plans all 24 cells (6 objects × 2 arms × 2 centre slots; 6–11 s per far-slot call). Main since a7b7c93: the filter
 stays True; rise `[0.0]` plans 12/24 (each arm's near slot, inset 4 cm; the far slot is refused by the landing rule at
 inset 3 cm), the rise list 24/24 (insets 4–6 cm), 18 s for the 24 calls against 106 s.
+
+## Sweeps r2 (centre bin, +8 cm) and r3 (side bins, +10 cm), stock hand
+
+`rim` = the rise list with `drop_inset.near: [0.02, 0.01]`. Expected value per object (EV) = (binned − off the counter −
+wrong bin) / carried, sort_fixed points.
+
+| bins, bin | config | planned | binned | counter / off | EV | inset, rise | landing minus release point, x | centre to wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|---|---|---|
+| +8, centre | rise list | 12/12 | 12/12 | 0 / 0 | +1.00 | 3 cm, +6 cm | −8…+110 mm (median +24) | 22 mm | 1 |
+| +10, side | rise list (insets ≥ 3 cm) | 8/24 | 8/8 | 0 / 0 | +1.00 | 3 cm, +9 cm | −2…+102 mm (median +31) | 28 mm | 0 |
+| +10, side | `rim` | 24/24 | 24/24 | 0 / 0 | +1.00 | 2 cm, +6 cm | +3…+129 mm (median +25) | 23 mm | 0 |
+
+- At +10 cm with insets ≥ 3 cm only the cubes planned, and only with the pinch candidate (its point in the palm is
+  7 mm further out than the cage's); cylinders and triangles: "arm cannot reach the bin" (16 of 24).
+- With an inset of 2 cm every pick planned and all 24 landed inside. The objects do not fall straight down at the
+  reach limit: they leave 3–129 mm forward of the release point (median +25 mm; at the nominal boxes the median is
+  +5…+7 mm), so the centre is 23 mm or more from the near wall when it passes the rim although it was released 20 mm
+  from it. The arm is nearly straight and tilted there; the forward drift is consistent in sim (0 of 24 short) but its
+  cause is not established and nothing says the real hand does the same.
