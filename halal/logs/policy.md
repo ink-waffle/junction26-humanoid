@@ -71,28 +71,40 @@ v2 in detail:
 - The verification called 76 of 155 picks empty; no "held" pick was lost on the way and no "empty" one was found
   in a bin.
 
-## What the policy is (v2, committed 78b1e61)
+## What the policy is (v4)
 
-`SortPolicy` (own state machine): calibration close of both hands where the arms start → look → targets
-(instruction mapping, on the counter and clear of the perceived bins, detection confidence ≥ 0.3, picks left) →
-least-tried target first, then nearest its bin; arm on the bin's side first; candidate grasps rotated on a retry;
-next free release slot → execute in 15-tick replies with the grip check after the lift and through the carry →
-look pose → look again. Perception and planning run in one low-priority background thread; `act()` never waits
-(worst measured 5 ms) and answers 10-tick holds meanwhile. `set_layout(detector.layout())` after every look; if
-the perceived layout leaves no pick (or no safe way to the look pose) the scene file's layout is used for the rest
-of the episode. `done` only after two looks spanning 2 s without a sortable object; a look that fails or rejects
-every target pauses 1 s and looks again; an exception in a step drops what was in progress and starts over from a
-look. A pick starts only if its release fits before the time limit; if the episode outlasts the assumed limit the
-policy carries on. Instruction confidence below 0.5: nothing is moved.
+`SortPolicy` (own state machine). Episode start: hold for the settle time (the first frame still shows the counter
+before the reset), look from where the arms are with the hands untouched (the camera fit wants them in view), and
+close both hands on nothing while that frame is processed; the first plan waits for the hand class. Then per look:
+targets = detections that the instruction maps to a bin, on the counter and clear of the perceived bins, colour
+confidence ≥ 0.3, picks left, top face seen ≥ 50 % (each object keeps the shape of the clearest look at it) →
+least-tried target first, then nearest its bin; arm on the bin's side first; a retry first forgets the detected
+shape, the one after turns to the next arm and grasp; next free release slot → execute in 15-tick replies with the
+grip check after the lift and through the carry → home → look again. When only poorly seen targets are left, and
+before `done`, the arms swing to `motion.look_arm_q` and the look is repeated from there; `done` needs two such
+clear looks 2 s apart without a sortable object. Perception and planning run in one low-priority background
+thread; `act()` never waits (worst measured 5 ms) and answers 10-tick holds meanwhile.
+`set_layout(detector.layout())` after every look; if the perceived layout leaves no pick (or no safe move) the
+scene file's layout is used for the rest of the episode. A look that fails or rejects every target pauses 1 s and
+looks again; an exception in a step drops what was in progress and starts over from a look. A pick starts only if
+its release fits before the time limit; if the episode outlasts the assumed limit the policy carries on.
+Instruction confidence below 0.5: nothing is moved. Hand class from the calibration close (steady bias below
+0.01 rad = stiff, the sim; else soft, the real hand) selects the grip threshold (0.02 / 0.3) and the squeeze passed
+to `plan_pick` (none / 1.0).
+
+v3 = the same without the start settle, the visibility rule, the clear-view looks and the shape memory (it looks
+from home only and needs two empty looks from there for `done`).
 
 Failure injection (scratch scripts outside the repo, kinematic mock world with a finger contact signal, runner-like
-observation lag): blank head frames for the first 40 calls, no depth at all, detector raising on two looks, planner
-raising once / always, reset during a 1 s plan followed directly by the next episode, assumed limit 20 s with a
-real limit of 60 s, start pose far from home with closed hands, an object lost during the carry, a mock without any
-finger signal, a perceived layout 10 cm off: no exception reaches the runner, 0 clipped steps, no early `done`.
+observation lag): blank head frames for the first 40 calls, first frames showing the empty counter, no depth at
+all, detector raising on two looks, planner raising once / always, reset during a 1 s plan followed directly by
+the next episode, assumed limit 20 s with a real limit of 60 s, start pose far from home with closed hands, an
+object lost during the carry, a mock without any finger signal, a perceived layout 10 cm off, every hand classed
+soft: no exception reaches the runner, 0 clipped steps, no early `done`.
 Found by it and fixed: a calibration close from an already closed hand divided by zero and froze the state
 machine (now: open first, and any step failure starts over); a missing depth frame ended the episode with `done`
-after 3 s; an observation two ticks newer than assumed read the reopening hand as a steady bias.
+after 3 s; an observation two ticks newer than assumed read the reopening hand as a steady bias; the detector's
+hand-based camera fit accepted frames without any arm in them (reported, fixed in perception).
 
 ## Ideas, one at a time
 
