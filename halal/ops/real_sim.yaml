@@ -32,3 +32,4 @@ camera:                            # true head camera = calibration.yaml pose mo
 
 words: {red: orange, blue: purple} # canonical family -> the word the real instructions use
 fixed_mapping: {yellow: left, blue: center, red: right}   # the real sort_fixed rule, canonical families
+start_pose_speed: 0.5              # rad/s of the evaluator's move from home to a recorded start pose (real_eval --start-pose)
