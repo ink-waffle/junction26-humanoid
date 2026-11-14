@@ -69,10 +69,11 @@ class PickPlanner(Planner):
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
-            releases = [(0.0, 0.0)] if place_xy is not None else self._reachable_releases(side, bin_name, det)
-            tried = False   # a plan that was tried and failed keeps its reason: the policy reads it
-            for (self.near_inset, rise), self.low in itertools.product(releases, self._sequences(place_xy)):
-                if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, releases[0][0])):
+            releases = iter([(0.0, 0.0)]) if place_xy is not None else self._reachable_releases(side, bin_name, det)
+            tried, furthest = False, None   # a plan that was tried and failed keeps its reason: the policy reads it
+            for (self.near_inset, rise), self.low in ((release, low) for release in releases for low in self._sequences(place_xy)):
+                furthest = self.near_inset if furthest is None else furthest
+                if place_xy is None and not self._lands_inside(side, bin_name, self._landing_box(rise, furthest)):
                     plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
@@ -212,19 +213,28 @@ class PickPlanner(Planner):
 
     def reaches_bin(self, side: str, bin_name: str, det: Any = None) -> bool:
         """Whether this arm can hold the grasp point over one of the bin's release points (those for this object, when given)."""
-        return bool(self._reachable_releases(side, bin_name, det))
+        return self._reaches_any(side, bin_name, self._release_insets(bin_name, det))
 
-    def _reachable_releases(self, side: str, bin_name: str, det: Any) -> list[tuple[float, float]]:
-        """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first; the rim insets instead for an object that may go in over the rim of a bin beyond both arms' reach."""
+    def _reachable_releases(self, side: str, bin_name: str, det: Any) -> Iterator[tuple[float, float]]:
+        """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first, found as they are asked for."""
+        return self._reached(side, bin_name, self._release_insets(bin_name, det))
+
+    def _release_insets(self, bin_name: str, det: Any) -> Sequence[float]:
+        """The bin's `near` insets; the rim insets for an object that may go in over the rim of a bin beyond both arms' reach."""
         insets = self.motion["drop_inset"]
-        if self._may_go_over_rim(det) and self._beyond_reach(bin_name):
-            return self._reached(side, bin_name, insets["rim"]["near"])
-        return self._reached(side, bin_name, insets["near"])
+        return insets["rim"]["near"] if self._may_go_over_rim(det) and self._beyond_reach(bin_name) else insets["near"]
 
-    def _reached(self, side: str, bin_name: str, insets: Sequence[float]) -> list[tuple[float, float]]:
-        """The insets this arm reaches, each with its lowest rise."""
-        rises = {inset: self._lowest_rise(side, bin_name, inset) for inset in insets}
-        return [(inset, rise) for inset, rise in rises.items() if rise is not None]
+    def _reaches_any(self, side: str, bin_name: str, insets: Sequence[float]) -> bool:
+        """Whether this arm reaches one of the insets at some rise (as `_lowest_rise` decides it), the nearest inset and the highest rise asked first."""
+        rises = self.motion["release_rise"]
+        return any(self._reaches(side, bin_name, inset, rise) for inset in reversed(insets) for rise in (rises[-1], rises[0]))
+
+    def _reached(self, side: str, bin_name: str, insets: Sequence[float]) -> Iterator[tuple[float, float]]:
+        """The insets this arm reaches, each with its lowest rise, checked one at a time as they are asked for."""
+        for inset in dict.fromkeys(insets):
+            rise = self._lowest_rise(side, bin_name, inset)
+            if rise is not None:
+                yield inset, rise
 
     def _may_go_over_rim(self, det: Any) -> bool:
         """Whether the object is an upright shape that rolls or slides into the bin from a release on its near rim."""
@@ -232,7 +242,7 @@ class PickPlanner(Planner):
 
     def _beyond_reach(self, bin_name: str) -> bool:
         """Whether neither arm reaches any of the bin's `near` insets."""
-        return not any(self._reached(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
+        return not any(self._reaches_any(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
 
     def _lowest_rise(self, side: str, bin_name: str, inset: float) -> float | None:
         """The lowest configured rise from which this arm reaches that release point (reach grows with the height); None if the highest does not."""
@@ -255,8 +265,19 @@ class PickPlanner(Planner):
             key = (side, *np.round([*self.kin.offset[side], *np.ravel(points)], 3))
             cache = self.__dict__.setdefault("_reach", {})
             if key not in cache:
-                cache[key] = all(self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
+                cache[key] = self._within_arm_length(side, points) and all(
+                    self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
         return cache[key]
+
+    def _within_arm_length(self, side: str, points: Sequence[np.ndarray]) -> bool:
+        """Whether every point lies within the arm's fully stretched length (+ IK tolerance) of its shoulder: beyond it no IK can succeed."""
+        joints = [self.kin.model.getJointId(name) for name in self.kin.spec.arm_names[ArmKinematics.sl(side)]]
+        self.kin._fk(np.zeros(14))
+        origins = [self.kin.data.oMi[j].translation for j in joints]
+        palm = self.kin.data.oMf[self.kin.palm[side]]
+        hand = np.linalg.norm(palm.translation + palm.rotation @ self.kin.offset[side] - origins[-1])
+        stretched = sum(float(np.linalg.norm(b - a)) for a, b in zip(origins, origins[1:])) + hand + self.cfg["ik"]["pos_tol"]
+        return all(float(np.linalg.norm(p - origins[0])) <= stretched for p in points)
 
     @contextmanager
     def _released_from(self, rise: float) -> Iterator[None]:
