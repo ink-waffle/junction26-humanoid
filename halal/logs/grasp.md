@@ -147,3 +147,29 @@ hold for lagging fingers), lift 1.13 → 0.66, carry 2.11 → 1.10, open 0.80 �
 - Forcing the grasp's finger heading on pregrasp, descend and lift was tried and reverted: no time gained.
 - The low sequence is 88 % of the plans; the rest fall back to the organiser sequence when the rising joint-space carry
   would bring the held object within 1.5 cm of a bin rim. It is OFF by default until the sim A/B.
+
+## Sweep 4: one depth for both hand regimes? (squeeze 1.0, release together vs thumb first)
+
+Hypothesis: if the stiff sim hand tolerates the depth the soft real hand needs (1.0 = the thumb's joint limit), the
+policy needs no stiffness switch; a release that opens the thumb 0.2 s before the fingers frees objects wedged
+between the fingertips. Setup: cage, hard DR, exact pose, 12 trials per cell.
+
+| variant | cube | cylinder | triangle |
+|---|---|---|---|
+| squeeze 1.0, release together | 2/12 | 6/12 | 12/12 |
+| squeeze 1.0, thumb first | 3/12 | 8/12 | 11/12 |
+| squeeze 0.75 (the unknown-shape depth), thumb first | | 11/12 | 12/12 |
+
+All 30 failures are the same thing: the object ends between the two straightened fingers, tilted ~90–100°, and
+rides home with the hand (final height 0.26–0.29 m). At 1.0 the thumb drives a cube or cylinder to palm x 0.105–0.116,
+past the tapered fingertips into the 31 mm gap between the finger links; at ≤ 0.75 it stays at 0.083–0.104 in the
+40 mm tip gap and drops out when the hand opens. Opening the thumb first changes nothing (the fingers hold the object,
+not the thumb).
+
+Verdict: no single depth. The stiff hand keeps the per-shape depths; the soft hand needs deeper targets because its
+force is bounded by kp × error. The thumb-first release was removed from the code again. An empty hand at squeeze
+1.0 reads 0.037 rad on thumb_2 (target at the joint limit): contact checks must use thumb_1 and the finger_0 joints.
+The unknown-shape depth 0.75 is confirmed as a fallback: cylinder 16/18 and triangle 24/24 over sweeps 3–4, cube 6/6.
+
+Where failed picks leave the object (sweeps 1–3, objects that never left the counter): organiser pinch median shift
+17–24 mm, on average 11–26 mm towards the robot; cage with too shallow a thumb 3–9 mm with no preferred direction.
