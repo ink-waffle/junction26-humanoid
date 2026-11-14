@@ -86,8 +86,13 @@ perception:
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
     min_confidence: 0.05      # detections below this are dropped
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
+    min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
+    straggler:                # coloured blobs on the counter that no top-face fit explains: toppled objects
+      heights: [0.010, 0.060] # above the counter
+      claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
+      min_px: 300
+      max_extent: 0.09        # a longer blob is no single object (a wall, an arm)
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
-    score_range: [0.0, 0.2]   # outline fit score (fraction of the outline seen minus contradicted) mapped to confidence 0..1
     seed:
       height_band: 0.006      # top-face pixels: this close to the object height above the counter
       open_px: 3
@@ -110,9 +115,10 @@ perception:
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
       basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, in which a colour is trusted
         red: [335, 15]
-        yellow: [42, 90]
+        yellow: [40, 90]
         blue: [195, 250]
-      taper_deg: 6            # confidence falls to 0 this far outside a basin: orange (18..36) is nobody's
+      taper_deg: 6            # confidence falls to 0 this far outside a basin: orange (21..34) is nobody's
+      min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]

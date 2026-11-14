@@ -52,9 +52,11 @@ class TopFaceDetector:
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
+        free = self._on_counter(cloud)
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
-        faces = self._faces(depth, camera, cloud, height, counter, rgb, gains)
+        faces = self._faces(depth, camera, cloud, height, free, counter, rgb, gains)
         found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
+        found += self._stragglers(faces, camera, cloud, height, free, rgb, gains)
         return [d for d in found if d.confidence >= self.cfg["min_confidence"]]
 
     def _camera(self, obs: Mapping[str, Any]) -> Camera:
@@ -85,11 +87,11 @@ class TopFaceDetector:
             ok &= ~np.all(np.abs(cloud[..., :2] - centre) < half, axis=-1)
         return ok
 
-    def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit,
-               rgb: np.ndarray, gains: np.ndarray) -> list[TopFace]:
+    def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
+               counter: PlaneFit, rgb: np.ndarray, gains: np.ndarray) -> list[TopFace]:
         """Top faces of all objects: per colour first (touching objects of two colours part there), then what is left."""
         c = self.cfg["seed"]
-        top = (np.abs(height - self.scene.object_height()) < c["height_band"]) & self._on_counter(cloud)
+        top = (np.abs(height - self.scene.object_height()) < c["height_band"]) & free
         kernel = np.ones((c["open_px"], c["open_px"]), np.uint8)
         mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, kernel)
         colour = np.full(mask.shape, -1, np.int8)
@@ -111,6 +113,27 @@ class TopFaceDetector:
         reach = self.cfg["window_px"]
         u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
+
+    def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
+                    rgb: np.ndarray, gains: np.ndarray) -> list[ObjectDetection]:
+        """Coloured blobs standing on the counter that no top-face fit explains (toppled objects): colour and a rough centre."""
+        c = self.cfg["straggler"]
+        mask = ((height > c["heights"][0]) & (height < c["heights"][1]) & free).astype(np.uint8)
+        for face in faces:
+            window = self._window(face, camera)
+            mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
+        coloured = np.zeros_like(mask)
+        coloured[mask > 0] = self.colors.pixel_classes(rgb[mask > 0], gains) >= 0
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(cv2.morphologyEx(coloured, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8)))
+        found = []
+        for i in range(1, count):
+            points = cloud[labels == i]
+            if stats[i, cv2.CC_STAT_AREA] < c["min_px"] or np.ptp(points[:, :2], axis=0).max() > c["max_extent"]:
+                continue
+            color, confidence = self.colors.classify(rgb[labels == i], gains)
+            found.append(ObjectDetection(color=color, top=np.r_[points[:, :2].mean(axis=0), points[:, 2].max()], confidence=confidence,
+                                         pixels=int(stats[i, cv2.CC_STAT_AREA]), visible=0.0))
+        return found
 
     def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
         """Rough top-plane centres of the blobs left in the top-height mask."""
@@ -143,14 +166,12 @@ class TopFaceDetector:
         return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
     def _describe(self, face: TopFace, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> ObjectDetection:
-        """Turn one top-face fit into a detection with honest shape, yaw and confidence."""
+        """Turn one top-face fit into a detection: confidence is about the colour alone, `visible` about the pose."""
         c, best = self.cfg, face.best
         if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb):
             return ObjectDetection(color="red", top=best.centre, confidence=0.0)
-        color, color_conf = self.colors.classify(body_rgb, gains)
-        shaped = face.margin >= c["min_shape_margin"]
+        color, confidence = self.colors.classify(body_rgb, gains)
+        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
-        low, full = c["score_range"]
-        fit_conf = float(np.clip((best.score / best.area - low) / (full - low), 0.0, 1.0))
         return ObjectDetection(color=color, top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
-                               confidence=fit_conf * color_conf, pixels=len(face.pixels), visible=best.visible)
+                               confidence=confidence, pixels=len(face.pixels), visible=best.visible)

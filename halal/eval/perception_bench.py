@@ -206,7 +206,7 @@ def outcome(frame: Frame, truth: Truth, det: ObjectDetection | None, used: Pinho
     return {"matched": True, "color_ok": det.color == truth.color, "confidence": float(det.confidence),
             "xy_mm": 1e3 * float(np.linalg.norm(error[:2])), "z_mm": 1e3 * float(abs(error[2])),
             "own_xy_mm": 1e3 * float(np.linalg.norm(own[:2])),
-            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape,
+            "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape, "visible": float(det.visible),
             "yaw_deg": float(np.degrees(yaw_error(truth.shape, det.yaw, truth.yaw))) if has_yaw else None}
 
 
