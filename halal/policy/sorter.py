@@ -350,7 +350,8 @@ class SortPolicy:
         end = phase(plan, "retreat")[1] if home else len(plan.arm)
         hand = np.vstack([opening, opened, plan.hand[end:]])
         if home:
-            active.window = window = window.closing_to(*(self.planner.post[name][hand_slice(window.side)] for name in ("closed", "open")))
+            closed, opened = (self.planner.post[name][hand_slice(window.side)] for name in ("closed", "open"))
+            active.window = window = window.closing_to(closed, opened)   # the posture the empty-hand error was measured in
         arm = np.vstack([np.repeat(stream.arm_cmd[None], len(opening) + len(opened), 0), plan.arm[end:]])
         check = self._release_check(hand[-1], window)
         after = self._opening_at_rest(check.hand[-1]) if home else active.tail
