@@ -127,6 +127,9 @@ perception:
         yellow: [39, 110]     # sim yellow 44..60; real yellow foam 41 (shaded) .. 98 (washed-out top)
         blue: [195, 280]      # sim blue 200..234; real purple foam 217..225 lit, to 266 on shaded faces
       taper_deg: 6            # confidence falls to 0 this far outside a basin: 36 deg is half red, half yellow
+      warm_split:             # red against yellow by the scene: two groups of object hues with a clear gap fix the boundary for the episode
+        min_gap: 8            # deg between the groups (real orange to yellow >= 10, sim red to yellow >= 34)
+        max_shift: 9          # deg all hues may be turned for the groups to fit the basins (two sim yellows would pass as orange and yellow from 12.2)
       min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane

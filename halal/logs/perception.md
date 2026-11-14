@@ -357,6 +357,42 @@ is inside the basin; what would break it is a hue shift of the whole image that 
 remove. The boundary was not moved on this: 36 deg is the middle of the measured gap. A policy-level cue remains
 for the finals: the scene holds two orange and two yellow objects, and the orange ones are by far the more saturated.
 
+### Red against yellow by the scene (`color.warm_split`)
+
+The fixed boundary at 36 deg has 5 deg of margin each way. Now a look's own object colours can vouch for it or move it.
+Among the warm object hues of one look, a gap of at least `min_gap` (8 deg) counts if some turn of all hues by at most
+`max_shift` (9 deg) puts its lower side in the red basin and its upper side in the yellow one. If such a gap needs no
+turn, the basins stand (vouched). If exactly one gap fits and needs a turn, red and yellow meet in its middle. Several
+fitting gaps, or none: nothing is concluded. What a look concludes holds for the episode (objects leave one by one).
+Without a vouched boundary the confidence of a warm object is also limited by its distance to 36 deg (0 at the
+boundary, full from 6 deg): a decision resting on the fixed boundary alone is not sure near it.
+
+Why these numbers: sim, 1390 looks: red 16.3 at most, yellow 45.2 at least, so red to yellow is at least 34 deg and
+always spans the basins' edge (vouched, same names as before). Two sim yellows differ by up to 12.9 deg and would pass
+for "orange and yellow" only under a turn of 12.2 deg or more; two sim reds never. A look is not required to hold both
+groups: 491 of the 1390 sim looks hold one.
+
+| | fixed boundary | boundary from the look |
+|---|---|---|
+| sim sets as shipped (all nine) | unchanged | unchanged |
+| drop 2 as recorded | orange 81/81, yellow 62/62, purple 44/44 | same, same confidences |
+| drop 2, whole image turned +5 deg | orange 80/81 | 80/81 |
+| drop 2, +10 deg | orange 32/81 | 73/81 |
+| drop 2, +15 deg | orange 0/81 | 13/81 |
+| drop 2, -5, -10, -15 deg | all right | all right |
+| repainted `dr_train` (orange right / matched) | 131/154 | 147/157 |
+| repainted `dr_train`, +5 / +10 deg | 99/156, 78/157 | 122/156, 94/158 |
+| repainted `motion` | 604/652 | 632/652 |
+| `dr_train` as rendered, -15 .. +15 deg | all right but yellow 150/155 at -15 | all right |
+
+Yellow and purple stay right in every row; repainted blue is lost (confidence 0, never wrong) from -10 deg on: 5 of 158,
+and 32 at -15. Reading: negative turns are harmless on drop 2 because of the own-family sample (the pale yellow tops
+stay in the yellow basin and name the object); positive turns push orange over the boundary, the fixed scheme is gone at
++10, the look's boundary holds to +10 and is gone at +15, by design of `max_shift`. On the repainted sim it halves the
+errors and no more: there the sim's +-7 deg per-object shift makes two oranges differ by more than orange and yellow
+do, and then no single gap exists. That case is not in the real foam (19.4 to 30.9 over 81 objects).
+`drop2_colours --sweep` and `perception_bench --repaint --rotate DEG` reproduce the rows.
+
 ### Real object size
 
 `drop2_size`: the centre box (21 cm outer, scene.yaml) is the ruler. Its six outline corners, read by eye in one frame
