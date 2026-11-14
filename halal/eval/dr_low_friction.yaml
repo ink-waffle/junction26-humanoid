@@ -1,0 +1,32 @@
+# Low-friction stress DR for the grasp bench: aaltonomous/sim/dr/train.yaml with object friction x0.40-0.60 (static 0.48-0.72).
+# Use: AALTO_DR=$PWD/halal/eval/dr_low_friction.yaml bash halal/ops/sims.sh start b. Schema: aaltonomous/sim/aalto_task/dr.py.
+name: low_friction
+lighting:
+  key_intensity_scale: [0.6, 1.4]
+  key_pos_jitter: [0.4, 0.4, 0.3]      # m around the overhead key light (0.5, 0, 2.2)
+  key_rgb_jitter: 0.08                  # +-8 % per channel (colour temperature)
+  dome_intensity_scale: [0.5, 1.5]
+  dome_rgb_jitter: 0.05
+textures:
+  mat_scale: [0.8, 1.15]                # mat print brightness
+  mat_rgb_jitter: 0.06
+  mat_bias: [-0.03, 0.03]
+  counter_rgb_jitter: 0.2
+  bin_rgb_jitter: 0.08
+objects:
+  hue_jitter: 0.02                      # turns (0.02 = 7 deg)
+  sat_scale: [0.8, 1.15]
+  val_scale: [0.8, 1.15]
+  mass_scale: [0.7, 1.5]                # nominal 50 g
+  friction_scale: [0.40, 0.60]          # nominal 1.2 / 1.0; rubber on PLA is expected at 0.5-1.0
+pose:
+  xy_jitter: 0.005                      # m on top of the layout card (staff placement error)
+  yaw_jitter_deg: 5
+camera:
+  rgb_noise_std: 3.0                    # 0-255
+  rgb_gain: [0.9, 1.1]
+  depth_noise_mm: 1.0
+  depth_noise_rel: 0.002                # D435 ~0.2 % of range
+  depth_hole_frac: 0.01
+  pose_jitter_m: 0.01                   # head extrinsic error (spec: +-1 cm / +-1 deg)
+  pose_jitter_deg: 1.0

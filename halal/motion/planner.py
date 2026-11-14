@@ -63,8 +63,8 @@ class PickPlanner(Planner):
         return [name == "low" for name in names]
 
     def _staggered_release(self, plan: Plan, side: str) -> Plan:
-        """The plan with its release rebuilt so that one finger starts opening after the rest of the hand; unchanged when the stagger is 0."""
-        if not plan.ok or not self.motion["release_stagger_s"]:
+        """The plan with its release rebuilt from our settings (stagger, speed); unchanged when they are the organiser sequence's."""
+        if not plan.ok or not (self.motion["release_stagger_s"] or self.motion["release_vel"] != self.cfg["motion"]["hand_max_vel"]):
             return plan
         cols = ArmKinematics.sl(side)
         first, stop = next((a, b) for name, a, b in plan.phases if name == "open")
@@ -76,7 +76,7 @@ class PickPlanner(Planner):
     def _opening(self, closed: np.ndarray, release: np.ndarray) -> np.ndarray:
         """One hand's rows (7 joints) from closed to release and the hold after; with a stagger one finger starts that much later."""
         motion, delay = self.cfg["motion"], int(round(self.motion["release_stagger_s"] / self.dt))
-        together = ramp(closed, release, motion["hand_max_vel"], self.dt)
+        together = ramp(closed, release, self.motion["release_vel"], self.dt)
         rows = np.vstack([together, np.repeat(release[None], delay + int(round(motion["open_hold_s"] / self.dt)), 0)])
         rows[:delay + len(together), LATE_FINGER] = np.vstack([np.repeat(closed[None], delay, 0), together])[:, LATE_FINGER]
         return rows
