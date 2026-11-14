@@ -9,7 +9,7 @@ import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan
 
-from halal.motion import Grasp, PickPlanner, candidate_grasps
+from halal.motion import TOUCHING, Grasp, PickPlanner, candidate_grasps
 from halal.perception import ObjectDetection
 from halal.policy.background import Cancelled
 from halal.policy.release import ReleaseSlots, Shift
@@ -17,7 +17,6 @@ from halal.policy.release import ReleaseSlots, Shift
 log = logging.getLogger(__name__)
 SIDES = ("left", "right")
 Obstacles = Sequence[np.ndarray]    # top centres (pelvis xyz) of every detection of the look; the planner skips the target's own
-TOUCHING = "hand would touch"       # how the planner's reason for a failed plan names an object in the hand's way
 
 
 def grasp_kind(det: ObjectDetection) -> str:
