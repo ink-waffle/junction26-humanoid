@@ -257,3 +257,20 @@ offset), sha256 of arm, hand and reason per plan:
 - Not run in sim: the centre box at +12 with inset 0 on the policy's own-side slots (y ±0.03); r4 tried it at y 0 only,
   where no cylinder or triangle planned. Expect the side boxes' inset 0 numbers (soft: cylinder 3/8, triangle 7/8), unproven.
 - Every rim EV stays an upper bound for the real hand.
+
+## Sweep r9: soft hand, centre bin at +12 cm, inset 0 on the own-side slots, the v22 planner
+
+Code 60ba75d pushed to the instance (motion's gate 90c4eb7, landing rule, `rim.shapes: [cylinder, triangle]` from
+config; no `motion` override in the spec). Centre bin, one arm at a time, `drop_shift` [0, 0.03] outward = each arm on
+its own-side policy slot (release y ±0.03), cylinder and triangle, yaw 0 / 30°, 16 picks.
+
+| bins, bin, hand | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | by shape (binned / carried, EV) |
+|---|---|---|---|---|---|---|---|---|
+| +12, centre (y ±0.03), soft | 16/16 | 16 | 11/16 | 5 / 0 / 0 | +0.69 | 0 cm, +6 cm | −91…+63 mm (median +30) | cylinder 3/8 (+0.38), triangle 8/8 (+1.00) |
+
+- The gate chose inset 0 at rise +6 cm for every pick (release x 0.523), as offline.
+- All five cylinder misses are left-arm picks (right arm 3/3); the bench calls them `lost_in_carry`, but each was held
+  at carry height (0.15–0.16 m) to the end of the carry and rests 41–91 mm in front of the near wall: a rim miss.
+  On the side boxes at inset 0 (r8) misses came from both arms, so no arm rule is drawn from this.
+- Nothing left the counter and nothing reached another box: the centre box at +12 stays in the gate. Rim releases so far:
+  134 carried, off 0, other box 0. Sim d back on stock.
