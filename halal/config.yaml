@@ -66,9 +66,10 @@ perception:
     lane_half: 0.08           # half width of the strip around a bin's scene y in which its front wall is looked for
     heights: [0.020, 0.030, 0.040]   # above the counter: where a wall is probed
     depth_tolerance: 0.008
-    min_visible: 6            # lane cells that must be seen (wall or past it) to judge an x
-    min_fill: 0.7             # share of the seen lane a wall must fill (an object fills a third)
-    row_tolerance: 0.10       # a front wall this far from the row's median x is another wall (e.g. a far wall)
+    min_visible: 6            # cells of the three lanes together that must be seen (wall or past it) to judge an x for the row
+    min_fill: 0.7             # share of the seen cells a wall must fill (an object fills a third of a lane)
+    row_window: 0.03          # a bin's own front wall is looked for this close to the row's (a row turned 3 deg: 0.014) ...
+    min_lane_visible: 3       # ... and needs this many seen cells of its lane
     span_reach: 0.20          # how far to either side of the lane centre the wall ends are looked for
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
