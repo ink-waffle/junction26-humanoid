@@ -7,6 +7,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from halal.language import SHAPES
 from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
 from halal.policy.area import ObjectArea
@@ -110,6 +111,8 @@ class Looker:
             det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
             sure = det.confidence >= self.settings["min_detection_confidence"]
             bin_name = situation.bin_for(det.color, det.shape) if sure else None
+            if sure and bin_name is None and det.shape is None and any(situation.bin_for(det.color, shape) for shape in SHAPES):
+                log.info("the %s object at (%+.3f,%+.3f) stays: shape unknown under a shape-keyed instruction", det.color, *det.top[:2])
             limit = self.settings["max_attempts"] if det.visible > 0 else self.settings["blob_attempts"]
             if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
                 targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2]), self._neighbours(seen, everything)))
