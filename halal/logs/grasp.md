@@ -353,3 +353,20 @@ during descend and close are rejected. The policy's episode where the vertex-ali
 7.5 cm away (target at (+0.301, −0.098), right arm, heading +40°, neighbour at (+0.299, −0.023)): with the neighbour
 passed, the vertex-aligned plan is rejected and the default-hint cage plans with a clear heading. A neighbour at the
 minimum 8 cm blocks every default hint only in the forward-inward diagonal. Sim validation: sweep 19.
+
+## Sweep 16: the grippy-and-light DR corner (friction ×1.0–1.1, mass ×0.7–1.0)
+
+Hypothesis: grasps that rely on the object sliding into place between the fingertips are harder when it grips the
+counter and the fingers; every earlier sweep used the slippery-heavy corner. Stock sim, both arms, staggered release.
+
+| cell | ok / n |
+|---|---|
+| candidate grasps as the policy gets them: cube / cylinder / triangle (vertex-aligned) | 12/12, 12/12, 12/12 |
+| triangles at layout yaw −45 / −30 / 0 / 30 / 45°, vertex-aligned | 20/20 |
+| the same, default hints | 19/20 (one not lifted, toppled) |
+| the policy's repeatable miss at its true pose (yaw −39.6°), vertex-aligned | 12/12 |
+| the same pose, default hints | 12/12 |
+
+Verdict: no weakness in this corner; all carried objects out of the hand within the open phase (99/99). The policy's
+miss with default hints is still not reproduced by the bench (the policy's own run with the vertex-aligned grasp
+holds it); vertex-aligned triangles stand at 96/96 over sweeps 13a, 15 and 16.
