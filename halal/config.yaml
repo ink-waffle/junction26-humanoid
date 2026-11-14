@@ -173,7 +173,6 @@ motion:
     descend: 0.004
     lift: 0.004
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
-  release_thumb_lead_s: 0.0   # at release the thumb opens this long before the fingers (0 = together)
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
     cube: [cage, pinch]
     cylinder: [cage]
