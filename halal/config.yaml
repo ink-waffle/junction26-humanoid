@@ -224,6 +224,7 @@ policy:
   blob_attempts: 3            # the same for a coloured blob whose outline no shape fits (toppled: `visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
+  neighbour_radius: 0.09      # an object with another one this close is picked after the free-standing ones (a grasp knocked over a neighbour at 7.5 cm)
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
@@ -242,7 +243,7 @@ policy:
   grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
-    unknown: 0.02             # no calibration close: the value that never calls a full hand empty
+    unknown: 0.02             # no calibration close, no empty-hand error to subtract: a real empty hand then reads 0.06-0.12 = held (6 s lost), a full hand is never dropped
   release_check_after: [unknown]   # detected shapes (unknown = none) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
   release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
   release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
