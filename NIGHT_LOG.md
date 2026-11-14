@@ -6,6 +6,23 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 17:50
+- **Hand-in candidate unchanged: v16** (`sha256:ae811fa2…`). v16 on fresh seeds 1008–1015: 91/91, gate PASS 24/24
+  (178/178 over both seed sets). **Robot slot offered by the organisers** (videos sent, Wendy deployment
+  rehearsed); the team is going to the robot with **v18** (`:v18-multi`, amd64 `sha256:b99fd5dd…` + arm64, pre-check
+  pass, deployed through Wendy to a WendyOS arm64 VM and driven by the organisers' runner: 30 Hz, 0 clips).
+- **Real-look sim** (dev-only `REAL_SIM=...`: lying prisms, real colours, 70 mm taped cardboard boxes, bare table,
+  boxes moved; real words and the real fixed mapping), v16, fixed leg: real colours 31/31; lying prisms 27/31 (1 of
+  5 lying prisms sorted, nothing else harmed). With boxes 6 cm farther it found a defect: the policy replaced the
+  measured box positions by the scene file's once a pick had no plan, and released in front of a box. Fixed in v18.
+- **Perception on emulated D435i depth and a real-like table**: camera within 4 mm p95 under typical depth; bin
+  finder rebuilt for sideways rows and narrow gaps (was 4–10 cm off at ±7 cm, now ≤ 1.2 cm); rim height measured;
+  false `lying` calls were a refit bug (fixed).
+- **Reach**: a top-down release reaches boxes up to ~+6 cm beyond the scene file; the straight arm caps the object
+  centre at ~0.53 m. A higher release (`motion.release_rise`, off until measured) reaches +8 cm; +10 cm only onto the
+  rim. Real recordings put the boxes +5..+15 cm away: venue measurement requested.
+- v17 (= v16 + 70 mm walls + sideways grasp near a wall): fixed 31/31, known 25/25, then stopped for v18.
+
 ### Sat 14.11, 16:25
 - **Hand-in candidate: v16, proxy +21.38 of a possible 21.38 (87 of 87 objects), sim gate PASS on all 24 episodes
   through its container; soft-hand sim 31/31, gate PASS; no empty pick in any of the 32 episodes.**
