@@ -393,6 +393,50 @@ errors and no more: there the sim's +-7 deg per-object shift makes two oranges d
 do, and then no single gap exists. That case is not in the real foam (19.4 to 30.9 over 81 objects).
 `drop2_colours --sweep` and `perception_bench --repaint --rotate DEG` reproduce the rows.
 
+### Prisms lying on a side (`topface.roof`, `ObjectDetection.lying`)
+
+A prism on a rectangular side shows no top face, only a ridge; it used to come back as a fallback blob (`shape=None`,
+`visible=0`, about 1 cm off). Now every such blob is tried as a roof (`halal/perception/roof.py`): the plane with most
+points among those tilted 45 to 75 deg against the counter (120 three-point trials, 2 mm), a second one leaning against
+it in the remaining points, and a flatness test (of the points within 6 mm of the plane, 70 % must be within 2 mm: the
+side of a lying cylinder bends away). The ridge is where the two faces meet, or the first face's line at the 98th
+percentile of its heights. It is a lying prism when the ridge is 30 to 52 mm up, the faces 20 to 65 mm long, the first
+face at least 20 mm from eaves to ridge and 60 % of the blob on the faces. Reported as `shape="triangle"`,
+`lying=True`, `top` = middle of the ridge, `yaw` = ridge direction (mod 180 deg), `size` = ridge height as measured (no
+snap, no clip), `visible` = share of the blob on the faces. A lying cylinder is not named: it stays a blob.
+
+`motion` (the only set with toppled prisms: 237 lying still on the counter, two episodes, ground truth from the
+quaternion; the bench line "prisms lying on a side"):
+
+| | before | after |
+|---|---|---|
+| lying prisms found at all | 200/237 | 200/237 |
+| reported as lying prisms | 0 | 185 (0.781 of 237) |
+| ridge direction error, deg: median / p95 / max | none | 0.3 / 2.8 / 3.7 |
+| ridge centre xy, mm: median / max | blob centre, 10 to 14 median | 2.4 / 13.0 |
+| `size` (truth: sharp ridge at 45, rounded by the 2.5 mm fillet) | none | 43.3 median, 38.9 to 44.2 (p5 to p95) |
+| called lying without being one | none | 6 of 191 |
+| whole set: recall / precision / colour | 0.906 / 1.000 / 2536 of 2536 | same |
+| whole set: xy mean / p95 / max mm | 2.9 / 10.0 / 27.4 | 2.4 / 5.6 / 29.2 |
+| whole set: shape decided / right | 0.746 / 0.999 | 0.822 / 0.997 |
+
+The 6: five are matched to a cube 24 to 29 mm away from it (so they are something next to the cube, not the cube; the
+frames were not looked at, and the set's xy maximum of 29.2 is one of them), one to a triangle the ground truth counts
+as upright. The other eight sets are unchanged and contain no lying call.
+
+Mock world (the organisers' renderer only draws boxes and cylinders; prisms ray-cast from scratch code into its image,
+1 mm depth noise, no arms; 72 poses: 2 distances, 3 lateral positions, ridge every 15 deg):
+
+| ridge height | seen as lying | ridge direction, deg: median / p95 / max | ridge centre xy, mm: median / max | `size` minus true, mm |
+|---|---|---|---|---|
+| 45 mm | 69/72 | 0.3 / 1.2 / 1.5 | 0.9 / 1.7 | -0.6 (-1.3 to -0.2) |
+| 39 mm (real foam) | 71/72 | 0.3 / 1.0 / 1.4 | 0.8 / 1.4 | -0.5 (-1.2 to -0.2) |
+
+The misses are ridge directions 15 and 90 deg at the lateral positions: they stay fallback blobs.
+Not verified: real depth on foam (the 2 mm plane tolerance is sim noise; real stereo at 0.55 m is about 1.5 mm per
+pixel and smears edges), a prism touching a box or another object. Not looked into: the 15 lying prisms in `motion`
+that are found but stay blobs, and the 37 not found at all.
+
 ### Real object size
 
 `drop2_size`: the centre box (21 cm outer, scene.yaml) is the ruler. Its six outline corners, read by eye in one frame
