@@ -565,3 +565,38 @@ Verdict so far: nothing is confirmed (n ≤ 5 per cell). The opposed pinch holds
 with the lower grasp point (4/5); across the ridge only the deepest closure held (0.80: 2/2, shallower 1/6). The
 opposed pinch depends on `thumb_0`, which on the real hand did not follow below −0.26 in one of the organisers' recordings.
 `candidate_grasps(..., lying=True)` therefore still returns the unknown-shape cage.
+
+## Sweep 27: objects 3.5–4 cm before a bin's near wall, fingers sideways (stock sim, DR as it comes)
+
+Hypothesis: the cage with the fingers turned 90° (inward first, then outward) and the grasp point at 0.6 of the height
+plans where no default-hint grasp does, and the tilted hand (22–36°) still holds. Cubes and cylinders, centre 3.5–4 cm
+before the centre and side bins; the same grasp in the middle of the table; today's candidates as reference.
+
+| cell | planned | binned | spin / tilt (median) | centre to wall passing the rim, min |
+|---|---|---|---|---|
+| candidates (reference), at the wall | 0/8 | | | |
+| sideways cage, at the wall | 16/16 | cube 8/8, cylinder 8/8 | 14° / 20°, 4° / 19° | 39 mm |
+| sideways cage, middle of the table | 8/8 | cube 4/4, cylinder 4/4 | 24° / 21°, 13° / 29° | 38 mm |
+
+Grip signal as firm as the forward cage (largest joint error 0.064–0.138). Verdict: `cage_side` is the LAST candidate
+for cube, cylinder and unknown shape on both hand classes (it only runs when nothing else plans; the soft half is
+queued as s27b). Triangles are not covered (no cell).
+
+## Sweep 20: bin walls counted as 70 mm, and the low pick sequence with the candidates (stock sim, hard DR)
+
+| cell | cube | cylinder | triangle | centre to wall passing the rim, min | pick duration |
+|---|---|---|---|---|---|
+| `min_wall_height: 0.07`, organiser sequence | 12/12 | 12/12 | 12/12 | 37 mm | 8.07–8.25 s |
+| low sequence, walls as in the file | 12/12 | 12/12 | 12/12 + 16/16 at yaw ±45° | 28 mm | 6.10–6.23 s |
+| low sequence, `min_wall_height: 0.07`, `lift_height: 0.08` | 12/12 | 12/12 | 12/12 | 38 mm | 5.97–6.32 s |
+
+All 124 carried objects were out of the hand within the open phase; landing minus release point x −32…+65 mm, outward
+y −48…+44 mm (inside the box of sweeps 5 and 11); no release touched a rim.
+
+Verdict: `motion.min_wall_height: 0.07` is the default from here: 36/36, no cost in success, landing or time (the
+organiser sequence took 8.66 s in sweep 14). The policy's own transit checks (`bin_clearance`) see the taller wall too.
+The low sequence with vertex-aligned triangles stands at 40/40 triangles and 88/88 picks (sweep 14 lost 2 of 20
+default-hint triangles), 2.1 s faster per pick. It is NOT switched on here: nominal clearance of the held object over a
+70 mm rim is 14–17 mm before arm sag and tilt, fine in sim (0 touches in 36) but thinner than the head calibration
+error on the real robot, and it has never run on the soft-hand sim (queued: s20c). To use it:
+`sequences: [low, organiser]`, `lift_height: 0.08`.
