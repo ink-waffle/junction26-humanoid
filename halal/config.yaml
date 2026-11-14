@@ -259,6 +259,7 @@ policy:
   settle_s: 0.3               # hold after every motion before the head image is used
   max_attempts: 5             # picks started on one spot before the object is left alone
   retry_offsets: [[0.0, 0.0], [0.005, 0.0], [-0.005, 0.0], [0.0, 0.005], [0.0, -0.005]]   # pelvis xy added to the grasp point on the n-th pick of an object
+  last_resort_grasps: [cage_side]   # motion strategies a retry never starts with: they run only when no other candidate has a plan
   blob_attempts: 3            # the same for a toppled object: a prism lying on a side, or a coloured blob whose outline no shape fits (`visible` 0)
   replan_pause_s: 1.0         # hold this long before looking again when a look failed or no target had a plan
   detect_deadline_s: 5.0      # a detector call (0.03-0.1 s; a whole look 0.8 s under three sims) left behind after this long; doubles with every miss
