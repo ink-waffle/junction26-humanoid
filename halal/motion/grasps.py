@@ -24,6 +24,12 @@ class Grasp:
     squeeze_axis: tuple[float, ...] = ()                       # LEFT-order joint weights of a deeper squeeze; () = config default
 
 
+def right_hand(left: np.ndarray) -> np.ndarray:
+    """LEFT-order hand vector (7) as the right hand's mirror image: thumb_0 turns about palm y and keeps its sign, the rest flip."""
+    left = np.asarray(left, float)
+    return np.array([left[0], -left[1], -left[2], -left[5], -left[6], -left[3], -left[4]])
+
+
 def candidate_grasps(shape: str | None, yaw: float | None, side: str) -> list[Grasp]:
     """Grasps worth trying for this object with this arm, best first."""
     motion = config.load()["motion"]

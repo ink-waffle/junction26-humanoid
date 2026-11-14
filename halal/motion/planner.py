@@ -8,14 +8,14 @@ from typing import Any, Iterator
 
 import numpy as np
 
-from aaltonomous.baselines.classical.config import hand_postures, home_arm, mirror_left_to_right
+from aaltonomous.baselines.classical.config import hand_postures, home_arm
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
 from aaltonomous.baselines.classical.planner import Plan, Planner
 from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
 from halal import config
-from halal.motion.grasps import Grasp
+from halal.motion.grasps import Grasp, right_hand
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
@@ -24,6 +24,7 @@ BIN_PHASES = ("carry", "lower", "retreat")
 
 class PickPlanner(Planner):
     drop_shift = np.zeros(2)
+    near_inset = 0.0
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -35,10 +36,10 @@ class PickPlanner(Planner):
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
                   place_xy: tuple[float, float] | None = None, squeeze: float = 0.0) -> Plan:
         """Pick (closing `squeeze` rad past the grasp's closed posture) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
-        if place_xy is None and not self.reaches_bin(side, bin_name):
+        self.drop_shift = np.asarray(drop_shift, float)
+        if place_xy is None and not self._choose_near_inset(side, bin_name):
             return Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
-        self.drop_shift = np.asarray(drop_shift, float)
         with self._grasp_applied(grasp, side, squeeze), self._counter_under(target):
             if grasp.finger_yaw is None:
                 plan = self._plan_side_hints(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
@@ -53,16 +54,29 @@ class PickPlanner(Planner):
         self.__dict__.pop("_reach", None)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
-        """Whether this arm can hold the grasp point above the bin's release point at carry height (cached)."""
+        """Whether this arm can hold the grasp point over the bin's release point at carry and release height (cached)."""
         cache = self.__dict__.setdefault("_reach", {})
-        if (side, bin_name) not in cache:
+        key = (side, bin_name, self.near_inset)
+        if key not in cache:
             g, bins = self.cfg["grasp"], self.scene.cfg["bins"]
-            z = self.scene.counter_z + max(g["carry_height"], float(bins["wall_height"]) + self.height + 0.03)
-            cache[side, bin_name] = bool(self.kin.solve(side, np.r_[super().drop_xy(bin_name), z], self.home)[1])
-        return cache[side, bin_name]
+            carry = self.scene.counter_z + max(g["carry_height"], float(bins["wall_height"]) + self.height + 0.03)
+            xy = self.drop_xy(bin_name) - self.drop_shift
+            cache[key] = all(self.kin.solve(side, np.r_[xy, z], self.home)[1] for z in (carry, self._release_height()))
+        return cache[key]
+
+    def _choose_near_inset(self, side: str, bin_name: str) -> bool:
+        """Set the largest configured distance from the bin's near wall this arm reaches; False when none."""
+        for self.near_inset in config.load()["motion"]["drop_inset"]["near"]:
+            if self.reaches_bin(side, bin_name):
+                return True
+        return False
 
     def drop_xy(self, name: str) -> np.ndarray:
-        return super().drop_xy(name) + self.drop_shift
+        """Release point (pelvis xy): the point inside the bin's inset inner walls nearest the pelvis, plus the drop shift."""
+        inner = self.scene.mat_to_pelvis(np.array(self.scene.bin_inner_box(name)))[:, :2]
+        inset = np.array([self.near_inset, config.load()["motion"]["drop_inset"]["side"]])
+        low, high = inner.min(0) + inset, inner.max(0) - inset
+        return np.clip(np.zeros(2), low, np.maximum(low, high)) + self.drop_shift
 
     def bin_clearance(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray, margin: float | None = None) -> float:
         margin = config.load()["motion"]["bin_margin"] if margin is None else margin
@@ -145,7 +159,7 @@ class PickPlanner(Planner):
             p = np.asarray(grasp.point_in_palm, float)
             kin.offset = {"left": p, "right": p * MIRROR_Y}
         for name, left in grasp.postures.items():
-            self.post[name] = np.r_[np.asarray(left, float), mirror_left_to_right(left)]
+            self.post[name] = np.r_[np.asarray(left, float), right_hand(left)]
         if grasp.height_frac is not None:
             g["height_frac"] = grasp.height_frac
         self.post["closed"] = self._squeezed(self.post["closed"], grasp, squeeze)
@@ -160,7 +174,7 @@ class PickPlanner(Planner):
         """Closed posture (14,) pushed `squeeze` rad further along the grasp's squeeze axis, kept inside the filter's range."""
         axis = np.asarray(grasp.squeeze_axis or config.load()["motion"]["squeeze_axis"], float)
         margin = config.load()["motion"]["hand_limit_margin"]
-        deeper = closed + squeeze * np.r_[axis, mirror_left_to_right(axis)]
+        deeper = closed + squeeze * np.r_[axis, right_hand(axis)]
         return np.clip(deeper, self.spec.hand_lower + margin, self.spec.hand_upper - margin)
 
     def _check_finger_yaw(self, plan: Plan, side: str, finger_yaw: float) -> Plan:

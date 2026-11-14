@@ -22,7 +22,6 @@ import numpy as np
 import yaml
 
 from aaltonomous.baselines.classical import config as baseline
-from aaltonomous.baselines.classical.config import mirror_left_to_right
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
 from aaltonomous.baselines.classical.planner import Plan
 from aaltonomous.interface.env import AaltoEnv
@@ -34,7 +33,7 @@ from aaltonomous.sim.scene_client import SceneClient
 
 from halal import config
 from halal.motion import Grasp, PickPlanner, candidate_grasps
-from halal.motion.grasps import strategy_grasps
+from halal.motion.grasps import right_hand, strategy_grasps
 from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
@@ -248,7 +247,7 @@ class Bench:
         marks = {key: self._tick(pick.plan, phase, fraction) for key, (phase, fraction) in MARKS.items()}
         cols = ArmKinematics.sl(pick.case.side)
         error = trace["hand_q"][:, cols] - hand[:, cols]
-        left_order = (lambda e: e) if pick.case.side == "left" else mirror_left_to_right
+        left_order = (lambda e: e) if pick.case.side == "left" else right_hand
         record["finger_error"] = {key: np.round(left_order(error[t]), 4).tolist() for key, t in marks.items()}
         record["phases_s"] = {name: round((end - start) / 30.0, 2) for name, start, end in pick.plan.phases}
         if pick.name is None:
