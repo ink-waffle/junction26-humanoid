@@ -137,3 +137,15 @@ forward at the reach limit (median +46…+58 mm here), which is unexplained and 
   inner face (inset 0). Every miss came to rest on the counter in front of the box (0 points); nothing left the counter
   and nothing reached another box in 36 rim releases.
 - Shape decides: triangles 12/12, cylinders 10/12, cubes 2/12 (why the cube falls short was not traced).
+
+## Sweeps r4 (centre bin, +12 cm) and r5 (soft hand, side bins, +6 cm)
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|---|
+| +12, centre, stock | `rim` [0.02, 0.01, 0.0] | 4/12 | 4 | 0/4 | 4 / 0 | 0 cm, +6 cm | | all four on the rim |
+| +6, side, soft (`HAND_GAINS` 1.5, 0.2, 0.0075) | rise list | 36/36 | 35 | 35/35 | 0 / 0 | 6 cm, +6 cm | −31…+60 mm (median +2) | 29 mm, 0 contacts |
+
+- +12 cm centre: only cubes planned (pinch candidate, inset 0), none went in; cylinders and triangles "arm cannot
+  reach the center bin". The centre box at +12 cm is out of reach for every release.
+- Soft hand at +6 cm: the risen release behaves as on the stock hand (stock: 36/36, −34…+56 mm, 26 mm). One cube was
+  lost during the carry (a grasp matter; it is not in the 35).
