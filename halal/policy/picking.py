@@ -73,8 +73,8 @@ class PickChooser:
                 cancelled: Cancelled) -> Pick | None:
         det = target.detection
         shifts = self.slots.candidates(target.bin_name, released)
-        attempts = [(side, grasp, shift) for side in self._arms(target)
-                    for grasp in candidate_grasps(det.shape, det.yaw, side) for shift in shifts]
+        attempts = [(side, grasp, shift) for shift in shifts for side in self._arms(target)
+                    for grasp in candidate_grasps(det.shape, det.yaw, side)]   # the next free slot with any grasp first
         for side, grasp, shift in attempts:
             if cancelled():
                 break
