@@ -1046,3 +1046,28 @@ for the cross arm: 2-4 s), and whole plans that fail late (a hand over a box rim
 front of a box: 2-4 s each, the same at nominal boxes). Not done: a cache across looks keyed coarser than a millimetre
 (would change answers at the reach boundary), planning the retreat once (it starts from the end of each candidate's own
 lower phase, so it is not shared).
+
+## Carry corridor in physics: realsim soft A/B on sim b (corridor on vs off, same seeds)
+
+Images `halal/policy:corr-on` / `corr-off`, built from main b385f06, differing only in `carry_corridor.enabled`. Realsim
+robot6edge24 with every prism lying (`lying.fraction` 1.0, else as robot6edge24: camera error, counter +2 cm y / +1 cm z,
+table edge 0.24, resting start, `--clear-hands 0.045`), soft hands 1.5 / 0.2 / 0.0075, fixed leg, seeds 1000-1007,
+DR train. "Rerouted" = side box from beyond the centre box's side (the bench's crossing class); "carry loss" = held
+after the lift (grip ≥ 0.15), then the hand empty before the release.
+
+| leg | objects | wrong box | counter | off | carry losses (rerouted held carries) | rerouted picks, mean plan |
+|---|---|---|---|---|---|---|
+| corridor on | 24/26 | 0 | 1 | 1 | 1 (0 of 12) | 10.90 s (18 picks) |
+| corridor off | 22/26 | 0 | 4 | 0 | 2 (1 of 12) | 10.46 s (20 picks) |
+
+- On, seed 1003: the yellow prism lying at y −0.120, left arm, `ridge_opposed`, bound for the left box (v24's
+  wrong-box case), held 0.644 and binned. Off, the same object came up empty twice and stayed on the counter.
+- On's carry loss: a lying prism bound for the centre box from y +0.05 (not rerouted) slipped and fell into the centre box
+  (scored correct). Off's: seed 1003's cube (not rerouted) and seed 1005's prism lying at y +0.19 bound for the right
+  box (rerouted when on), lost in the carry onto the counter.
+- On's "off": seed 1003's red prism touching its yellow neighbour, picked "as if it stood alone" (fingers −7 mm), empty
+  after the lift, the arm went home: no carry ran. Off made the same "as if alone" pick and held it: chance, not the route.
+- Same first picks of an episode, on vs off: +0 to +0.6 s, +1.1 s (seed 1003's lying prism from y −0.12), +3.2 s (seed
+  1000's cylinder from y +0.18 to the right box, the far cross-body case the offline bench put at +2.9 s).
+- Gate passed in both (0 clips, rt_hz ≥ 122). n is small (12 rerouted held carries a leg): the A/B shows no new loss from
+  the route, not a measured slip rate. Verdict: on (`e75413a`).
