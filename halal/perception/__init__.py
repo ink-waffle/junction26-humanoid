@@ -20,6 +20,7 @@ class ObjectDetection:
     yaw: float | None = None    # rad about pelvis z: cube = a face normal, triangle = apex direction; None = unknown
     confidence: float = 1.0     # probability that this is a real object with this colour and shape
     pixels: int = 0
+    visible: float = 1.0        # fraction of the top face the camera saw; low = centre and yaw rest on little evidence
 
 
 class Detector(Protocol):
@@ -28,7 +29,8 @@ class Detector(Protocol):
     def detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]: ...
 
 
-DETECTORS: dict[str, str] = {"baseline": "halal.perception.detectors.baseline:BaselineDetector"}
+DETECTORS: dict[str, str] = {"baseline": "halal.perception.detectors.baseline:BaselineDetector",
+                             "topface": "halal.perception.detectors.topface:TopFaceDetector"}
 
 
 def make_detector(name: str) -> Detector:
