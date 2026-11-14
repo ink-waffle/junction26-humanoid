@@ -6,7 +6,7 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 perception:
   detector: topface           # key of halal.perception.DETECTORS
   calibration:                # head camera pose per episode (halal.perception.calibration)
-    agree_within: 0.010       # scene-anchored and hand-given pose this close at the object band: the scene file is believed
+    agree_within: 0.025       # hands and scene anchor this close at the object band: the scene file is believed (see log)
     max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
@@ -32,6 +32,15 @@ perception:
       min_agreement: 0.8      # fraction of the observed profile the best shift must explain
     hands:                    # own forearms and hands against their kinematic model -> camera pose in the arm frame
       gates: [0.04, 0.03, 0.02, 0.012, 0.008, 0.008]   # match distance of the successive iterations
+      starts:                 # camera shifts the descent is started from, in turn, while the result covers too little of the model
+        - [0.0, 0.0, 0.0]
+        - [0.015, 0.0, 0.0]
+        - [-0.015, 0.0, 0.0]
+        - [0.0, 0.015, 0.0]
+        - [0.0, -0.015, 0.0]
+        - [0.0, 0.0, 0.015]
+        - [0.0, 0.0, -0.015]
+      settled_coverage: 0.8   # a result with depth on this share of the visible model needs no further start
       min_points: 300
       min_facing: 0.2         # cosine between a model normal and the view ray for the point to count as visible
       cell_px: 6              # image cell in which only the nearest model points are kept (self-occlusion)
@@ -39,13 +48,18 @@ perception:
       border_px: 25           # model points this close to the image edge may have their true match outside it
       pad_px: 50
       pixel_step: 2
-      floor_clearance: 0.015  # depth points this close to the counter plane are not hand
+      open_curl: 0.5          # rad: with index or middle fingers bent further the finger links are left out of the model
+      floor_clearance: 0.065  # only depth this far above the counter is arm evidence: nothing lying on it reaches there
       prior_turn_deg: 3.0     # how far the camera may plausibly be from the pose it starts at
       prior_shift: 0.02
       noise: 0.003            # point-to-surface error of one match ...
       independent_points: 50  # ... of which this many are worth as independent (model errors are systematic)
-      max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted
-      max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band
+      max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted,
+      max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band,
+      min_coverage: 0.5       # nor one with depth on less than this share of the visible model (it matched something else),
+      min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
+      max_turn_deg: 6.0       # nor one that moves the camera further than a head calibration can be wrong
+      max_shift: 0.05
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
@@ -59,11 +73,14 @@ perception:
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
   topface:                    # halal.perception.detectors.topface
+    settled_evidence: 2       # the camera fit is retried at later looks until arms were seen (CameraFit.evidence)
+    still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
     depth_median: 3           # median filter on the depth image before anything else, px
     workspace_x: [0.12, 0.75] # objects are looked for on the counter inside this pelvis-frame box ...
     workspace_y_half: 0.50    # ... and outside the bin footprints
     bin_margin: 0.008         # points this close to a bin footprint are not objects on the counter
     min_separation: 0.03      # two fits closer than this are one object
+    window_px: 80             # half side of the image window that holds everything of one object
     min_support_px: 40        # object pixels needed to name a colour
     overhang_band: [0.008, 0.035]   # above the object top: where a bin rim or a wall would stand, a hovering thumb does not
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
@@ -75,16 +92,19 @@ perception:
       height_band: 0.006      # top-face pixels: this close to the object height above the counter
       open_px: 3
       min_px: 60
+      claim_radius: 0.034     # top-height pixels this close to a fitted centre belong to that object, not to a further one
     outline:
       cell: 0.001             # top-plane grid pitch
       view_cells: 112         # evidence grid side (even)
       outline_cells: 70       # outline mask side (even): covers the cube diagonal
       depth_tolerance: 0.004  # along the ray: nearer than this to the top plane counts as top face
       coarse_yaw_deg: 6       # yaw step of the half-resolution search, refined to 1 deg
+      max_per_view: 3         # objects extracted from one view (touching objects share a blob)
+      min_score: 0.02         # outline score (share of its area) the first object of a view needs ...
+      min_next_score: 0.15    # ... and every further one: leftovers of the first must not become objects
       refine_cells: 3
       support_coverage: 0.99  # outline mask value above which a seen top-face cell counts as support
     color:
-      window_px: 80           # half side of the image window searched for an object's pixels
       body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
       body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
@@ -100,6 +120,16 @@ perception:
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
     heldout_every: 4          # seeds with seed % n == n - 1 are held out: never tuned on
     resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
+    held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
+    confidence_edges: [0.2, 0.34, 0.5, 0.8]
+    decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
+    armless_seed: 7
+    armless_depth_noise_mm: 1.0
+    armless_arm_q:            # no arm is drawn; FK of these puts the hands over the band, at home, low, and out of view
+      - [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      - [0.0, 0.35, 0.0, -0.5, 0.0, 0.0, 0.0, 0.0, -0.35, 0.0, -0.5, 0.0, 0.0, 0.0]
+      - [0.0, 0.1, 0.0, -0.15, 0.0, 0.0, 0.0, 0.0, -0.1, 0.0, -0.15, 0.0, 0.0, 0.0]
+      - [0.0, 0.65, 0.5, -0.5, 0.0, 0.0, 0.0, 0.0, -0.65, -0.5, -0.5, 0.0, 0.0, 0.0]
     min_inside: 0.9           # top-face fraction inside the image, below it the view is `border`
     occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`

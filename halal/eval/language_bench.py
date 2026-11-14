@@ -1,6 +1,7 @@
 """Instruction parsers against the held-out paraphrase benchmark: exact-mapping accuracy and expected points per object.
 
     python -m halal.eval.language_bench --split dev --failures 3
+    python -m halal.eval.language_bench --split test --file halal/eval/paraphrases_fresh.yaml
 """
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ import argparse
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 
 from halal.eval import paraphrases
 from halal.language import PARSERS, parse_instruction
@@ -69,7 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--split", default="dev", choices=("dev", "test", "all"))
     ap.add_argument("--threshold", type=float, default=0.5, help="confidence below which the robot would not act")
     ap.add_argument("--failures", type=int, default=0, help="print up to N distinct failing entries per category")
+    ap.add_argument("--file", type=Path, help="another benchmark file, e.g. halal/eval/paraphrases_fresh.yaml")
     args = ap.parse_args(argv)
+    if args.file:
+        paraphrases.use(args.file)
     tallies, failures = run(args.parser, None if args.split == "all" else args.split, args.threshold)
     report(tallies)
     for category, rows in failures.items():

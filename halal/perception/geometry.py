@@ -49,15 +49,17 @@ class Camera:
         z = np.where(sampled > 0, sampled * MM, np.nan)
         return (rays * z[..., None]) @ self.T[:3, :3].T + self.T[:3, 3]
 
-    def surface_labels(self, depth_mm: np.ndarray, points: np.ndarray, tolerance: float) -> np.ndarray:
-        """Per point of a hypothetical surface: +1 the depth image shows it, -1 it sees past it, 0 hidden or unknown."""
+    def surface_labels(self, depth_mm: np.ndarray, points: np.ndarray, tolerance: float, rival: np.ndarray | None = None) -> np.ndarray:
+        """Per point of a hypothetical surface: +1 the depth image shows it, -1 it sees past it or a `rival` pixel, 0 hidden."""
         uvz = self.project(points)
         u, v = np.round(uvz[:, 0]).astype(int), np.round(uvz[:, 1]).astype(int)
         inside = (u >= 0) & (u < depth_mm.shape[1]) & (v >= 0) & (v < depth_mm.shape[0]) & (uvz[:, 2] > 0)
-        seen = np.zeros(len(points))
+        seen, taken = np.zeros(len(points)), np.zeros(len(points), bool)
         seen[inside] = depth_mm[v[inside], u[inside]] * MM
+        if rival is not None:
+            taken[inside] = rival[v[inside], u[inside]]
         gap = np.where(seen > 0, seen - uvz[:, 2], -np.inf)
-        return np.where(np.abs(gap) <= tolerance, 1.0, np.where(gap > tolerance, -1.0, 0.0))
+        return np.where((np.abs(gap) <= tolerance) & ~taken, 1.0, np.where((gap > tolerance) | taken, -1.0, 0.0))
 
     def moved(self, rotation: np.ndarray, shift: np.ndarray) -> Camera:
         """The camera turned about its own optical centre by a pelvis-frame rotation, then shifted."""

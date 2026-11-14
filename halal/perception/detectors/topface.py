@@ -52,30 +52,29 @@ class TopFaceDetector:
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
-        seeds = self._seeds(cloud, height, counter)
-        faces = self._distinct([self.fitter.fit(depth, camera, seed, counter) for seed in seeds])
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
+        faces = self._faces(depth, camera, cloud, height, counter, rgb, gains)
         found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
         return [d for d in found if d.confidence >= self.cfg["min_confidence"]]
 
     def _camera(self, obs: Mapping[str, Any]) -> Camera:
-        """The episode's camera pose: fitted at the first look that allows it, nominal until then."""
+        """The episode's camera pose: refitted while no arm has been seen, replaced only by a fit with better evidence."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
             self.pose = None
         self.last_t = t
-        if self.pose is None:
-            fit = self.calibration.fit(obs["head_depth"], self.nominal, obs["arm_q"], obs["hand_q"])
-            if fit.source == "nominal":
-                return fit.camera
-            self.pose = fit
+        if self.pose is None or self.pose.evidence < self.cfg["settled_evidence"]:
+            still = np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"]
+            fit = self.calibration.fit(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]) if still else None)
+            if self.pose is None or fit.evidence > self.pose.evidence:
+                self.pose = fit
         return self.pose.camera
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
         """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
-        if self.pose is None or self.pose.source == "scene":
-            return scene_layout(self.scene)
-        return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), self.pose.source)
+        if self.pose is None or self.pose.source != "hands":
+            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source if self.pose else "nominal")
+        return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), "hands")
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
@@ -86,13 +85,39 @@ class TopFaceDetector:
             ok &= ~np.all(np.abs(cloud[..., :2] - centre) < half, axis=-1)
         return ok
 
-    def _seeds(self, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
-        """Rough top-plane centres of blobs at object-top height on the counter."""
-        c, tall = self.cfg["seed"], self.scene.object_height()
-        top = (np.abs(height - tall) < c["height_band"]) & self._on_counter(cloud)
-        mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, np.ones((c["open_px"], c["open_px"]), np.uint8))
+    def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit,
+               rgb: np.ndarray, gains: np.ndarray) -> list[TopFace]:
+        """Top faces of all objects: per colour first (touching objects of two colours part there), then what is left."""
+        c = self.cfg["seed"]
+        top = (np.abs(height - self.scene.object_height()) < c["height_band"]) & self._on_counter(cloud)
+        kernel = np.ones((c["open_px"], c["open_px"]), np.uint8)
+        mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+        colour = np.full(mask.shape, -1, np.int8)
+        colour[mask > 0] = self.colors.pixel_classes(rgb[mask > 0], gains)
+        faces: list[TopFace] = []
+        for index in range(len(self.cfg["color"]["basins"])):
+            own = cv2.morphologyEx((colour == index).astype(np.uint8), cv2.MORPH_OPEN, kernel)
+            rival = (colour >= 0) & (colour != index)
+            faces += [face for seed in self._seeds(own, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter, rival)]
+        faces = self._distinct(faces)
+        for face in faces:
+            window = self._window(face, camera)
+            mask[window][np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
+        rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
+        return self._distinct(faces + rest)
+
+    def _window(self, face: TopFace, camera: Camera) -> tuple[slice, slice]:
+        """Image rows and columns that contain everything of the object at the fitted centre."""
+        reach = self.cfg["window_px"]
+        u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
+        return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
+
+    def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
+        """Rough top-plane centres of the blobs left in the top-height mask."""
+        tall = self.scene.object_height()
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= c["min_px"]]
+        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count)
+                 if stats[i, cv2.CC_STAT_AREA] >= self.cfg["seed"]["min_px"]]
         return [blob - (counter.height(blob) - tall) * counter.normal for blob in blobs]
 
     def _distinct(self, faces: list[TopFace]) -> list[TopFace]:
@@ -110,15 +135,12 @@ class TopFaceDetector:
 
     def _body(self, face: TopFace, camera: Camera, rgb: np.ndarray, cloud: np.ndarray, height: np.ndarray) -> tuple[np.ndarray, int]:
         """Colours of the pixels on the object (footprint, counter to top) and how many pixels stand just above its top."""
-        c = self.cfg["color"]
-        u, v = np.round(camera.project(face.best.centre[None])[0, :2]).astype(int)
-        rows = slice(max(v - c["window_px"], 0), max(v + c["window_px"], 0))
-        cols = slice(max(u - c["window_px"], 0), max(u + c["window_px"], 0))
-        over = np.linalg.norm(cloud[rows, cols, :2] - face.best.centre[:2], axis=-1) < c["body_radius"]
-        tall = height[rows, cols]
+        c, window = self.cfg["color"], self._window(face, camera)
+        over = np.linalg.norm(cloud[window][..., :2] - face.best.centre[:2], axis=-1) < c["body_radius"]
+        tall = height[window]
         low, top = self.cfg["overhang_band"]
         overhang = over & (tall > self.scene.object_height() + low) & (tall < self.scene.object_height() + top)
-        return rgb[rows, cols][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
+        return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
     def _describe(self, face: TopFace, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> ObjectDetection:
         """Turn one top-face fit into a detection with honest shape, yaw and confidence."""
