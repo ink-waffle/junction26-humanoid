@@ -17,6 +17,7 @@ swaps the file). Code: `halal/ops/real_sim.py`.
 | `boxes` | 70 mm walls, tape colour outside, 0.5 mm cardboard panels on the inner faces and floor | scene dict + the scene config classes rebuilt with the extra panels |
 | `table` | no printed grid mat, grey glossy table | same rebuild |
 | `offsets` | counter +1 cm in z, box row +6 cm in x (real: 0 to +2 cm, +5 to +10 cm) | scene dict |
+| `camera` | head camera pose error: calibration.yaml pose x (rotation vector, translation) in the optical frame, as `head_fit.py` writes it; default = realdata B7's six-parameter fit | the camera config's mount offset, before the scene is built (DR's pose jitter rides on top; the policy keeps reading calibration.yaml) |
 | real words | "orange" / "purple" in every instruction; sort_fixed = yellow left, purple center, orange right, for the sentence AND the scoring | client side: `python -m halal.eval.proxy --evaluator halal.eval.real_eval` |
 
 Not modelled: the real prism's proportions (45 x 45 mm, ridge about 39 mm; the sim prism is 52 mm across with the
@@ -48,9 +49,34 @@ All: image through the proxy (`serve_image.sh`), `sort_fixed`, seeds 1000-1007 (
 | rs-lying | v16 | `lying`, fraction 1.0 (5 lying prisms) | 27/31 | +3.38 ± 0.99 | 0 | 0 | PASS | 4 lying prisms: seen as `lying triangle` with the right colour every time, 3 picks each with `cage_lying`, grip score 0.000 after every lift, then left; 1 of 5 picked and sorted (seed 1007) |
 | rs-colours | v16 | `colours` | 31/31 | +3.88 ± 0.78 | 0 | 0 | PASS | none |
 | rs-boxes | v16 | `boxes` | 31/31 | +3.88 ± 0.78 | 0 | 0 | PASS | none |
+| rs18-all-soft | v18 | all (with offsets), soft hands, real words | 23/31 | +2.88 ± 0.60 | 0 | 0 | PASS, 4 time limits | 3 lying prisms (3 empty `cage_lying` picks each); 5 purple objects bound for the center box never planned ("no plan for any of N targets" until the time limit: seeds 1001 x2, 1002, 1003, 1005) |
+| rs18-nooff-soft | v18 | lying, colours, boxes, table, soft hands, real words | 28/31 | +3.50 ± 0.87 | 0 | 0 | PASS | the 3 lying prisms, same way; nothing else |
+| rs19-all-soft | v19 (ede4203ebfb1) | all (with offsets), soft hands, real words | 28/31 | +3.50 ± 0.87 | 0 | 0 | PASS, done 8/8 | the 3 lying prisms, same way; every purple object reached the shifted center box at the first try |
+
+v18 with offsets: every look says `layout from hands`, releases at x 0.493 to 0.513, all 23 released objects landed
+inside (the scene-file fallback of v16, below, is gone). The 5 purple objects are an effect of the offsets alone: the
+same objects plan at the first look when the row stands where the scene file says. Three other purple objects did go
+to the shifted center box (releases at +0.493 / +0.503, -0.030). v18's server log does not print the planner's reason
+per attempt, so the leg could not name the cause. Found by the reach engineer: `reaches_bin` tested only the inset left over from
+the previous plan, so after one side-box pick at +6 cm the center box looked out of reach; fixed in v19 (row above).
 
 Lying prisms: a failed pick pushes the prism 1 to 8 cm; none left the counter, none entered a wrong bin, no
 neighbour was lost, and each costs 25 to 30 s.
+
+## Robot-night variant (camera error; table 2 cm to the robot's left, counter 1 cm up)
+
+After the first real runs (v18 refused everything, then missed a cube and released in front of a box). All features,
+soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; configs `robot6.yaml` (camera -7.4 / -1.9 /
+-0.4 deg and -4.0 cm in optical y: the scene sits about 60 px higher in the head image, as in the recordings) and
+`robotmild.yaml` (rotation only, -2.2 / -1.8 / -1.4 deg) in `/data/scratch/realsim/`.
+
+| Leg | Image | Camera error | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs20-robot6 | v20 (b7468d515c78) | six-parameter | 7/31 | +0.88 ± 1.36 | 0 | 0 | PASS, 7 time limits | hand fit rejected on `turn` in all 62 verdicts, `layout from nominal` on all 86 looks; objects seen 3 to 6 cm too far: 27 empty picks that shove them forward, 198 refused options; 24 objects left on the counter |
+| rs21-robot6 | v21 (0f7ca3635d25) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 30 of 30 hand fits `trusted`, `layout from hands` on all 184 looks; 7 empty picks, 14 refused options; 2 of 3 lying prisms sorted with `ridge_opposed` (left arm), the third got 3 empty right-arm `cage_lying` picks |
+
+Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
+and release nothing without a grip reading.
 
 ## Filmed episodes (v16, soft hands `1.5,0.2,0.0075`, real words; `real_eval --record-video NAME`)
 

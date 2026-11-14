@@ -906,6 +906,77 @@ Wherever a home fit is believed, the camera is now exactly what it was before H1
 stays: `lowhands` at +3 deg is the case where the home fit itself does not converge (H15). There the lone low fit (29 to 36 mm) is
 used instead of nominal (37 to 50 mm), about equal. Regression matrix (the H15 list): identical to the digit again, `--armless` 0.
 
+**H17. "outline:" log line** (`halal/perception/outline.py`, `perception.outline`; robot.md fix 6, step 0, log only). At every still look
+with a hand-fit attempt the detector logs, per hand, the image shift that best lays the black links of the FK-posed model onto the
+dark pixels (value < 60) through the nominal camera. It gives the shift in px and deg, the on-dark share and mean distance before
+and after, the points, and how far the two hands disagree. That is the head error at the hands even when the depth fit is
+rejected. The search is ±60 px in 4 px steps, then every pixel around the best: about 10 ms. `real_replay`'s RGB-only looks use the
+same code per hand; its outline settings moved to `perception.outline`. Frozen run-1 picture: left (−1, −34) px, on dark
+0.91 -> 0.96; right (+63, −2) px, 0.60 -> 0.71. The hands disagree by about 70 px, so that picture cannot vouch for a correction.
+Matrix: identical (the H15 list). Step 1 (the outline as a camera source) waits for this line from the robot.
+
+**H18. Turned starts for the hand fit** (`calibration.hands.turned_starts`: pitch ±3 and ±6 deg). The shifted starts did not reach
+the right minimum when the hands are low and the head pose is off by +3 deg (H15: `lowhands`, typical, 2 of 20 believed).
+`SelfCalibration.hand_fit` now runs a second descent from camera turns, but only when the fit from the shifted starts fails a
+check, and takes it only if it passes all of them. So no fit believed before changes. The calibration bench and `real_replay`
+use the same two passes.
+
+| `lowhands`, head pose turned (deg), depth | believed, shifted starts only | believed now | band mm of believed fits now |
+|---|---|---|---|
+| +3, clean | 16 of 20 | 20 | 3.0 / 17.8 / 18.4 (the 18 mm fits were believed before too) |
+| +3, typical | 2 of 20 | 20 | 2.4 / 3.5 / 4.1 (turns of ±3 deg alone: 12 of 20) |
+| +5, clean / typical | 8 / 2 of 20 with ±3 deg turns | 20 / 20 | 2.3 / 16.7 / 17.0, 2.9 / 6.3 / 9.9 |
+| −3, −5 | 20 / 20 | unchanged | |
+
+- Home fits with a turned head pose (`dr_train` dev, `--shift real`, typical, ±3 / ±5 deg): all 90 believed as before, identical.
+- Sequence (H16) at +3 deg, `lowhands` gates 0.13 / 0.14, typical: the camera used went from 39.0 / 43.1 / 45.3 (home fits not
+  converging, the low fit used) to 2.3 / 3.4 / 3.9 mm, with the home fit used in 17 of 17 and 14 of 14.
+- Matrix: every perception bench identical; `--armless` 0.
+- Calibration bench `lowhands --shift real --depth bad`: 17 -> 20 believed. The three new fits are 1.3, 5.1 and 8.3 mm off (were 33,
+  29, 33, rejected; nominal 17 to 25).
+- `motion`, calibration bench on all 1017 frames: 813 -> 830 believed. Of the 17 new fits, 10 are better than nominal and 7 worse,
+  3 of them by 6 to 7 mm. Those frames have moving arms (no stillness test in that bench); the detector never fits them, and its
+  `motion` result is identical.
+
+**H19. The episode keeps the last bin row it found** (red team, assumptions.md row 4). `BinFinder.find` used to return the scene
+file's bins on any look that found no row, under a layout source of hands or nominal, so nothing downstream could tell. It now
+returns None there. The detector keeps the last row found in the episode, with its rim, and places it where this look's camera
+puts the same pixels (`camera.deproject(then.project(..))`). So a row seen through the nominal camera at the start is carried
+over into the hand camera of a later look. Only with no row found yet in the episode are the file's bins used.
+`SceneLayout.bins_from` says which (`seen` | `kept` | `scene`); the detector logs every change, and file bins without the camera
+anchored to the file are a WARNING. The calibration bench counts frames with no row instead of scoring the file's bins.
+
+| | bins from | bin centre error mm, median / p95 / max |
+|---|---|---|
+| `dr_train` dev `--shift real` typical: a full look, then one with no depth beyond x 0.40 (nominal camera), before | scene file | 67.9 / 67.9 / 67.9 |
+| same, now | kept 90 of 90 | 3.5 / 6.7 / 7.9 |
+| the blind look alone (no row ever seen), before and now | scene file (now with the warning) | 67.9 / 67.9 / 67.9 |
+
+The matrix is identical apart from the new label; every non-anchored look in it finds its row. `realsim_looks` (all 2582 frames,
+typical and bad; `--still` bad) is identical too, and its row was found at every look. So the 109 mm bin of that set (seed 1006,
+tick 570, bad depth, arms moving) is a row found in the wrong place, not this fallback. One such look out of 2574, none among the
+1318 still looks.
+
+**H20. The warm split only from seen objects clear of the bins, moved only under a real yellow** (red team, assumptions.md row 8).
+The episode's red / yellow boundary was taken once from every draft, blobs and box tape included, and then kept. Two oranges at
+22 and 31 deg with no yellow, or tape at 20 and an orange at 31, split at about 26. The 31 deg orange was then yellow at confidence
+1.0 for the episode. Now only drafts with a seen face (`visible` > 0: top faces and lying prisms, no blobs) at least
+`warm_split.bin_clearance` (3 cm) from every bin footprint of the look vote. A moved boundary needs the upper side of its gap in
+the yellow basin (>= 39 deg); otherwise the split is None and the basins with their taper decide. The cases with the real
+classifier:
+- 22 + 31 or 20 + 31: None, and 31 is red at 0.82 (was a 26 deg split, 31 yellow at 1.0);
+- 22 + 31 + 55: 36, all right at 1.0;
+- the drop-2 sweep's moved splits (+5 to +15 deg, yellow above): unchanged.
+
+| | before | after |
+|---|---|---|
+| drop 2 (`drop2_colours --sweep`, cached first frames) | purple 44/44, orange 81/81, yellow 62/62, sweep as in the table above | identical |
+| robot frame (frozen run 1, five objects) | split 36, all right at 1.00 | identical |
+| `--repaint` `dr_train` (orange right of matched), `--rotate` 0 / 5 / 10 | 147, 122, 94 of 158 | identical |
+| `--repaint` `motion` | orange 632 of 653 (21 wrong, 20 at confidence >= 0.5) | 648 of 653 (5 wrong, 4) |
+| `--repaint` `lookpose` | 57 of 66 | identical |
+| matrix (plain sim) | | identical |
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
@@ -936,9 +1007,8 @@ Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-ou
 
 ## Next
 
-1. `lowhands` with the head pose turned +3 deg (the robot's sign): the hand fit does not converge in 4 of 20 clean and 18 of 20
-   typical frames (fits 17 to 39 mm off, rejected by coverage); at home (`dr_train`, +-3 / +-5 deg) it does. Starts are camera shifts
-   only; turned starts (+-3 deg pitch) are untested.
+1. Step 1 of the outline (a camera source "outline" between hands and nominal): design in the orchestrator's thread. It waits
+   for real "outline:" lines: whether left and right agree on the robot (they disagree by about 70 px on the frozen picture).
 2. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
    first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
 3. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger

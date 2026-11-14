@@ -104,7 +104,7 @@ class ColorClassifier:
         return (red[1] + (yellow[0] - red[1]) % 360.0 / 2) % 360.0
 
     def split(self, colours: Sequence[np.ndarray]) -> float | None:
-        """Hue (deg) where red ends and yellow begins, from the one clear gap between the object colours of a look; None without one."""
+        """Hue (deg) where red ends and yellow begins, from the one clear gap between a look's object colours that has a real yellow above it."""
         c, (start, red_end), (yellow_start, end) = self.cfg["warm_split"], self.cfg["basins"]["red"], self.cfg["basins"]["yellow"]
         up = lambda hue: (hue - start) % 360.0
         vivid = [x for x in colours if chromas(x) >= self.cfg["chroma_range"][0] and x.max() >= self.cfg["min_value"]]
@@ -114,7 +114,8 @@ class ColorClassifier:
         gaps = [(lo, hi) for lo, hi in zip(warm, warm[1:]) if hi - lo >= c["min_gap"] and least(lo) <= most(hi)]
         if any(least(lo) <= 0.0 <= most(hi) for lo, hi in gaps):
             return self.boundary()
-        return (sum(gaps[0]) / 2 + start) % 360.0 if len(gaps) == 1 else None
+        yellow_above = len(gaps) == 1 and gaps[0][1] >= up(yellow_start)   # two oranges, or tape and an orange, must not move it
+        return (sum(gaps[0]) / 2 + start) % 360.0 if yellow_above else None
 
     def basins(self, split: float | None) -> Mapping[str, tuple[float, float]]:
         """The configured basins, red and yellow meeting around `split` when the episode has one."""

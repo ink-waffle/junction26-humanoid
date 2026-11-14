@@ -32,6 +32,7 @@ class SceneLayout:
     bins: Mapping[str, np.ndarray]      # "left" | "center" | "right" -> centre xy of the bin footprint
     source: str                         # what fixed the camera. "scene": the file's layout | "hands", "nominal": as that camera sees it
     rim_z: float | None = None          # highest bin rim seen (pelvis z); None = not measured, counter_z + wall height
+    bins_from: str = "scene"            # "seen" at this look | "kept": seen at an earlier look of the episode | "scene": the file's
 
 
 class Detector(Protocol):

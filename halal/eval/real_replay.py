@@ -10,7 +10,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -23,6 +23,7 @@ from halal.perception.color import ColorClassifier, chromas
 from halal.perception.detectors.topface import TopFaceDetector
 from halal.perception.geometry import MM, Camera
 from halal.perception.hands import LINKS
+from halal.perception.outline import SIDES
 
 Row = dict[str, Any]
 HZ = 30
@@ -102,12 +103,12 @@ def arm_returns(depth: np.ndarray, camera: Camera, points: np.ndarray, links: np
     return out
 
 
-def dark_returns(obs: Row, camera: Camera, points: np.ndarray, c: Mapping[str, Any]) -> float | None:
+def dark_returns(obs: Row, camera: Camera, points: np.ndarray, pad_px: int, dark_value: float) -> float | None:
     """Share of the dark pixels in the arm model's image box that returned depth: needs no camera fit; None without dark pixels."""
     uv = camera.project(points)[:, :2]
-    lo, hi = np.maximum(uv.min(axis=0).astype(int) - c["box_pad_px"], 0), uv.max(axis=0).astype(int) + c["box_pad_px"]
+    lo, hi = np.maximum(uv.min(axis=0).astype(int) - pad_px, 0), uv.max(axis=0).astype(int) + pad_px
     box = np.s_[lo[1]:hi[1], lo[0]:hi[0]]
-    dark = obs["head_rgb"][box].max(axis=-1) < c["dark_value"]
+    dark = obs["head_rgb"][box].max(axis=-1) < dark_value
     return float(np.mean(obs["head_depth"][box][dark] > 0)) if dark.any() else None
 
 
@@ -115,13 +116,14 @@ def calibration_row(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -
     """Every calibration stage of one look with its guard values, run beside the detector."""
     cal, nominal, depth = detector.calibration, detector.nominal, obs["head_depth"]
     plane, anchor = cal.counter_fit(depth, nominal), cal.scene_anchor(depth, nominal)
-    fit = cal.hands.fit(depth, nominal, obs["arm_q"], obs["hand_q"], plane, cal.band[-1])
+    fit = cal.hand_fit(depth, nominal, (obs["arm_q"], obs["hand_q"]), plane)
     camera = nominal if fit is None else fit.camera
     points, links = arm_model(detector, obs, camera)
     row = {"valid_depth": float(np.mean(depth > 0)), "plane_rms_mm": None if plane is None else 1e3 * plane.rms,
            "plane_tilt_deg": None if plane is None else float(np.degrees(np.arccos(min(1.0, plane.normal[2])))),
            "anchor": anchor is not None, "hand_fit": fit is not None, "arm_through": "hand fit" if fit else "nominal camera",
-           "arm_parts": arm_returns(depth, camera, points, links, c), "dark_returned": dark_returns(obs, camera, points, c)}
+           "arm_parts": arm_returns(depth, camera, points, links, c),
+           "dark_returned": dark_returns(obs, camera, points, c["box_pad_px"], detector.outline.cfg["dark_value"])}
     if fit is not None:
         checks, (turn, shift) = cal.hand_checks(fit, nominal), cal.displacement(fit, nominal)
         row.update(believed=all(checks.values()), failed=[k for k, ok in checks.items() if not ok], rms_mm=1e3 * fit.rms,
@@ -140,25 +142,10 @@ def depth_look(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -> tup
     """One look with depth: the detector as the policy runs it, then the calibration stages on the same frame."""
     detections = detector.detect(obs)
     layout = detector.layout()
-    row = {"source": layout.source, "counter_z": layout.counter_z, "rim_z": layout.rim_z,
+    row = {"source": layout.source, "bins_from": layout.bins_from, "counter_z": layout.counter_z, "rim_z": layout.rim_z,
            "bins": {name: np.round(xy, 4).tolist() for name, xy in layout.bins.items()},
            "detections": [detection_row(det) for det in detections], **calibration_row(detector, obs, c)}
     return row, detections
-
-
-def outline_row(rgb: np.ndarray, camera: Camera, points: np.ndarray, c: Mapping[str, Any]) -> Row:
-    """How well the black links of the arm model lie on dark pixels: as projected, and after the best image shift."""
-    dark = (rgb.max(axis=-1) < c["dark_value"]).astype(np.uint8)
-    away = np.minimum(cv2.distanceTransform(1 - dark, cv2.DIST_L2, 5), c["outline_clip_px"])
-    uv = np.round(camera.project(points)[:, :2]).astype(int)
-
-    def residual(shift: tuple[int, int]) -> tuple[float, float]:
-        u, v = np.clip(uv[:, 0] + shift[0], 0, rgb.shape[1] - 1), np.clip(uv[:, 1] + shift[1], 0, rgb.shape[0] - 1)
-        return float(away[v, u].mean()), float(dark[v, u].mean())
-    steps = range(-c["shift_reach_px"], c["shift_reach_px"] + 1, c["shift_step_px"])
-    best = min(((du, dv) for du in steps for dv in steps), key=lambda shift: residual(shift)[0])
-    return {"points": len(uv), "residual_px": residual((0, 0))[0], "on_dark": residual((0, 0))[1], "shift_px": list(best),
-            "shifted_residual_px": residual(best)[0], "shifted_on_dark": residual(best)[1]}
 
 
 def colour_row(rgb: np.ndarray, classifier: ColorClassifier, c: Mapping[str, Any]) -> Row:
@@ -178,11 +165,9 @@ def colour_row(rgb: np.ndarray, classifier: ColorClassifier, c: Mapping[str, Any
 
 
 def rgb_look(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -> Row:
-    """One look without depth: the colour stage, and the hand outline through the nominal camera."""
-    points, links = arm_model(detector, obs, detector.nominal)
-    black = np.array([name.endswith(tuple(c["black_parts"])) for name in links], bool)
-    return {"colours": colour_row(obs["head_rgb"], detector.colors, c),
-            "outline": outline_row(obs["head_rgb"], detector.nominal, points[black], c) if black.sum() >= c["min_outline_points"] else None}
+    """One look without depth: the colour stage, and each black hand's outline through the nominal camera."""
+    hands = detector.outline.fit(obs["head_rgb"], detector.nominal, obs["arm_q"], obs["hand_q"])
+    return {"colours": colour_row(obs["head_rgb"], detector.colors, c), "outline": {side: asdict(o) for side, o in hands.items()}}
 
 
 def footprint(centre: np.ndarray, size: np.ndarray, z: float) -> np.ndarray:
@@ -261,16 +246,17 @@ def depth_summary(rows: Sequence[Row], c: Mapping[str, Any]) -> list[str]:
 
 
 def rgb_summary(rows: Sequence[Row]) -> list[str]:
-    """What the looks without depth say together: the outline of the black links, and the colours named."""
-    outlines = [row["outline"] for row in rows if row["outline"]]
+    """What the looks without depth say together: each black hand's outline, and the colours named."""
     named = [blob["named"] for row in rows for blob in row["colours"]["blobs"] if blob["confidence"] >= 0.5]
     out = [f"looks {len(rows)} (RGB only)  blobs named at confidence >= 0.5: " + str({n: named.count(n) for n in sorted(set(named))})]
-    if outlines:
-        shifts = np.array([o["shift_px"] for o in outlines])
-        out.append(f"black links through the nominal camera: {np.median([o['on_dark'] for o in outlines]):.2f} on dark pixels, "
-                   f"{np.median([o['residual_px'] for o in outlines]):.1f} px away; after the best image shift (median "
-                   f"{np.median(shifts[:, 0]):+.0f}, {np.median(shifts[:, 1]):+.0f} px, spread {shifts.std(axis=0).round(1).tolist()}): "
-                   f"{np.median([o['shifted_on_dark'] for o in outlines]):.2f} on dark, {np.median([o['shifted_residual_px'] for o in outlines]):.1f} px")
+    for side in SIDES:
+        seen = [row["outline"][side] for row in rows if side in row["outline"]]
+        if seen:
+            shifts = np.array([o["shift"] for o in seen])
+            out.append(f"{side} hand through the nominal camera ({len(seen)} looks): {np.median([o['on_dark'] for o in seen]):.2f} on dark pixels, "
+                       f"{np.median([o['residual_px'] for o in seen]):.1f} px away; after the best image shift (median {np.median(shifts[:, 0]):+.0f}, "
+                       f"{np.median(shifts[:, 1]):+.0f} px, spread {shifts.std(axis=0).round(1).tolist()}): "
+                       f"{np.median([o['shifted_on_dark'] for o in seen]):.2f} on dark, {np.median([o['shifted_px'] for o in seen]):.1f} px")
     return out
 
 
@@ -301,7 +287,7 @@ def look_line(row: Row) -> str:
     bins = " ".join(f"{name[0]}({xy[0]:.3f},{xy[1]:+.3f})" for name, xy in row["bins"].items())
     rim = "none" if row["rim_z"] is None else f"{row['rim_z']:.3f}"
     return (f"  t={row['t']:6.1f} by {row['source']:<7} anchor {'fits' if row['anchor'] else 'no  '} {fit}; counter {row['counter_z']:.3f} "
-            f"rim {rim} bins {bins}; {seen or 'nothing seen'}")
+            f"rim {rim} bins ({row['bins_from']}) {bins}; {seen or 'nothing seen'}")
 
 
 def main(argv: list[str] | None = None) -> int:

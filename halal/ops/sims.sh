@@ -2,7 +2,7 @@
 # Isaac sims on the dev instance, one per tag (a|b|c|d), each with its own DDS domain, ports, cores, log and pid file.
 #   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set;
 #                                              HAND_GAINS="kp,kd[,armature]" = dev-only sim with those Dex3 actuator gains;
-#                                              REAL_SIM="lying,colours,boxes,table,offsets" | all = dev-only real-look sim)
+#                                              REAL_SIM="lying,colours,boxes,table,offsets,camera" | all = dev-only real-look sim)
 #   sims.sh stop <tag> | status | env <tag>   (eval "$(sims.sh env b)" points clients at sim b)
 set -eo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
