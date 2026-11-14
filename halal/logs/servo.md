@@ -42,3 +42,18 @@ pregrasp, 91-98 % at the grasp), so the look is taken from beside the object.
   servo2 applied it, the cylinder still held. servo3 (32024af) believes a look only below 3 mm rms.
 - Second look: step under 2 mm when the top face is seen; 3 of 8 second looks saw too little of it (visible 0.10-0.38).
 - Cost per hovered pick: about 2.5 s (measure), 4-5 s (servo with its second look).
+
+## Real-look sim, robot-night variant (`realsim.md`: -7.4 / -1.9 / -0.4 deg, -4 cm; all features, soft hands, resting start), fixed, seeds 1000-1003
+
+Dev-only images from servo3 (32024af): `-nofit` = `perception.topface.arm_attempts: 0` (no home hand fit: nominal camera all
+episode, as on the robot), `-trans` = also `perception.hover.arm_fit: false` (translation-only hand shift at the hover).
+
+| Leg | Image | Objects | Score | Ends | Clips | Gate | Servo |
+|---|---|---|---|---|---|---|---|
+| r3-open-nofit | servo3-open-nofit | 1/15 | +0.25 | 4 time limits | 0 | PASS | - |
+| r3-servo-nofit-trans | servo3-servo-nofit-trans | 2/15 | +0.50 | 4 time limits | 0 | PASS | every look refused (rms 3.2-4.1 mm), open loop from the hover |
+
+- Translation-only under a 7.4 deg error: hand shifts 3-34 mm, inconsistent between the arms for the same object (e.g. x -31 /
+  +11 mm), rms 3.2-4.1 mm. A rotation over the hand patch is no shift; the rms guard refused all, so servo ran open-loop
+  (same misses, ~3 s more per pick). Several looks also failed `visible`: a hover planned beside a believed object 3-6 cm
+  off can stand over the real one.
