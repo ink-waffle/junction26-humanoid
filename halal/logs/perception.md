@@ -576,6 +576,10 @@ Detector end to end, dev, `real` / `narrow` / `left7` / `right7`, two looks: cle
 26.0 in all four; typical 0.958, 1.000, 2.3 / 4.5 / 17.1 in all four. `lowhands --shift real --depth typical`: precision 0.926
 -> 1.000 (the phantoms were torn pieces of moved bins).
 
+Added after H4 (`row_smear`): the row's x is first judged over three x cells taken together (wall where any of them shows wall),
+then sharpened inside them: bad depth spreads a wall over 1 to 2 cm and no single cell reached half. Table as recorded, bad:
+5.3 / 11.6 / 220.0 -> 5.3 / 11.6 / 39.2; every other figure of the table above, and all of clean to typical, unchanged to the digit.
+
 **H5. A roof face must still be sloped after its refit** (`roof.py`, one line). Cause of the upright prisms called `lying`:
 `sloped_face` picks the best trial plane among those tilted 45 to 75 deg, then refits it to its points and never looked at the
 tilt again. The front face of an upright prism under a thumb (its top hidden or in IR shadow) is caught by a 74 deg trial plane
@@ -599,6 +603,52 @@ graspable from that view, both need the look with the arm away.
 
 `motion` under depth noise, whole set (recall / precision / xy median / p95): clean 0.906 / 1.000 / 1.9 / 5.4, mild 0.855 / 1.000 /
 1.6 / 5.4, typical 0.853 / 0.998 / 1.4 / 6.2, bad 0.849 / 0.991 / 2.6 / 11.7.
+
+### Looks of one episode in sequence (`--still`) and recorded placements (`scene.json`)
+
+`perception_bench --still` keeps, per episode, the frames whose joints stand where the previous recorded frame had them (the
+moments a policy looks), one detector per episode in recording order, and every run now prints the layout per look against
+the truth: source, bin centres, counter height, `rim_z`, and every change of source inside an episode. A set recorded from a
+displaced sim (the real-look sim) carries `scene.json` with its offsets and wall height; ground truth and layout truth follow it.
+
+`motion --still` (8 organiser-baseline episodes, 135 looks, arms anywhere, objects leaving one by one):
+
+| | sources | objects: recall / precision, xy median / p95 | bins by hands, median / p95 / max mm | counter mm | rim mm, signed |
+|---|---|---|---|---|---|
+| as recorded, clean | scene 135 | 1.000 / 1.000, 1.8 / 2.6 | (scene file) | 0.0 | none |
+| `--shift real`, clean | nominal 5, hands 130 | 1.000 / 1.000, 1.5 / 7.3 | 4.2 / 6.3 / 6.8 | 3.3 | +6.7 (+6.1 to +8.0) |
+| `--shift real`, typical | nominal 5, hands 130 | 0.998 / 0.983, 2.1 / 4.3 | 3.9 / 6.7 / 7.8 | 3.2 | +9.6 (+7.3 to +13.0) |
+| `--shift left7`, typical | nominal 5, hands 130 | 0.998 / 0.981, 2.1 / 4.3 | 3.7 / 6.1 / 10.6 | 3.2 | +9.5 (+7.3 to +12.1) |
+| `--shift right7`, typical | nominal 5, hands 130 | 0.998 / 0.981, 2.1 / 4.3 | 4.1 / 7.0 / 8.4 | 3.2 | +9.7 (+7.1 to +12.6) |
+| `--shift real`, bad | nominal 5, hands 130 | 0.990 / 0.975, 5.4 / 11.1 | 5.0 / 11.9 / 15.3 | 1.8 max 6.4 | +10.0 (+4.7 to +15.0) |
+
+The only source change in any episode is nominal -> hands after the first still look (the hand fit wants a second one: 5 of
+the 8 episodes have a still first frame); once the arm pose is kept it holds to the end whatever the arms do, no look has a bin
+more than 3 cm off, and the camera part stays 2.0 / 2.7 (typical). The "phantoms" under the shift (8 looks of seed 2201) are a
+yellow cube that leaned on a bin wall in the recording and stands on the counter in the re-rendered scene: a bench artefact.
+
+### Parked: camera pose from the arm outline (for arms that return no depth at all)
+
+Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
+the orchestrator and parked (17:40) after an offline experiment, nothing of it is in the tree:
+- Engage only when depth is absent on the arms (`known` low or no fit), never when depth contradicts the model; same stillness
+  and keeping rules; a new source "outline" between "hands" and "nominal".
+- The counter plane cannot supply pitch, roll or height here: it ties the camera to the table, which stands 1.5 to 9 deg
+  pitched against the robot in the recordings; a grasp needs the camera against the arms.
+- Crude version tried (dark pixels, value < 60, against the FK surface model; two-sided distance transforms; 5 starts; prior
+  3 deg / 2 cm), `dr_train` dev, 24 frames, band error mm median / p95 / max: nominal 15.5 / 27.9 / 29.0; rotation only 8.6 / 15.1 /
+  16.3; 6 DOF 8.5 / 14.2 / 18.0. Not good enough to ship (own bar: p95 under 10).
+- Oracles (the true image position of every model point given): rotation only 6.5 / 14.5 / 16.3, so the crude fit is at that
+  floor and the rest is the camera position (sim DR: 6 mm std, 9.6 max per axis), which a rotation cannot absorb (0.6 x the
+  position error stays at the objects). 6 DOF from one view: 2.3 / 2.4 / 2.4; with every link's image position off by a random
+  1 px 2.4 median / 2.9 max, by 3 px 3.6 / 5.2 (8 `motion` episodes); two arm postures of one episode 2.9 / 4.1, all 2.3 / 3.1.
+  So one view does separate position from rotation (forearm at 0.25 m to fingertips at 0.45 m) if the fit has point-level
+  correspondences; an area overlap does not give them.
+- Version worth building if it is ever needed: contour registration. Model contour points matched to the nearest dark / light
+  edge along their image normal, one equation each, Gauss-Newton on 6 DOF with the hand fit's prior, gate for edges with no
+  model contour (wrist camera box, cable). Guards: model on dark, dark explained by model, residual, left and right hand
+  agreeing, `--armless` 0. Can be checked on the RGB-only drops. Estimate 2 to 3 hours; expected 4 to 6 mm median if edges are
+  good to 3 px (B7's cruder fit left 5.1 px on the real frames).
 
 ### Clean depth after H1 to H5
 
