@@ -89,6 +89,9 @@ perception:
     min_confidence: 0.05      # detections below this are dropped
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
     min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
+    size_range: [0.045, 0.055]   # object heights (= edge lengths) looked for; real foam cubes measure 0.046 in drop 2
+    size_snap: 0.0025         # a top this close to the scene file's object height IS that height (sim reads 0.0439 for 0.045)
+    min_size_visible: 0.3     # top-face fraction that must be seen before `size` is reported, or an unexpected size believed at all
     straggler:                # coloured blobs on the counter that no top-face fit explains: toppled objects
       heights: [0.010, 0.060] # above the counter
       claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
@@ -99,7 +102,7 @@ perception:
       min_depth: 0.004        # thickness (std) in plan view a straggler needs: wall slivers 0.001 median, toppled objects 0.0077
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
     seed:
-      height_band: 0.006      # top-face pixels: this close to the object height above the counter
+      height_band: 0.006      # top-face pixels: no further than this outside the size range, above the counter
       open_px: 3
       min_px: 60
       claim_radius: 0.034     # top-height pixels this close to a fitted centre belong to that object, not to a further one
@@ -118,6 +121,7 @@ perception:
       body_radius: 0.030      # object pixels: this close to the fitted centre in xy ...
       body_heights: [0.008, 0.050]   # ... and between these heights above the counter (top and side faces)
       vivid_fraction: 0.3     # most saturated share of the object's pixels that names its colour (overexposed tops lie)
+      own_share: 0.5          # with this share of the pixels in one family, only they are sampled: a saturated neighbour's edge must not name a pale object
       basins:                 # hue ranges (deg: 0 red, 60 yellow, 240 blue), running upwards, of the three colour families
         red: [335, 33]        # sim red -14..+20 and real orange foam 19..31 (the box tape, 1..28, and sim bins, 24, are in here too)
         yellow: [39, 110]     # sim yellow 44..60; real yellow foam 41 (shaded) .. 98 (washed-out top)
@@ -133,6 +137,7 @@ perception:
     resting_tolerance: 0.015  # object centre this close to its resting height counts as lying on the counter
     held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
     confidence_edges: [0.2, 0.34, 0.5, 0.8]
+    repaint_deg: {red: 25, yellow: 4, blue: -7}   # --repaint: hue turns that take sim red, yellow, blue (0, 51, 227) to real orange, yellow, purple (25, 55, 220)
     decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
     armless_seed: 7
     armless_depth_noise_mm: 1.0

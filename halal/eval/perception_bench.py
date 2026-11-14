@@ -11,10 +11,11 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+import cv2
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.transform import Rotation
@@ -167,6 +168,25 @@ def armless_frames(scene: Scene, nominal: Pinhole, layouts: int, cfg: Mapping[st
     return frames
 
 
+def silhouette(scene: Scene, truth: Truth, camera: Pinhole, shape: tuple[int, int]) -> np.ndarray:
+    """Image mask of one lying object: the convex outline of its top and bottom faces through the camera that took the frame."""
+    turn = (truth.yaw or 0.0) - APEX_OFFSET.get(truth.shape, 0.0)
+    outline = truth.top[:2] + shape_polygon(truth.shape, scene.object_dims(truth.shape)["apothem"], turn)
+    corners = np.concatenate([np.c_[outline, np.full(len(outline), z)] for z in (truth.top[2], truth.top[2] - scene.object_height())])
+    hull = cv2.convexHull(np.round(camera.project(corners)[:, :2]).astype(np.int32))
+    return cv2.fillConvexPoly(np.zeros(shape, np.uint8), hull, 1) > 0
+
+
+def repainted(frame: Frame, scene: Scene, turns: Mapping[str, float]) -> Frame:
+    """The frame with every lying object's pixels turned in hue by its colour's angle (deg): the real foam palette in the sim's light."""
+    hsv = cv2.cvtColor(frame.obs["head_rgb"].astype(np.float32) / 255.0, cv2.COLOR_RGB2HSV)
+    for truth in frame.truths:
+        mask = silhouette(scene, truth, frame.camera, hsv.shape[:2])
+        hsv[mask, 0] = (hsv[mask, 0] + turns[truth.color]) % 360.0
+    rgb = np.round(cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB) * 255.0).astype(np.uint8)
+    return replace(frame, obs={**frame.obs, "head_rgb": rgb})
+
+
 def in_split(seed: int, split: str, heldout_every: int) -> bool:
     heldout = seed % heldout_every == heldout_every - 1
     return split == "all" or heldout == (split == "heldout")
@@ -210,6 +230,7 @@ def outcome(frame: Frame, truth: Truth, det: ObjectDetection | None, used: Pinho
             "xy_mm": 1e3 * float(np.linalg.norm(error[:2])), "z_mm": 1e3 * float(abs(error[2])),
             "own_xy_mm": 1e3 * float(np.linalg.norm(own[:2])),
             "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape, "visible": float(det.visible),
+            "size_mm": None if det.size is None else 1e3 * float(det.size),
             "yaw_deg": float(np.degrees(yaw_error(truth.shape, det.yaw, truth.yaw))) if has_yaw else None}
 
 
@@ -277,13 +298,15 @@ def summarise(rows: Sequence[Row]) -> Row:
     shaped = [r for r in hit if r["det_shape"] is not None]
     turned = [r["yaw_deg"] for r in hit if r["yaw_deg"] is not None]
     wanted = [r for r in hit if r["shape"] in SYMMETRY]
+    sized = [r["size_mm"] for r in hit if r["size_mm"] is not None]
     return {"objects": len(rows), "recall": ratio(len(hit), len(rows)),
             "color_acc": ratio(sum(r["color_ok"] for r in hit), len(hit)),
             "xy_mm": spread([r["xy_mm"] for r in hit]), "z_mm": spread([r["z_mm"] for r in hit]),
             "own_xy_mm": spread([r["own_xy_mm"] for r in hit]), "camera_mm": spread([r["camera_mm"] for r in hit]),
             "shape_decided": ratio(len(shaped), len(hit)),
             "shape_acc": ratio(sum(r["det_shape"] == r["shape"] for r in shaped), len(shaped)),
-            "yaw_decided": ratio(len(turned), len(wanted)), "yaw_deg": spread(turned)}
+            "yaw_decided": ratio(len(turned), len(wanted)), "yaw_deg": spread(turned),
+            "size_decided": ratio(len(sized), len(hit)), "size_mm": spread(sized)}
 
 
 def confusion(rows: Sequence[Row]) -> dict[str, dict[str, int]]:
@@ -364,6 +387,7 @@ def render(title: str, result: Row) -> str:
         s = o[key]
         out.append(f"{unit:<30} mean {s['mean']:6.1f}  median {s['median']:6.1f}  p95 {s['p95']:6.1f}  max {s['max']:6.1f}")
     out.append(f"shape decided {o['shape_decided']:.3f}  correct of decided {o['shape_acc']:.3f}  yaw decided {o['yaw_decided']:.3f}")
+    out.append(f"size reported {o['size_decided']:.3f}  median {o['size_mm']['median']:.2f} mm  max {o['size_mm']['max']:.2f} mm")
     out.append("shape confusion (true -> detected): " + "; ".join(
         f"{t}: " + " ".join(f"{d} {n}" for d, n in row.items() if n) for t, row in result["confusion"].items()))
     out.append("layout source per frame: " + ", ".join(f"{s} {n}" for s, n in o["sources"].items())
@@ -388,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--split", choices=SPLITS, default="all")
     ap.add_argument("--looks", type=int, default=1, help="show every frame this many times, 0.2 s apart (a robot standing still)")
     ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
+    ap.add_argument("--repaint", action="store_true", help="turn the objects' hues to the real foam palette (bench.repaint_deg)")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
@@ -398,6 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     frames = armless_frames(scene, nominal, args.armless, cfg) if args.armless else [
         load_frame(p, scene, nominal, cfg) for p in sorted(args.frames.glob("seed_*.npz"))
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
+    frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
     passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
     result = report(passed, cfg)
     print(render(f"{args.detector} on {label} [{args.split}]", result))

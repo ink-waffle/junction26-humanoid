@@ -66,6 +66,12 @@ class ColorClassifier:
         by_chroma = np.clip((chroma - low) / (full - low), 0.0, 1.0) * (colour.max() >= self.cfg["min_value"])
         return name, float(np.clip(1.0 - miss / self.cfg["taper_deg"], 0.0, 1.0) * by_chroma)
 
+    def own(self, samples: np.ndarray, gains: np.ndarray) -> np.ndarray:
+        """The samples (N, 3) of the family most of them are in, when that is a fair share: a touching neighbour's edge is left out."""
+        classes = self.pixel_classes(samples, gains)
+        counts = np.bincount(classes[classes >= 0], minlength=len(self.cfg["basins"]))
+        return samples[classes == counts.argmax()] if counts.max() >= self.cfg["own_share"] * len(samples) else samples
+
     def classify(self, samples: np.ndarray, gains: np.ndarray) -> tuple[str, float]:
         """Colour family and confidence in [0, 1] for RGB samples (N, 3) of one object."""
-        return self.name(self.vivid(samples, gains))
+        return self.name(self.vivid(self.own(samples, gains), gains))
