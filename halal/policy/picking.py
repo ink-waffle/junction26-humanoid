@@ -55,36 +55,37 @@ class PickChooser:
         """The first plannable target, nearest its bin first, and the targets before it that have no plan."""
         unplannable: list[Target] = []
         for target in sorted(targets, key=self._distance_to_bin):
-            if cancelled():
-                break
-            pick = self._plan(target, obstacles, arm_q, hand_q)
+            pick = self._plan(target, obstacles, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
             unplannable.append(target)
         return None, unplannable
 
-    def _plan(self, target: Target, obstacles: Sequence[ObjectDetection], arm_q: np.ndarray,
-              hand_q: np.ndarray) -> Pick | None:
+    def _plan(self, target: Target, obstacles: Sequence[ObjectDetection], arm_q: np.ndarray, hand_q: np.ndarray,
+              cancelled: Cancelled) -> Pick | None:
         try:
-            return self._direct(target, arm_q, hand_q) or self._relocation(target, obstacles, arm_q, hand_q)
+            return (self._direct(target, arm_q, hand_q, cancelled)
+                    or self._relocation(target, obstacles, arm_q, hand_q, cancelled))
         except Exception:
             log.exception("planning failed for %s", target)
             return None
 
-    def _direct(self, target: Target, arm_q: np.ndarray, hand_q: np.ndarray) -> Pick | None:
+    def _direct(self, target: Target, arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
         det = target.detection
-        for side in self._arms(target):
-            for grasp in candidate_grasps(det.shape, det.yaw, side):
-                plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q)
-                if plan.ok:
-                    return Pick(target, side, grasp, plan)
-                log.info("no plan for %s with the %s arm, grasp %s: %s", target, side, grasp.name, plan.reason)
+        attempts = [(side, grasp) for side in self._arms(target) for grasp in candidate_grasps(det.shape, det.yaw, side)]
+        for side, grasp in attempts:
+            if cancelled():
+                break
+            plan = self.planner.plan_pick(det, grasp, side, target.bin_name, arm_q, hand_q)
+            if plan.ok:
+                return Pick(target, side, grasp, plan)
+            log.info("no plan for %s with the %s arm, grasp %s: %s", target, side, grasp.name, plan.reason)
         return None
 
-    def _relocation(self, target: Target, obstacles: Sequence[ObjectDetection], arm_q: np.ndarray,
-                    hand_q: np.ndarray) -> Pick | None:
+    def _relocation(self, target: Target, obstacles: Sequence[ObjectDetection], arm_q: np.ndarray, hand_q: np.ndarray,
+                    cancelled: Cancelled) -> Pick | None:
         """Cross-body fallback: put the object down where an arm that reaches the bin can pick it up."""
-        if not self.relocate:
+        if not self.relocate or cancelled():
             return None
         others = [o.top[:2] for o in obstacles if o is not target.detection]
         plan = self.planner.plan_relocation(target.detection, target.bin_name, arm_q, hand_q, others)
