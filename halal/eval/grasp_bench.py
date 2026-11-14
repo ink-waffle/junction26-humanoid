@@ -2,7 +2,7 @@
 
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
-Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
+Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
@@ -333,9 +333,10 @@ class Bench:
         return "off_counter" if record["outcome"] == "off" else "missed_bin"
 
 
-def episodes(cases: list[Case]) -> Iterator[list[Case]]:
-    for k in range(0, len(cases), 2):
-        yield cases[k:k + 2]
+def episodes(cases: list[Case], arms: int) -> Iterator[list[Case]]:
+    """Cases in groups of `arms`: 2 = one pick per arm at once, 1 = a single arm working (centre bin, cross-body spots)."""
+    for k in range(0, len(cases), arms):
+        yield cases[k:k + arms]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -351,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
     bench = Bench(spec, args.out, args.host)
     try:
         with open(args.out / "picks.jsonl", "a") as log:
-            for index, cases in enumerate(episodes(list_cases(spec))):
+            for index, cases in enumerate(episodes(list_cases(spec), spec.get("arms", 2))):
                 for record in bench.run(index, cases):
                     log.write(json.dumps(record) + "\n")
                     log.flush()
