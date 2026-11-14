@@ -63,6 +63,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v3 | c6a50633cd73 | e7934c6 | +3.62 ± 0.48, 29/31 | – | – | – | PASS (through the image) | cage grasps; camera calibrated on a pre-reset frame; language legs skipped in favour of v4 |
 | v4 | 994a14f7b199 | e3f9687 | +3.62 ± 0.70, 29/31 | +6.38 ± 1.87, 26/28 (1 wrong bin) | running | – | PASS (through the image; exact hand-in path `evaluate --container`: 8/8 in 2 episodes, rt 176) | start settle, visibility rule, clear looks before `done`; 3 of its 4 lost objects stayed wedged in the hand at the release |
 | v5 | 5a4d3187fcf0 | fe03f4c | – | – | – | – | pre-check only | superseded by v6 before it ran |
+| v6 | ec29a3c0ad75 | 58573f1 | running | running | queued | – | pre-check pass | v4 + perception 47e63f3 (anchor refit at every look, two still looks at the start, colour confidence 0.5, one pick for an unclaimed blob) + release check + motion 44bc3a4 (soft squeeze = grasp depth + 0.45, grip score on thumb_1 and finger_0) + retries keep the shape's depth |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
