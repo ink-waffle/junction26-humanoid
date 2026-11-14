@@ -52,28 +52,66 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
   rtf 0.44 give 128. It would fail at rtf < 0.09 with 10-tick replies; replies are 15 ticks (10 while planning)
   from v2 on. The true round trip is ~5 ms (replay through the container: p50 5.0 ms).
 
-## What the policy is (v2, committed 78b1e61)
+## Versions (three legs, 8 seeds each, DR train, 120 s; images on the instance as `halal/policy:<version>`)
 
-`SortPolicy` (own state machine): calibration close of both hands where the arms start → look → targets
-(instruction mapping, on the counter and clear of the perceived bins, detection confidence ≥ 0.3, picks left) →
-least-tried target first, then nearest its bin; arm on the bin's side first; candidate grasps rotated on a retry;
-next free release slot → execute in 15-tick replies with the grip check after the lift and through the carry →
-look pose → look again. Perception and planning run in one low-priority background thread; `act()` never waits
-(worst measured 5 ms) and answers 10-tick holds meanwhile. `set_layout(detector.layout())` after every look; if
-the perceived layout leaves no pick (or no safe way to the look pose) the scene file's layout is used for the rest
-of the episode. `done` only after two looks spanning 2 s without a sortable object; a look that fails or rejects
-every target pauses 1 s and looks again; an exception in a step drops what was in progress and starts over from a
-look. A pick starts only if its release fits before the time limit; if the episode outlasts the assumed limit the
-policy carries on. Instruction confidence below 0.5: nothing is moved.
+| Version | Image id | Built from | Fixed | Known | Unseen | Proxy | Gate | Notes |
+|---|---|---|---|---|---|---|---|---|
+| floor | – | organiser baseline | +1.62 ± 0.86, 13/31 | – | – | – | PASS | ignores the instruction |
+| v0 | 62ae624ee6ea | 3085846 | – | – | – | – | pre-check only | organiser detector; never run through the image |
+| v1 | d35c253d992a | d27fbad | +3.38 ± 0.99, 27/31 | – | – | – | PASS | run C of the night; local server |
+| v2 | ee26f64beef6 | 78b1e61 | +3.38 ± 0.70, 27/31 | +6.75 ± 1.71, 27/28 | +6.25 ± 1.85, 25/28 | **+19.50** | PASS (0 clips, 30.0 Hz, rt ≥ 167) | local server on sims a / b / c; pinch grasps; camera fixed by the hands on a and b (+1 cm in x) |
+| v3 | c6a50633cd73 | e7934c6 | +3.62 ± 0.48, 29/31 | – | – | – | PASS (through the image) | cage grasps; camera calibrated on a pre-reset frame; language legs skipped in favour of v4 |
+| v4 | 994a14f7b199 | e3f9687 | +3.62 ± 0.70, 29/31 | +6.38 ± 1.87, 26/28 (1 wrong bin) | +6.50 ± 1.94, 26/28 | **+19.75** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 166; exact hand-in path `evaluate --container`: 8/8 in 2 episodes, rt 176) | start settle, visibility rule, clear looks before `done`; 16/16 instructions parsed; 4 of its 6 lost objects stayed in a hand that did not let go, 2 triangles toppled by a failed grasp |
+| v5 | 5a4d3187fcf0 | fe03f4c | – | – | – | – | pre-check only | superseded by v6 before it ran |
+| v6 | ec29a3c0ad75 | 58573f1 | running | running | queued | – | pre-check pass | v4 + perception 47e63f3 (anchor refit at every look, two still looks at the start, colour confidence 0.5, one pick for an unclaimed blob) + release check + motion 44bc3a4 (soft squeeze = grasp depth + 0.45, grip score on thumb_1 and finger_0) + retries keep the shape's depth |
+
+v2 in detail:
+- Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
+  wrong bin and none knocked off in any leg. Every lost object stayed on the counter after failed grasps.
+- By shape over the three legs: cubes 29/29, cylinders 32/35, triangles 18/23.
+- Per pick (155 picks with a grip verdict): cubes 90 % held, cylinders 64 %, triangles 27 %; first attempt 70 %,
+  second 28 %, third 23 %: a pinch that failed once mostly fails again, and each failure shoves the object
+  towards the robot (held 78 % at x ≥ 0.31, 27 % at x < 0.28; seed 1002: a red cylinder pushed from x 0.274 to
+  0.208 in four tries, then out of the camera's view). Cylinders picked across the body (object on the other side
+  of the arm): 4/15 held, on the arm's own side 16/17.
+- Retries (v2 vs v1/C on the fixed leg): 27/31 both. More attempts alone do not pay with this grasp.
+- The verification called 76 of 155 picks empty; no "held" pick was lost on the way and no "empty" one was found
+  in a bin.
+
+## What the policy is (v4)
+
+`SortPolicy` (own state machine). Episode start: hold for the settle time (the first frame still shows the counter
+before the reset), look from where the arms are with the hands untouched (the camera fit wants them in view), and
+close both hands on nothing while that frame is processed; the first plan waits for the hand class. Then per look:
+targets = detections that the instruction maps to a bin, on the counter and clear of the perceived bins, colour
+confidence ≥ 0.3, picks left, top face seen ≥ 50 % (each object keeps the shape of the clearest look at it) →
+least-tried target first, then nearest its bin; arm on the bin's side first; a retry first forgets the detected
+shape, the one after turns to the next arm and grasp; next free release slot → execute in 15-tick replies with the
+grip check after the lift and through the carry → home → look again. When only poorly seen targets are left, and
+before `done`, the arms swing to `motion.look_arm_q` and the look is repeated from there; `done` needs two such
+clear looks 2 s apart without a sortable object. Perception and planning run in one low-priority background
+thread; `act()` never waits (worst measured 5 ms) and answers 10-tick holds meanwhile.
+`set_layout(detector.layout())` after every look; if the perceived layout leaves no pick (or no safe move) the
+scene file's layout is used for the rest of the episode. A look that fails or rejects every target pauses 1 s and
+looks again; an exception in a step drops what was in progress and starts over from a look. A pick starts only if
+its release fits before the time limit; if the episode outlasts the assumed limit the policy carries on.
+Instruction confidence below 0.5: nothing is moved. Hand class from the calibration close (steady bias below
+0.01 rad = stiff, the sim; else soft, the real hand) selects the grip threshold (0.02 / 0.3) and the squeeze passed
+to `plan_pick` (none / 1.0).
+
+v3 = the same without the start settle, the visibility rule, the clear-view looks and the shape memory (it looks
+from home only and needs two empty looks from there for `done`).
 
 Failure injection (scratch scripts outside the repo, kinematic mock world with a finger contact signal, runner-like
-observation lag): blank head frames for the first 40 calls, no depth at all, detector raising on two looks, planner
-raising once / always, reset during a 1 s plan followed directly by the next episode, assumed limit 20 s with a
-real limit of 60 s, start pose far from home with closed hands, an object lost during the carry, a mock without any
-finger signal, a perceived layout 10 cm off: no exception reaches the runner, 0 clipped steps, no early `done`.
+observation lag): blank head frames for the first 40 calls, first frames showing the empty counter, no depth at
+all, detector raising on two looks, planner raising once / always, reset during a 1 s plan followed directly by
+the next episode, assumed limit 20 s with a real limit of 60 s, start pose far from home with closed hands, an
+object lost during the carry, a mock without any finger signal, a perceived layout 10 cm off, every hand classed
+soft: no exception reaches the runner, 0 clipped steps, no early `done`.
 Found by it and fixed: a calibration close from an already closed hand divided by zero and froze the state
 machine (now: open first, and any step failure starts over); a missing depth frame ended the episode with `done`
-after 3 s; an observation two ticks newer than assumed read the reopening hand as a steady bias.
+after 3 s; an observation two ticks newer than assumed read the reopening hand as a steady bias; the detector's
+hand-based camera fit accepted frames without any arm in them (reported, fixed in perception).
 
 ## Ideas, one at a time
 
@@ -109,4 +147,33 @@ where the arms start in any case (the camera fit wants them in view).
 Why: C lost 4 objects to the cap of 2 picks per spot with half the episode unused.
 What: up to 5 picks per spot, least-tried target first, the next candidate grasp (and the other arm where both
 reach the bin) on a retry; a look without a plan for a target no longer writes it off.
-Verdict: pending the v2 proxy.
+Verdict: no gain on the fixed leg (27/31 as before) with pinch grasps: second and third attempts hold 28 % and
+23 %. Kept (it costs nothing and the cage grasps change the per-attempt odds), but retries are not where the
+objects are.
+
+### First frame of an episode (found in v3, fixed in v4)
+The observation of the first `act()` was rendered before the episode's reset and randomisation: the counter is
+still empty in it and the camera stands where the previous episode's DR put it. v3 looks at that frame (first look
+before the calibration close): it finds 0 objects and, worse, the detector fixes its camera pose on it for the
+whole episode. First-look detections against the layout card, mean per episode (v3 fixed leg): dx / dy =
++16/−16, −6/+14, −7/−18, +4/+8, −10/+23, −15/−14, +9/−12, −4/+14 mm (v1, which looked at t ≈ 2 s: all within
+±4.4 mm). v3 still sorted 29/31 because the cage grasp tolerates about a centimetre; seed 1004 burnt 5 empty
+picks on it. v4 holds 0.5 s before the first look and, if the counter is still empty then, looks again from the
+same pose before moving the arms.
+
+### Cage grasps (motion, in v3)
+Per pick on the v3 fixed leg (41 verdicts, with the calibration error above): 76 % held (pinch in v2: 51 %);
+triangles 6/6, cylinders 16/22, cubes 7/10; across the body 9/12, own side 13/15.
+
+### Hands that do not let go (found in v4, guarded in v6)
+Why: v4's grasps hold (2 empty picks in 16 episodes) and 3 of its 4 lost objects were released over the right
+bin without leaving the hand: a yellow triangle (thumb depth 0.80) rode back in the right hand and fell into the
+right bin at that hand's next release (our first −1; the next lift with that hand read 0.237 instead of
+0.10–0.13); a red triangle rode home and dropped on the counter at the next pick, toppled; a red cube retried
+with the unknown-shape depth 0.75 ended the episode in the hand (z = 0.355). The fingers show nothing after
+opening: the residual behind the released posture was 0.132–0.136 in all 60 releases.
+What (v6): after a grasp deeper than 0.6 rad the hand closes once more at the retreat pose above the bin, the
+grip score is read and the hand reopens: an open-close-open cycle with a verdict. Still holding → the cycle is
+repeated (3 closes at most), then the arm is not used again in the episode. A retry keeps the detected shape's
+depth (the unknown-shape depth only for `shape=None`) and varies arm, grasp and a 5 mm offset instead.
+Verdict: pending v6.

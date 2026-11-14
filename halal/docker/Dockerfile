@@ -2,6 +2,7 @@
 #   bash halal/docker/build.sh v0     builds halal/policy:v0 from the repo root (needs BuildKit)
 # Python 3.12 and requirements.txt match the environment the policy is developed and evaluated in.
 FROM nvidia/cuda:12.8.0-base-ubuntu24.04
+LABEL org.opencontainers.image.source=https://github.com/ink-waffle/junction26-humanoid
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_BREAK_SYSTEM_PACKAGES=1
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip libgomp1 && rm -rf /var/lib/apt/lists/*

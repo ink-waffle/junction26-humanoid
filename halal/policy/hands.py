@@ -43,7 +43,7 @@ class HandCalibrator:
             stream.hand_cmd, planner.post["open"], planner.post["closed"], round(self.settings["calibration_hold_s"] * HZ),
             planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
         self.trace, self.running = CalibrationTrace(hand, closing_from, last_sample), True
-        before_close = closing_from + OBS_LAG_TICKS - 1   # replies end where the observation of the next one is a wanted sample
+        before_close = closing_from + OBS_LAG_TICKS - 1   # replies end where the next observation is a wanted sample
         stream.load(np.repeat(stream.arm_cmd[None], len(hand), 0), hand,
                     cuts=[before_close, *range(last_sample + OBS_LAG_TICKS, before_close, -every)])
         return hand[-1]
