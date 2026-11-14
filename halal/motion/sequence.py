@@ -66,7 +66,7 @@ def plan_low(planner: PickPlanner, det: Any, side: str, bin_name: str, arm_q: np
 
 def _joint_path(planner: PickPlanner, det: Any, side: str, bin_name: str, arm_q: np.ndarray, plan: Plan) -> dict[str, list] | None:
     """Joint waypoints of every arm move, None (with `plan.reason`) when one cannot be solved."""
-    grasp = _grasp_solution(planner, det, side, arm_q, plan)
+    grasp = grasp_solution(planner, det, side, arm_q, plan)
     if grasp is None:
         return None
     points = _points(planner, grasp[1], bin_name)
@@ -83,7 +83,7 @@ def _joint_path(planner: PickPlanner, det: Any, side: str, bin_name: str, arm_q:
     return {"to_pregrasp": [pregrasp], "descend": down, "lift": up, "carry": carry + lower, "retreat": retreat}
 
 
-def _grasp_solution(planner: PickPlanner, det: Any, side: str, arm_q: np.ndarray, plan: Plan) -> tuple[np.ndarray, np.ndarray] | None:
+def grasp_solution(planner: PickPlanner, det: Any, side: str, arm_q: np.ndarray, plan: Plan) -> tuple[np.ndarray, np.ndarray] | None:
     """Arm solution and grasp point: object mid-height, raised until the preshaped fingertips clear the counter."""
     g, counter, cols = planner.cfg["grasp"], planner.scene.counter_z, ArmKinematics.sl(side)
     preshape = np.zeros(14)
