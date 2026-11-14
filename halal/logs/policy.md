@@ -343,6 +343,17 @@ furthest from the centre of any other object goes (motion's `digit_gap`; logged 
 planner: cubes 50 / 60 / 70 mm apart are picked with the fingers 23 / 33 / 42 mm from the neighbour; with one
 cube turned 30° the other cube is chosen (28 mm). Fake planner: clear first; all blocked: most room; a target
 already tried once waits for an untried one.
+One object behind another as seen from the robot (after v15). Motion's physics sweep: a pick planned with the
+obstacles left the neighbour untouched 26 of 26 times; planned blind, a neighbour 8 cm behind the target (between
+it and the robot) is where the open thumb comes down: 0 of 6 held, the neighbour moved or toppled. In the mock
+with the real planner the v15 tree picked the FAR object first in 7 of 8 pairs 7–8 cm apart in x: the planner
+finds the far pick clear (no refusal), refuses the near one at 7 cm (its fingers reach the far object) and the
+order prefers the object nearer its bin, which is the far one. Only at 6 cm, where both are refused, the
+most-room rule took the near one (4 of 4, 28 mm). Rule added: a target waits while another detection lies up to
+10 cm nearer the robot and within 4 cm sideways (`policy.behind_zone`; the zone is my reading of "behind", not
+motion's number). Same mock: near first in 12 of 12 pairs 6–8 cm apart; pairs 5 cm to the side are not touched
+by the rule. It is pairwise on purpose: ordering everything by x would send the cross-body cube of fixed seed
+1001 first again, the order that stacks.
 
 ### Which class for a hand nobody calibrated (v13)
 Motion's table: a soft hand with stiff grasps holds 2 of 18, a stiff hand with soft grasps loses only triangles
@@ -450,6 +461,12 @@ about a lying prism (unknown shape and yaw: plain `cage` at the unknown-shape de
 follows that one function: grasps, order (after the known shapes) and the release check. A lying prism keeps
 the blob's 3 picks (`policy.blob_attempts`). When `candidate_grasps(..., lying=...)` exists: pass `det.lying`
 there, return the detection's shape and yaw from `grasp_hints`, and give lying prisms `max_attempts`.
+After v15 (main 99e1976 has `candidate_grasps(shape, yaw, side, hand, lying)` and the strategy `cage_lying`, for
+now the unknown-shape hold): `grasp_hints` is gone; the policy passes the detection's shape, yaw and `lying`, and
+names an object's grasp kind the way motion does (`picking.grasp_kind`: lying, else the shape, else unknown).
+`policy.last_kinds` (picked after the others) and `policy.release_check_after` both list `unknown` and `lying`:
+when motion's measured lying grasp lands, take `lying` out of either list in config as its numbers allow; the
+3-pick limit of a lying prism is the remaining line (`looking._targets`).
 Scratch check (real detector, one object's detections rewritten): "Put the orange triangular prism into the
 right box." → {red/triangle: right}; reported lying: picked with `cage`, grasp asked for (None, None), release
 check run, right bin, nothing else touched; reported upright: `cage_apex` for ('triangle', yaw); reported as a

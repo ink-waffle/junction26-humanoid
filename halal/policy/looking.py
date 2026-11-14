@@ -56,7 +56,7 @@ class Looker:
         self.detector, self.planner, self.calibrator, self.settings = detector, planner, calibrator, settings
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.file_layout = scene_layout(planner.scene)
-        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["retry_offsets"])
+        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings)
         self.detect_patience_s = float(settings["detect_deadline_s"])
 
     def look(self, obs: Mapping[str, Any], situation: Situation, cancelled: Cancelled) -> Look | None:

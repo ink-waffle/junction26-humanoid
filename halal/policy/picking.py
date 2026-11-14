@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from typing import Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
@@ -20,9 +20,9 @@ Obstacles = Sequence[np.ndarray]    # top centres (pelvis xyz) of every detectio
 TOUCHING = "hand would touch"       # how the planner's reason for a failed plan names an object in the hand's way
 
 
-def grasp_hints(det: ObjectDetection) -> tuple[str | None, float | None]:
-    """Shape and yaw a grasp is built for: none for a prism lying on a side, until motion's grasp for it is on main (then pass `lying`)."""
-    return (None, None) if det.lying else (det.shape, det.yaw)
+def grasp_kind(det: ObjectDetection) -> str:
+    """What motion chooses an object's grasps by: `lying` for a prism on a side, else the detected shape, `unknown` without one."""
+    return "lying" if det.lying else det.shape or "unknown"
 
 
 @dataclass(frozen=True)
@@ -60,8 +60,8 @@ class Pick:
 
 
 class PickChooser:
-    def __init__(self, planner: PickPlanner, slots: ReleaseSlots, retry_offsets: Sequence[Sequence[float]]) -> None:
-        self.planner, self.slots, self.retry_offsets = planner, slots, retry_offsets
+    def __init__(self, planner: PickPlanner, slots: ReleaseSlots, settings: Mapping[str, Any]) -> None:
+        self.planner, self.slots, self.settings = planner, slots, settings
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
                hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
@@ -70,7 +70,8 @@ class PickChooser:
         unplannable: list[Target] = []
         waiting: list[Target] = []
         for target in sorted(targets, key=self._order):
-            pick, touching = self._plan(target, start, obstacles)
+            behind = self._behind_another(target, obstacles)
+            pick, touching = (None, True) if behind else self._plan(target, start, obstacles)
             if pick is not None:
                 return pick, unplannable
             (waiting if touching else unplannable).append(target)
@@ -86,6 +87,12 @@ class PickChooser:
                         pick.target, 1000 * self._room(pick, obstacles))
         return pick
 
+    def _behind_another(self, target: Target, obstacles: Obstacles) -> bool:
+        """Whether another object stands between the target and the robot, where the open thumb comes down: that one goes first."""
+        reach, width = self.settings["behind_zone"]
+        own = self.planner.motion["obstacles"]["radius"]
+        return any(own < target.xy[0] - top[0] <= reach and abs(target.xy[1] - top[1]) <= width for top in obstacles)
+
     def _room(self, pick: Pick, obstacles: Obstacles) -> float:
         """Smallest distance (m) between the pick's fingers, while they are down, and the centre of another object."""
         own = self.planner.motion["obstacles"]["radius"]
@@ -93,8 +100,8 @@ class PickChooser:
         return min((self.planner.digit_gap(pick.plan, pick.side, top) for top in others), default=np.inf)
 
     def _order(self, target: Target) -> tuple[int, bool, float]:
-        """Sort key: least tried first, a shape the grasp knows before one it does not, then nearest its bin."""
-        return target.attempts, grasp_hints(target.detection)[0] is None, self._distance_to_bin(target)
+        """Sort key: least tried first, kinds with a grasp of their own before the others, then nearest its bin."""
+        return target.attempts, grasp_kind(target.detection) in self.settings["last_kinds"], self._distance_to_bin(target)
 
     def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles) -> tuple[Pick | None, bool]:
         """`_first_plan`; whatever one target's data breaks on the way counts as no plan, so the other targets keep their turn."""
@@ -121,11 +128,12 @@ class PickChooser:
     def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> list[tuple[str, Grasp, Shift]]:
         """Arm, grasp and slot in the order to try; a retry starts with the next arm and grasp and moves the grasp point a little."""
         det, turns = target.detection, target.attempts
-        dx, dy = self.retry_offsets[turns % len(self.retry_offsets)]
+        offsets = self.settings["retry_offsets"]
+        dx, dy = offsets[turns % len(offsets)]
         shifts = self.slots.candidates(target.bin_name, released)
         arms = _rotated([side for side in self._arms(target) if side in hands], turns)
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
-                         for grasp in _rotated(candidate_grasps(*grasp_hints(det), side, hands[side]), turns)]
+                         for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
                   for side in arms}
         return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
 

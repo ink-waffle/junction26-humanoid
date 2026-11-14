@@ -259,6 +259,7 @@ policy:
   detect_deadline_s: 5.0      # a detector call (0.03-0.1 s; a whole look 0.8 s under three sims) left behind after this long; doubles with every miss
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
+  behind_zone: [0.10, 0.04]   # another object up to this far towards the robot (x) and this close sideways (y) lies under the open thumb: it goes first (motion: 0 of 6 held)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 10.0  # and they must span this long: `done` earns nothing, a wrong one loses what is still on the counter (8 s of sim per episode)
@@ -277,7 +278,8 @@ policy:
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
     unknown: 0.02             # no calibration close, no empty-hand error to subtract: a real empty hand then reads 0.06-0.12 = held (6 s lost), a full hand is never dropped
-  release_check_after: [unknown]   # detected shapes (unknown = none) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
+  release_check_after: [unknown, lying]   # grasp kinds (shape, unknown, lying) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
+  last_kinds: [unknown, lying]  # grasp kinds picked after the others: they share the unknown-shape hold (lying: until motion's own grasp for it is measured)
   release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
   release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
   reopen_pause_s: 0.3         # a hand found full reopens thumb and one finger first, rests this long, then the last finger
