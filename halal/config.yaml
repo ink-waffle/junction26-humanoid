@@ -202,9 +202,9 @@ motion:
     lift: 0.004
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
-  candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified
-    stiff: {cube: [cage, pinch], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage]}
-    soft: {cube: [cage], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage]}   # the pinch has no soft closure
+  candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified, `lying` = prism on a side
+    stiff: {cube: [cage, pinch], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage], lying: [cage_lying]}
+    soft: {cube: [cage], cylinder: [cage], triangle: [cage_apex, cage], unknown: [cage], lying: [cage_lying]}   # the pinch has no soft closure
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
   # carry_acc, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
@@ -221,6 +221,9 @@ motion:
     cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
       base: cage
       headings_deg: {triangle: [0, 120, 240]}
+    cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold
+      base: cage
+      squeeze: {triangle: 0.75}
     pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}
