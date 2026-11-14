@@ -59,7 +59,7 @@ def run_leg(args: argparse.Namespace, leg: Leg, tag: str, port: int, out_dir: Pa
     team = f"{args.name}-{leg.key}"
     cmd = [sys.executable, "-m", args.evaluator, "--instructions", leg.instructions, "--task", leg.task,
            "--team", team, "--trials", str(args.trials), "--seed", str(args.seed), "--out", str(out_dir),
-           "--policy", f"ws://localhost:{port}", "--time-limit", str(args.time_limit)]
+           "--policy", f"ws://localhost:{port}", "--time-limit", str(args.time_limit), *shlex.split(args.evaluator_args)]
     server = None
     if args.image:
         cmd += ["--container", args.image, "--host-port", str(port)]
@@ -119,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--legs", default="fixed,known,unseen")
     ap.add_argument("--port", type=int, default=8100)
     ap.add_argument("--evaluator", default="halal.eval.sim_eval", help="evaluator module (halal.eval.real_eval: real words)")
+    ap.add_argument("--evaluator-args", default="", help="extra evaluator arguments, e.g. '--record-frames NAME'")
     args = ap.parse_args(argv)
 
     out_dir = RUNS / "proxy" / f"{args.name}_{time.strftime('%m%d_%H%M%S')}"
