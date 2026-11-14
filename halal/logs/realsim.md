@@ -17,6 +17,7 @@ swaps the file). Code: `halal/ops/real_sim.py`.
 | `boxes` | 70 mm walls, tape colour outside, 0.5 mm cardboard panels on the inner faces and floor | scene dict + the scene config classes rebuilt with the extra panels |
 | `table` | no printed grid mat, grey glossy table | same rebuild |
 | `offsets` | counter +1 cm in z, box row +6 cm in x (real: 0 to +2 cm, +5 to +10 cm) | scene dict |
+| `camera` | head camera pose error: calibration.yaml pose x (rotation vector, translation) in the optical frame, as `head_fit.py` writes it; default = realdata B7's six-parameter fit | the camera config's mount offset, before the scene is built (DR's pose jitter rides on top; the policy keeps reading calibration.yaml) |
 | real words | "orange" / "purple" in every instruction; sort_fixed = yellow left, purple center, orange right, for the sentence AND the scoring | client side: `python -m halal.eval.proxy --evaluator halal.eval.real_eval` |
 
 Not modelled: the real prism's proportions (45 x 45 mm, ridge about 39 mm; the sim prism is 52 mm across with the
@@ -61,6 +62,20 @@ the previous plan, so after one side-box pick at +6 cm the center box looked out
 
 Lying prisms: a failed pick pushes the prism 1 to 8 cm; none left the counter, none entered a wrong bin, no
 neighbour was lost, and each costs 25 to 30 s.
+
+## Robot-night variant (camera error; table 2 cm to the robot's left, counter 1 cm up)
+
+After the first real runs (v18 refused everything, then missed a cube and released in front of a box). All features,
+soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; configs `robot6.yaml` (camera -7.4 / -1.9 /
+-0.4 deg and -4.0 cm in optical y: the scene sits about 60 px higher in the head image, as in the recordings) and
+`robotmild.yaml` (rotation only, -2.2 / -1.8 / -1.4 deg) in `/data/scratch/realsim/`.
+
+| Leg | Image | Camera error | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs20-robot6 | v20 (b7468d515c78) | six-parameter | 7/31 | +0.88 ± 1.36 | 0 | 0 | PASS, 7 time limits | hand fit rejected on `turn` in all 62 verdicts, `layout from nominal` on all 86 looks; objects seen 3 to 6 cm too far: 27 empty picks that shove them forward, 198 refused options; 24 objects left on the counter |
+
+Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
+and release nothing without a grip reading.
 
 ## Filmed episodes (v16, soft hands `1.5,0.2,0.0075`, real words; `real_eval --record-video NAME`)
 
