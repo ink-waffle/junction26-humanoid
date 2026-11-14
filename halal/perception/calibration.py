@@ -59,6 +59,13 @@ class SelfCalibration:
         """The pose that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
         return self._by_hands(depth, nominal, joints, self.counter_fit(depth, nominal))
 
+    def consensus(self, poses: list[Camera]) -> Camera | None:
+        """Of several believed arm poses of one episode, the one nearest to all others at the object band; None of none."""
+        if not poses:
+            return None
+        apart = [[self._apart(a, b) for b in poses] for a in poses]
+        return poses[int(np.argmin(np.sum(apart, axis=1)))]
+
     def counter(self, depth: np.ndarray, camera: Camera) -> PlaneFit:
         """The counter plane as this camera sees it now; the scene file's level plane when it cannot be fitted."""
         return self.counter_fit(depth, camera) or PlaneFit(UP, self.counter_z)

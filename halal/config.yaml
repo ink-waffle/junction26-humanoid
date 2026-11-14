@@ -89,6 +89,7 @@ perception:
       min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
+    arm_fits: 5               # believed arm fits gathered per episode; the one nearest to all others fixes the camera
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
     still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
     still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm
