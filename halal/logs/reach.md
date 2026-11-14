@@ -121,3 +121,19 @@ wrong bin) / carried, sort_fixed points.
   +5…+7 mm), so the centre is 23 mm or more from the near wall when it passes the rim although it was released 20 mm
   from it. The arm is nearly straight and tilted there; the forward drift is consistent in sim (0 of 24 short) but its
   cause is not established and nothing says the real hand does the same.
+
+## Sweeps r3 (centre bin, +10 cm) and r4 (side bins, +12 cm): releases on the rim, stock hand
+
+Sim EV is an UPPER BOUND for the real robot: these releases only land inside because the objects leave the hand
+forward at the reach limit (median +46…+58 mm here), which is unexplained and unverified for the real soft hand.
+
+| bins, bin | config | planned | binned | on the counter / off | EV | inset, rise | landing minus release point, x (binned) | by shape |
+|---|---|---|---|---|---|---|---|---|
+| +10, centre | rise list (insets ≥ 3 cm) | 0/12 | | | | | | "arm cannot reach the center bin" |
+| +10, centre | `rim` [0.02, 0.01] | 12/12 | 10/12 | 2 / 0 | +0.83 | 1 cm, +6 cm | +15…+106 mm (median +58) | cube 2/4, cylinder 4/4, triangle 4/4 |
+| +12, side | `rim` [0.02, 0.01, 0.0] | 24/24 | 14/24 | 10 / 0 | +0.58 | 0 cm, +6 cm | +27…+87 mm (median +46) | cube 0/8, cylinder 6/8, triangle 8/8 |
+
+- The centre bin at +10 cm (release at y 0) reaches only 1 cm inside the wall; the side bins at +12 cm only the wall's
+  inner face (inset 0). Every miss came to rest on the counter in front of the box (0 points); nothing left the counter
+  and nothing reached another box in 36 rim releases.
+- Shape decides: triangles 12/12, cylinders 10/12, cubes 2/12 (why the cube falls short was not traced).
