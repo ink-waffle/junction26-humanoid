@@ -318,3 +318,38 @@ fingertips. The opposite corner (grippy and light) is the hard one for self-cent
 bench now has `dr: sticky` for it.
 
 Verdict: `candidates.triangle: [cage_apex, cage]` (vertex-aligned when the yaw is known, default hints otherwise).
+
+## Sweep 14: which way may the hand class err; the low pick sequence in sim
+
+Stock (stiff) sim, hard DR, exact pose unless noted, staggered release.
+
+Decision table, true hand × assumed class (cage grasp; cube / cylinder / triangle; no object stayed in the hand in any
+cell):
+
+| true hand | assumed stiff | assumed soft |
+|---|---|---|
+| stiff sim | 12/12, 12/12, 12/12 (sweep 5) | 12/12, 12/12, 6/12 (triangle: 3 not lifted, 2 lost in lift, 1 in carry) |
+| soft sim (sweep 12) | 1/6, 1/6, 0/6 | 8/12, 12/12, 12/12 at 8 rad/s²; 6/6, 6/6, 6/6 at 4 rad/s² |
+
+Verdict: a soft hand taken for stiff loses nearly everything, a stiff hand taken for soft loses half the triangles
+only (the soft triangle closure, thumb 0.80 plus fingers 0.4 rad deeper, crushes it on the stiff hand). When in
+doubt the class should be soft. Next: a shallower soft triangle depth that suits both hands.
+
+Low pick sequence (`motion.sequences: [low, organiser]`) against the organiser-sequence cells of sweep 5:
+
+| condition | low sequence | organiser sequence |
+|---|---|---|
+| exact pose | 35/36 (triangle 11/12) | 36/36 |
+| x error ±10 mm | 23/24 (triangle 7/8) | 24/24 |
+| duration home → retreat, as executed | 5.48 s | 8.66 s |
+
+Both low-sequence losses are triangles (default hints) lost in the carry. Verdict: 3.2 s faster per pick, no cost
+for cubes and cylinders (40/40); stays off until triangles are confirmed with the vertex-aligned grasp under it.
+
+## Obstacle-aware plans (offline)
+
+`plan_pick(..., obstacles=...)`: plans whose fingers come within 47 mm of another object's centre while below its top
+during descend and close are rejected. The policy's episode where the vertex-aligned grasp knocked over a neighbour
+7.5 cm away (target at (+0.301, −0.098), right arm, heading +40°, neighbour at (+0.299, −0.023)): with the neighbour
+passed, the vertex-aligned plan is rejected and the default-hint cage plans with a clear heading. A neighbour at the
+minimum 8 cm blocks every default hint only in the forward-inward diagonal. Sim validation: sweep 19.
