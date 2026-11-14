@@ -29,6 +29,7 @@ class Tag(Enum):
     SAME = auto()            # "the same bin", "the opposite side"; value: same | opposite
     COMPANION = auto()       # "blue goes with yellow", "red joins blue"
     CORRECTION = auto()      # "sorry, I meant", "actually", "make that"
+    EXCLUSIVE = auto()       # "each colour gets its own bin", "one colour per bin"
     ORDINAL = auto()         # value: rank counted along the row of bins
     BREAK = auto()           # sentence boundary
     COMMA = auto()
@@ -95,9 +96,9 @@ WORDS: dict[str, tuple[Tag, str]] = {
                      "cans tube tubes puck pucks"),
         "triangle": "triangle triangles triangular prism prisms wedge wedges pyramid pyramids"}),
     **_entries(Tag.BIN, {
-        "left": "left lef leftmost lefthand leftward lhs",
+        "left": "left lef leftmost lefthand lhs",
         "center": "center centre central middle mid midmost centermost",
-        "right": "right rightmost righthand rightward rhs"}),
+        "right": "right rightmost righthand rhs"}),
     **_entries(Tag.REST, {"": "rest remaining remainder other others leftover leftovers otherwise else"}),
     **_entries(Tag.ALL, {"": "everything anything all every each any whatever whichever everyone"}),
     **_entries(Tag.NOT, {
@@ -110,7 +111,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
                     "omit neglect disregard"),
         "backward": "stay stays staying remain remains untouched unmoved unsorted"}),
     **_entries(Tag.VOID, {"": "empty unused vacant"}),
-    **_entries(Tag.RESPECTIVELY, {"": "respectively correspondingly"}),
+    **_entries(Tag.RESPECTIVELY, {"": "respectively correspondingly order ordering sequence successively"}),
     **_entries(Tag.PRONOUN, {"": "them they those these it which"}),
     **_entries(Tag.ADD, {"": "too also likewise ditto similarly"}),
     **_entries(Tag.SAME, {"same": "same", "opposite": "opposite"}),
@@ -150,6 +151,9 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("in", "the", "same", "order"): (Tag.RESPECTIVELY, ""),
     ("in", "order"): (Tag.RESPECTIVELY, ""),
     ("in", "turn"): (Tag.RESPECTIVELY, ""),
+    ("in", "order", "to"): (Tag.LINK, ""),
+    ("any", "order"): (Tag.FILL, ""),
+    ("particular", "order"): (Tag.FILL, ""),
     ("as", "well", "as"): (Tag.AND, ""),
     ("along", "with"): (Tag.AND, ""),
     ("together", "with"): (Tag.AND, ""),
@@ -195,6 +199,20 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
        for preposition in ("of", "in") for quantifier in ("any", "every", "all", "whatever", "whichever")
        for noun in ("colour", "colours", "color", "colors", "shape", "shapes")},
     ("make", "sure"): (Tag.LINK, ""),
+    ("its", "own"): (Tag.EXCLUSIVE, ""),
+    ("their", "own"): (Tag.EXCLUSIVE, ""),
+    ("a", "different"): (Tag.EXCLUSIVE, ""),
+    ("different", "bins"): (Tag.EXCLUSIVE, ""),
+    ("separate", "bins"): (Tag.EXCLUSIVE, ""),
+    ("one", "colour", "per"): (Tag.EXCLUSIVE, ""),
+    ("one", "color", "per"): (Tag.EXCLUSIVE, ""),
+    ("nowhere", "but"): (Tag.LINK, ""),
+    ("nowhere", "except"): (Tag.LINK, ""),
+    ("nowhere", "else", "but"): (Tag.LINK, ""),
+    ("nowhere", "other", "than"): (Tag.LINK, ""),
+    ("nothing", "but"): (Tag.FILL, ""),
+    ("nothing", "except"): (Tag.FILL, ""),
+    ("nothing", "other", "than"): (Tag.FILL, ""),
 }
 MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 
@@ -202,10 +220,11 @@ MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 FUZZY_TARGETS = ("yellow", "blue", "cube", "cubes", "cylinder", "cylinders", "triangle", "triangles", "triangular",
                  "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
 NOT_TYPOS = frozenset(
-    "lift loft heft deft weft cleft lefty lefts lent lest glue clue blur flue blued bluer cure cute lube "
-    "rube cubs cubed curb night light might sight tight fight eight bright fright wright rights righty bight "
-    "fellow mellow bellow yellowy enter centers centres centred centered canter renter meddle muddle riddle "
-    "fiddle middles strangle triangled tubes cures".split())
+    "aright bellow bight blued bluer blur calender canter censer centers centred centres cinder cleft clue "
+    "colander cuba cubed cubs cure cures cute deft diddle eight enter fellow fiddle fight flue fright glue "
+    "heft leftist lefts lefty lent lest loft lube meddle mellow middles muddle night piddle renter riddle "
+    "rightist righto rights righty rube sight tangle tenter tight tingle triage triangled triangulate weft "
+    "wright yellowy".split())
 
 NUMBERS = {"1": 1, "2": 2, "3": 3, "one": 1, "two": 2, "three": 3}
 RELATIVE_PRONOUNS = frozenset({"that", "which", "who"})
@@ -214,6 +233,9 @@ NOUN_FILLERS = frozenset({"the", "of", "a", "an", "coloured", "colored", "shaped
 SURFACES = frozenset({"table", "counter", "desk", "place", "workspace", "mat", "surface", "tabletop"})
 ROW_STARTERS = frozenset("start starting begin beginning counting going reading moving numbered ordered".split())
 ROW_JOINERS = frozenset({"to", "through", "till", "until", "→", ":"})
+ROW_HEADINGS = {"rightward": "left", "rightwards": "left", "leftward": "right", "leftwards": "right"}
+ROW_LEADS = frozenset({"first", "one", "1", "1st"})
+ROW_EQUATES = frozenset({"as", "is", "being", "means", "=", "number", "bin", "the"})
 TRAVEL_WORDS = frozenset("going moving walking travelling traveling proceeding heading working sweeping scanning "
                          "counting reading stepping running".split())
 NAMING_WORDS = frozenset("call called name named label labelled labeled denote denoted letter lettered".split())

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from itertools import permutations
 
 from halal.language.grammar import tuning
 from halal.language.grammar.association import BIN_OF, REMAINING, Reading, Unit, is_quantifier
@@ -43,11 +44,13 @@ class _Ledger:
     penalty: float = 0.0
 
 
-def interpret(reading: Reading, mentions: list[Mention]) -> Interpretation:
-    """Mapping stated by `reading`; its cost adds what only shows once everything is put together."""
+def interpret(reading: Reading, mentions: list[Mention], exclusive: bool = False) -> Interpretation:
+    """Mapping stated by `reading`; `exclusive` = the text says every colour has a bin of its own."""
     ledger = _Ledger()
-    _collect(ledger, _with_remaining_bin(_with_companion_bins(reading, mentions), ledger), mentions)
+    _collect(ledger, _with_remaining_bin(_with_companion_bins(reading, mentions, ledger), ledger), mentions)
     _drop_correct_bin_opening(ledger, reading, mentions)
+    if exclusive and ledger.bans:
+        _solve_exclusive(ledger)
     _apply_bans(ledger)
     table = {atom: _winner(ledger, atom) for atom in ATOMS}
     ruled = {atom for atom in ATOMS if any(atom in rule.atoms for rule in ledger.rules)}
@@ -59,26 +62,39 @@ def interpret(reading: Reading, mentions: list[Mention]) -> Interpretation:
 
 
 # ---------------------------------------------------------------- rules from the reading
-def _with_companion_bins(reading: Reading, mentions: list[Mention]) -> Reading:
+def _with_companion_bins(reading: Reading, mentions: list[Mention], ledger: _Ledger) -> Reading:
     """Replace 'the bin of yellow' by the bin another unit gives yellow; without one, that unit names no bin."""
     units = list(reading.units)
-    if not any(bin_name.startswith(BIN_OF) for unit in units for bin_name in unit.bins):
-        return reading
-    for _ in units:
-        stated = {mentions[index].key: bin_name for unit in units
-                  for index, bin_name in zip(unit.objects, unit.bins * (len(unit.objects) if len(unit.bins) == 1 else 1))
-                  if not bin_name.startswith(BIN_OF)}
-        units = [replace(unit, bins=tuple(stated.get(b[len(BIN_OF):], b) if b.startswith(BIN_OF) else b
-                                          for b in unit.bins)) for unit in units]
-    return replace(reading, units=tuple(replace(unit, bins=tuple(b for b in unit.bins if not b.startswith(BIN_OF)))
-                                        for unit in units))
+    for _ in [unit for unit in units if _awaits_companion(unit)]:      # one pass per link of a chain
+        stated = _stated_bins(units, mentions)
+        units = [replace(unit, bins=(stated.get(unit.bins[0][len(BIN_OF):], unit.bins[0]),))
+                 if _awaits_companion(unit) else unit for unit in units]
+    if any(_awaits_companion(unit) for unit in units):
+        ledger.issues.append(Issue("a group is sent 'with' another group that has no bin", tuning.F_UNDETERMINED))
+    return replace(reading, units=tuple(replace(unit, bins=()) if _awaits_companion(unit) else unit for unit in units))
+
+
+def _awaits_companion(unit: Unit) -> bool:
+    return any(bin_name.startswith(BIN_OF) for bin_name in unit.bins)
+
+
+def _stated_bins(units: list[Unit], mentions: list[Mention]) -> dict[str, str]:
+    """Object key -> bin over the units whose bin is known."""
+    stated: dict[str, str] = {}
+    for unit in units:
+        bins = unit.bins * len(unit.objects) if len(unit.bins) == 1 else unit.bins
+        stated.update((mentions[index].key, bin_name) for index, bin_name in zip(unit.objects, bins)
+                      if not bin_name.startswith(BIN_OF))
+    return stated
 
 
 def _with_remaining_bin(reading: Reading, ledger: _Ledger) -> Reading:
     """Replace 'the remaining bin' by the one bin no other unit uses; without one, those units name no bin."""
-    used = {bin_name for unit in reading.units for bin_name in unit.bins} - {REMAINING}
+    used = {bin_name for unit in reading.units for bin_name in unit.bins}
+    if REMAINING not in used:
+        return reading
     free = [bin_name for bin_name in BINS if bin_name not in used]
-    if len(free) != 1 and any(REMAINING in unit.bins for unit in reading.units):
+    if len(free) != 1:
         ledger.issues.append(Issue("cannot tell which bin 'the remaining one' is", tuning.F_UNDETERMINED))
     units = tuple(replace(unit, bins=tuple(free[0] if b == REMAINING else b for b in unit.bins))
                   if len(free) == 1 else replace(unit, bins=tuple(b for b in unit.bins if b != REMAINING))
@@ -98,7 +114,8 @@ def _collect(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None
         mention = mentions[index]
         if unit is not None:
             opened.add(mention.topic)
-            group = _add_rules(ledger, _within(topics.get(mention.topic), _unit_rules(ledger, unit, mentions, residual)))
+            rules = _unit_rules(ledger, unit, mentions, residual)
+            group = _add_rules(ledger, _within(topics.get(mention.topic), rules))
             pending = _cut(ledger, group, pending | _excepted(unit, mentions))
         elif not isinstance(mention, ObjectMention) or not mention.known:
             continue
@@ -122,7 +139,7 @@ def _unit_rules(ledger: _Ledger, unit: Unit, mentions: list[Mention], residual: 
         ledger.bans += [(_selector(mention), frozenset(unit.forbidden)) for mention in known]
     if not unit.bins and unit.forbidden:
         return []
-    return [replace(_rule(mention, bin_name, unit.cost, residual), corrects=unit.corrects)
+    return [_rule(mention, bin_name, unit.cost, residual, unit.corrects)
             for mention, bin_name in zip(objects, targets)
             if mention in known and not (excepted and mention.negated is Negation.WHOLE)]
 
@@ -150,7 +167,7 @@ def _cut(ledger: _Ledger, group: list[int], excepted: frozenset[Atom]) -> frozen
     """Take `excepted` object types out of the broader rules of a group; nothing stays pending."""
     for index in group:
         rule = ledger.rules[index]
-        if excepted < rule.atoms:
+        if excepted and excepted < rule.atoms:
             ledger.rules[index] = replace(rule, atoms=rule.atoms - excepted)
     return frozenset()
 
@@ -166,13 +183,13 @@ def _selector(mention: ObjectMention) -> frozenset[Atom]:
     return frozenset((colour, shape) for colour in colours for shape in shapes)
 
 
-def _rule(mention: ObjectMention, bin_name: str | None, cost: float, residual: bool) -> Rule:
+def _rule(mention: ObjectMention, bin_name: str | None, cost: float, residual: bool, corrects: bool = False) -> Rule:
     """The rule a mention states; its written key is the group the negated part is taken from."""
     key = {Negation.COLOUR: mention.shape or DEFAULT_KEY, Negation.SHAPE: mention.colour or DEFAULT_KEY}.get(
         mention.negated, mention.key)
     weight = (tuning.W_UNIVERSAL * mention.universal + tuning.W_QUANTIFIED * (mention.scope is Scope.ALL)
               - tuning.W_RESIDUAL * (residual or mention.scope is Scope.REST))
-    return Rule(_selector(mention), bin_name, key if bin_name else None, weight, cost)
+    return Rule(_selector(mention), bin_name, key if bin_name else None, weight, cost, corrects)
 
 
 def _drop_correct_bin_opening(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None:
@@ -191,6 +208,21 @@ def _drop_correct_bin_opening(ledger: _Ledger, reading: Reading, mentions: list[
         ledger.issues.append(Issue("read 'the right bin' for everything as 'the correct bin'", 1.0))
     else:
         ledger.issues.append(Issue("'the right bin' for everything may mean 'the correct bin'", tuning.F_CORRECT_BIN))
+
+
+def _solve_exclusive(ledger: _Ledger) -> None:
+    """One bin per colour plus bans: when a single colour-to-bin pairing fits, state it."""
+    rows = {colour: frozenset((colour, shape) for shape in SHAPES) for colour in COLOURS}
+    placed = {colour: rule.bin for colour, atoms in rows.items() for rule in ledger.rules
+              if rule.atoms == atoms and rule.bin}
+    banned = _merged_bans(ledger.bans)
+    fits = [order for order in permutations(BINS)
+            if all(placed.get(colour, bin_name) == bin_name and bin_name not in banned.get(rows[colour], ())
+                   for colour, bin_name in zip(COLOURS, order))]
+    for colour, bin_name in zip(COLOURS, fits[0]) if len(fits) == 1 else []:
+        if colour not in placed:
+            ledger.rules.append(Rule(rows[colour], bin_name, colour))
+            ledger.issues.append(Issue(f"'{colour}' -> {bin_name} by elimination", tuning.F_ELIMINATION))
 
 
 def _apply_bans(ledger: _Ledger) -> None:
@@ -293,20 +325,22 @@ def _charge_unpaired(ledger: _Ledger, ruled: set[Atom], unpaired: list[Mention])
     """An unpaired mention is harmless when settled elsewhere, a loose end when its sentence names no bin."""
     used = {rule.bin for rule in ledger.rules}
     for mention in unpaired:
-        if mention.soft or (isinstance(mention, BinMention) and mention.position in used):
+        if mention.soft:
             continue
-        if isinstance(mention, ObjectMention) and _selector(mention) <= ruled:
+        settled = mention.position in used if isinstance(mention, BinMention) else _selector(mention) <= ruled
+        if settled:
+            ledger.penalty += tuning.REDUNDANT
             continue
         is_bin = isinstance(mention, BinMention)
         name = f"the {mention.position or 'referenced'} bin" if is_bin else f"'{mention.key}'"
         if mention.descriptive:
-            ledger.penalty += tuning.DESCRIPTIVE - tuning.REDUNDANT
+            ledger.penalty += tuning.DESCRIPTIVE
             ledger.issues.append(Issue(f"{name} is mentioned without an assignment", tuning.F_DESCRIPTIVE))
         elif is_bin:
-            ledger.penalty += tuning.UNPAIRED_BIN - tuning.REDUNDANT
+            ledger.penalty += tuning.UNPAIRED_BIN
             ledger.issues.append(Issue(f"no objects found for {name}", tuning.F_UNPAIRED_BIN))
         else:
-            ledger.penalty += tuning.UNPAIRED_OBJECT - tuning.REDUNDANT
+            ledger.penalty += tuning.UNPAIRED_OBJECT
             ledger.issues.append(Issue(f"no bin found for {name}", tuning.F_UNPAIRED_OBJECT))
 
 

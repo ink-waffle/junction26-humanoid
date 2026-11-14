@@ -1,12 +1,15 @@
 """Deterministic instruction parser: tag tokens, chunk mentions, pair objects with bins, read off the mapping."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from halal.language import ParsedInstruction
 from halal.language.grammar import tuning
+from halal.language.grammar.lexicon import Tag
 from halal.language.grammar.association import Reading, candidate_readings
 from halal.language.grammar.mentions import Mention, find_mentions
 from halal.language.grammar.semantics import Interpretation, interpret
-from halal.language.grammar.tokens import Issue, Token, tag
+from halal.language.grammar.tokens import Issue, Token, tag, without_asides
 
 
 class RulesParser:
@@ -15,12 +18,22 @@ class RulesParser:
 
     def parse(self, text: str) -> ParsedInstruction:
         try:
-            return self._parse(text)
+            return self._parse_around_asides(text if isinstance(text, str) else "")
         except Exception as error:      # a parse failure must never take the policy down
             return ParsedInstruction({}, 0.0, self.name, (f"parser error: {error!r}",))
 
+    def _parse_around_asides(self, text: str) -> ParsedInstruction:
+        """Parse the whole text; while doubts remain, retry without parenthetical asides and keep the surer result."""
+        parsed, bare = self._parse(text), without_asides(text)
+        if parsed.confidence >= tuning.ASIDE_RETRY_BELOW or bare == text:
+            return parsed
+        retry = self._parse(bare)
+        if retry.mapping and retry.confidence > parsed.confidence:
+            return replace(retry, notes=retry.notes + ("text in parentheses was ignored",))
+        return parsed
+
     def _parse(self, text: str) -> ParsedInstruction:
-        tokens = tag(text) if isinstance(text, str) else []
+        tokens = tag(text)
         mentions = find_mentions(tokens)
         ranked = _ranked(mentions, tokens)
         reading, meaning = ranked[0]
@@ -36,7 +49,9 @@ class RulesParser:
 
 def _ranked(mentions: list[Mention], tokens: list[Token]) -> list[tuple[Reading, Interpretation]]:
     """Candidate readings with their meanings, cheapest total cost first."""
-    interpreted = [(reading, interpret(reading, mentions)) for reading in candidate_readings(mentions, tokens)]
+    exclusive = any(token.tag is Tag.EXCLUSIVE for token in tokens)
+    interpreted = [(reading, interpret(reading, mentions, exclusive))
+                   for reading in candidate_readings(mentions, tokens)]
     return sorted(interpreted, key=lambda pair: pair[1].cost)
 
 

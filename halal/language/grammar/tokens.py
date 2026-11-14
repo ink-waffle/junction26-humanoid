@@ -9,8 +9,8 @@ from typing import Iterator
 from halal.language.grammar import tuning
 from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, DEFINING_WORDS, FUZZY_TARGETS, INTENSIFIED,
                                             MAX_PHRASE, MODAL_FOLLOWERS, NAMING_WORDS, NOT_TYPOS, NUMBERS, PHRASES,
-                                            RELATIVE_PRONOUNS, ROW_JOINERS, ROW_STARTERS, STAY_WORDS, SURFACES,
-                                            TRAVEL_WORDS, WH_WORDS, WORDS, Tag)
+                                            RELATIVE_PRONOUNS, ROW_EQUATES, ROW_HEADINGS, ROW_JOINERS, ROW_LEADS,
+                                            ROW_STARTERS, STAY_WORDS, SURFACES, TRAVEL_WORDS, WH_WORDS, WORDS, Tag)
 
 _QUOTES = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"',
                          **{emoji: f" {colour} " for emoji, colour in COLOUR_EMOJI.items()}})
@@ -27,6 +27,7 @@ _CONTRACTIONS = (
     (re.compile(r"'ll\b"), " will"),
     (re.compile(r"'ve\b"), " have"),
 )
+_ASIDE = re.compile(r"\([^()]*\)|(?<=\S) [–—-]{1,2} [^–—\n.;!?()]*? [–—-]{1,2} (?=\S)")
 _WORD = re.compile(r"[^\W\d_]+|\d+(?:st|nd|rd|th)?|[.;!?,:=→()&/+#]")
 _SEPARATORS = (Tag.BREAK, Tag.COMMA, Tag.CLAUSE)
 _OPPOSITE = {"left": "right", "right": "left"}
@@ -55,6 +56,11 @@ def tag(text: str) -> list[Token]:
     for rule in _CONTEXT_RULES:
         tokens = rule(tokens)
     return tokens
+
+
+def without_asides(text: str) -> str:
+    """Text without parenthesised spans and spans between paired dashes."""
+    return _ASIDE.sub(" ", text)
 
 
 def normalise(text: str) -> str:
@@ -173,7 +179,7 @@ def _expand_rows(tokens: list[Token]) -> list[Token]:
 
 def _row_at(tokens: list[Token], position: int) -> tuple[str, int]:
     """(side the row starts from, index after the phrase) for a row phrase at `position`, else ('', position)."""
-    for read in (_span_row, _origin_row, _heading_row):
+    for read in (_span_row, _origin_row, _heading_row, _leading_row):
         side, end = read(tokens, position)
         if side:
             return side, _skip(tokens, end, (Tag.CONTAINER,))
@@ -189,14 +195,38 @@ def _span_row(tokens: list[Token], position: int) -> tuple[str, int]:
 def _origin_row(tokens: list[Token], position: int) -> tuple[str, int]:
     """'from the left', 'starting at your right': a direction of travel along the bins from one side."""
     index = position
-    while _at(tokens, index).text in ROW_STARTERS | {"from", "at", "with", "the", "your"}:
+    while _at(tokens, index).text in ROW_STARTERS | {"from", "at", "with", "on"} or _at(tokens, index).tag is Tag.FILL:
         index += 1
     lead = [token.text for token in tokens[position:index]]
-    if not lead or lead[0] in ("the", "your", "at", "with") or not _is_side(_at(tokens, index)):
+    if not lead or lead[0] not in ROW_STARTERS | {"from"} or not _is_side(_at(tokens, index)):
         return "", position
-    if "from" not in lead and {"at", "with"}.isdisjoint(lead) or _row_end(tokens, index):
+    if {"from", "at", "with", "on"}.isdisjoint(lead) or _row_end(tokens, index):
         return "", position
     return tokens[index].value, index + 1
+
+
+def _leading_row(tokens: list[Token], position: int) -> tuple[str, int]:
+    """'left first', 'with the right bin as number one', 'first means the left bin', 'rightwards', said of the row."""
+    token = tokens[position]
+    if token.text in ROW_HEADINGS:
+        return ROW_HEADINGS[token.text], position + 1
+    start = index = _skip(tokens, position + 1, (Tag.CONTAINER,))
+    while _at(tokens, index).text in ROW_EQUATES:
+        index += 1
+    side, lead = (token, _at(tokens, index)) if _is_side(token) else (_at(tokens, index), token)
+    equated = index > start or (side is token and lead.text == "first")
+    if not _is_side(side) or lead.text not in ROW_LEADS or not equated or _describes_objects_before(tokens, position):
+        return "", position
+    return side.value, index + 1
+
+
+def _describes_objects_before(tokens: list[Token], position: int) -> bool:
+    """A colour or shape stands earlier in the same clause, so 'first' there orders actions, not bins."""
+    while _at(tokens, position - 1).tag not in (Tag.BREAK, Tag.COMMA):
+        position -= 1
+        if tokens[position].tag in (Tag.COLOUR, Tag.SHAPE):
+            return True
+    return False
 
 
 def _heading_row(tokens: list[Token], position: int) -> tuple[str, int]:
@@ -430,7 +460,7 @@ def _set_ordinal(token: Token, side: str) -> None:
 def _resolve_numbered(tokens: list[Token]) -> list[Token]:
     """'bin 2', 'box number three': bins numbered along the row from the left."""
     for index, token in enumerate(tokens):
-        if token.tag is not Tag.CONTAINER or _at(tokens, index - 1).tag is Tag.BIN:
+        if token.tag is not Tag.CONTAINER or token.text.endswith("s") or _at(tokens, index - 1).tag is Tag.BIN:
             continue
         number_index = index + 1
         while _at(tokens, number_index).text in ("number", "no", "nr", "#"):
