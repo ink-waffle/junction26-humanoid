@@ -224,9 +224,9 @@ policy:
   min_detection_confidence: 0.5   # colour certainty: 1.0 inside a hue basin, 0 from 6 degrees outside
   min_instruction_confidence: 0.5
   release_shifts:             # per bin: pelvis xy shifts of the default release point, used in turn so objects do not stack
-    left: [[0.0, 0.0], [0.0, 0.07]]
-    center: [[0.0, -0.035], [0.0, 0.035]]
-    right: [[0.0, 0.0], [0.0, -0.07]]
+    left: [[0.0, 0.0], [0.0, 0.04]]       # sideways only: the staggered release lands objects up to 12 cm ahead, 6 cm outward
+    center: [[0.0, -0.02], [0.0, 0.02]]
+    right: [[0.0, 0.0], [0.0, -0.04]]
   grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
   grip_joints: [1, 3, 5]      # joints the grip score sums, each hand's own order: thumb_1 and both finger_0 (thumb_2 sits on its limit)
   grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
@@ -234,8 +234,8 @@ policy:
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
     unknown: 0.02             # no calibration close: the value that never calls a full hand empty
-  reopen_stagger_s: 0.25      # after such a close one finger opens this much later than the rest: frees an object wedged between the fingers
-  release_checks: 3           # closes of the hand above the bin after letting go (each reopens it) before the arm is retired for the episode
+  release_checks: 3           # closes of the hand above the bin after letting go before the arm is retired for the episode
+  reopen_pause_s: 0.3         # a hand found full reopens thumb and one finger first, rests this long, then the last finger
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
   calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish

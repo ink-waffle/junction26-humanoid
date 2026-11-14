@@ -98,6 +98,12 @@ class GripWindow:
         return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS,
                    plan.hand[phase(plan, "retreat")[1] - 1, joints])
 
+    def both_hands(self, hand_q: np.ndarray, posture: np.ndarray) -> np.ndarray:
+        """`hand_q` (14,) with this window's hand at `posture` (7,)."""
+        hand = np.array(hand_q, float)
+        hand[hand_slice(self.side)] = posture
+        return hand
+
     def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float, joints: Sequence[int]) -> float:
         """Summed shortfall of `joints` behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
         error = self.closed - np.asarray(hand_q, float)[hand_slice(self.side)]
@@ -106,28 +112,35 @@ class GripWindow:
 
 @dataclass(frozen=True)
 class ReleaseCheck:
-    """One more close on nothing after letting go, arm still above the bin: a hand that still holds something shows it."""
-    arm: np.ndarray     # (n, 14)
-    hand: np.ndarray    # (n, 14): open (if not yet), stay open, close, hold, reopen with one finger late
-    read_tick: int      # tick of this segment at which the grip score is read
+    """One more close on nothing after letting go, arm above the bin: a hand that still holds something shows it."""
+    hand: np.ndarray    # (n, 14): close, stay closed
+    read_tick: int      # row at which the grip score is read
 
     @classmethod
-    def after(cls, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_ticks: int, settle_ticks: int,
-              stagger_ticks: int, hand_vel: float, dt: float) -> ReleaseCheck:
-        """The check for the hand of `window` from the commanded pose `arm_q`, `hand_q`, after `open_ticks` with the hand open."""
-        joints = hand_slice(window.side)
-        released, closed = hand_q.copy(), hand_q.copy()
-        released[joints], closed[joints] = window.released, window.closed
-        opening = np.vstack([ramp(hand_q, released, hand_vel, dt), np.repeat(released[None], open_ticks, 0)])
-        closing = ramp(released, closed, hand_vel, dt)
-        still = np.repeat(closed[None], settle_ticks + 2 * OBS_LAG_TICKS, 0)
-        hand = np.vstack([opening, closing, still, _staggered(ramp(closed, released, hand_vel, dt), closed, joints, stagger_ticks)])
-        return cls(np.repeat(arm_q[None], len(hand), 0), hand, len(opening) + len(closing) + settle_ticks - 1)
+    def closing(cls, hand_q: np.ndarray, window: GripWindow, settle_ticks: int, not_before: int, hand_vel: float,
+                dt: float) -> ReleaseCheck:
+        """The check for the hand of `window` from the commanded `hand_q`; the score is read at row `not_before` or later."""
+        closed = window.both_hands(hand_q, window.closed)
+        closing = ramp(hand_q, closed, hand_vel, dt)
+        read_tick = max(len(closing) + settle_ticks - 1, not_before)
+        still = np.repeat(closed[None], read_tick + 1 + 2 * OBS_LAG_TICKS - len(closing), 0)
+        return cls(np.vstack([closing, still]), read_tick)
 
 
-def _staggered(opening: np.ndarray, closed: np.ndarray, joints: slice, delay: int) -> np.ndarray:
-    """A hand's opening (n, 14) with its last finger starting `delay` ticks later: an object wedged between two fingers falls out."""
-    late = np.arange(14)[joints][LATE_FINGER]
-    rows = np.vstack([opening, np.repeat(opening[-1][None], delay, 0)])
-    rows[:, late] = np.vstack([np.repeat(closed[None], delay, 0), opening])[:, late]
+def opening_in_turn(hand_q: np.ndarray, released: np.ndarray, side: str, pause_ticks: int, hand_vel: float,
+                    dt: float) -> np.ndarray:
+    """Hand rows (n, 14) from `hand_q` to `released`: thumb and one finger open and rest, only then the last finger."""
+    late = np.arange(14)[hand_slice(side)][LATE_FINGER]
+    first = np.array(released, float)
+    first[late] = hand_q[late]
+    return np.vstack([ramp(hand_q, first, hand_vel, dt), np.repeat(first[None], pause_ticks, 0),
+                      ramp(first, released, hand_vel, dt)])
+
+
+def catching_up(hand_q: np.ndarray, hand: np.ndarray, hand_vel: float, dt: float) -> np.ndarray:
+    """The hand rows `hand` (n, 14) entered from `hand_q`: every joint closes its gap at `hand_vel` at most."""
+    rows, q = np.empty((len(hand), 14)), np.asarray(hand_q, float)
+    for k, target in enumerate(hand):
+        q = q + np.clip(target - q, -hand_vel * dt, hand_vel * dt)
+        rows[k] = q
     return rows
