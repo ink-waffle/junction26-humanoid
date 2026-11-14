@@ -45,6 +45,11 @@ class ObjectMention:
     pronoun: str = ""               # the pronoun text while it still awaits its antecedent
     leave: bool = False             # the instruction says not to move these
     add: bool = False               # an additive cue stands next to it: "blue too", "same for blue"
+    universal: bool = False         # "regardless of colour", "whatever its shape" stands next to it
+    corrects: bool = False          # follows "sorry, I meant" / "actually": replaces what was said before
+    sentence: int = 0
+    topic: int = 0                  # first of the sentences chained to its own by introducing colons
+    descriptive: bool = False       # its sentence names no bin: "you will see red, yellow and blue objects"
     issues: tuple[Issue, ...] = ()
 
     @property
@@ -65,9 +70,13 @@ class BinMention:
     start: int
     end: int
     position: str | None = None
-    anaphor: str = ""               # "same" | "remaining" when the position is not stated
+    anaphor: str = ""               # "same" | "opposite" | "remaining" when the position is not stated
     negated: bool = False           # "not in the left bin", "the center bin stays empty"
     optional: bool = False          # named in passing: "from left to right", "skip the center bin"
+    corrects: bool = False          # follows "sorry, I meant" / "actually": replaces what was said before
+    sentence: int = 0
+    topic: int = 0
+    descriptive: bool = False       # its sentence names no objects: "there are three bins: left, center, right"
     issues: tuple[Issue, ...] = ()
 
     @property
@@ -106,12 +115,14 @@ def gap_between(tokens: list[Token], left: Mention, right: Mention) -> Gap:
 def find_mentions(tokens: list[Token]) -> list[Mention]:
     """Object and bin mentions in text order, with pronouns resolved and operator scopes applied."""
     mentions = _chunk(tokens)
+    _retag_punctuation(mentions, tokens)
     _share_heads(mentions, tokens)
     mentions = _resolve_pronouns(mentions, tokens)
     for position, token in enumerate(tokens):
         if token.tag in _OPERATORS:
             _OPERATORS[token.tag](mentions, tokens, position)
-    _mark_additions(mentions, tokens)
+    _mark_cues(mentions, tokens)
+    _mark_sentences(mentions, tokens)
     _read_cubes_as_objects(mentions)
     return mentions
 
@@ -121,18 +132,41 @@ def _chunk(tokens: list[Token]) -> list[Mention]:
     mentions: list[Mention] = []
     position = 0
     while position < len(tokens):
-        token, end = tokens[position], _phrase_end(tokens, position)
-        if token.tag is Tag.BIN:
-            mentions.append(BinMention(position, position + 1, token.value, optional=token.soft,
-                                       issues=_issues([token])))
-        elif token.tag is Tag.PRONOUN:
-            mentions.append(ObjectMention(position, position + 1, pronoun=token.text))
-        elif token.tag is Tag.SAME and _refers_to_bin(tokens, position + 1):
-            mentions.append(BinMention(position, position + 1, anaphor="same"))
-        elif end > position:
-            mentions.extend(_noun_phrase(tokens, position, end))
+        end, found = _mentions_at(tokens, position)
+        mentions.extend(found)
         position = max(end, position + 1)
     return mentions
+
+
+def _mentions_at(tokens: list[Token], position: int) -> tuple[int, list[Mention]]:
+    """(end index, mentions) of the phrase starting at `position`; no mentions when none starts there."""
+    token, end = tokens[position], _phrase_end(tokens, position)
+    if token.tag is Tag.BIN:
+        end = _bin_noun_end(tokens, position + 1)
+        return end, [BinMention(position, end, token.value, optional=token.soft, issues=_issues([token]))]
+    if token.tag is Tag.PRONOUN:
+        return position + 1, [ObjectMention(position, position + 1, pronoun=token.text)]
+    if token.tag is Tag.SAME and _bin_noun_end(tokens, position + 1) > position + 1:
+        return position + 1, [BinMention(position, position + 1, anaphor=token.value)]
+    return end, _noun_phrase(tokens, position, end) if end > position else []
+
+
+def _bin_noun_end(tokens: list[Token], position: int) -> int:
+    """Index after the nouns that follow a bin word: 'left bin', 'left hand side', 'middle one'."""
+    while position < len(tokens) and (tokens[position].tag is Tag.CONTAINER or tokens[position].text == "one"):
+        position += 1
+    return position
+
+
+def _retag_punctuation(mentions: list[Mention], tokens: list[Token]) -> None:
+    """':' and '?' right after a mention pair it with what follows; elsewhere they end an introduction."""
+    inside = {index for mention in mentions for index in range(mention.start, mention.end)}
+    for index, token in enumerate(tokens):
+        if token.text in (":", "?"):
+            before = index - 1
+            while before >= 0 and tokens[before].tag is Tag.COMMA:
+                before -= 1
+            token.tag = Tag.ARROW if before in inside else Tag.BREAK
 
 
 def _issues(tokens: list[Token]) -> tuple[Issue, ...]:
@@ -144,13 +178,6 @@ def _next_tag(tokens: list[Token], position: int) -> Tag | None:
     while position < len(tokens) and tokens[position].tag is Tag.FILL:
         position += 1
     return tokens[position].tag if position < len(tokens) else None
-
-
-def _refers_to_bin(tokens: list[Token], position: int) -> bool:
-    """'bin' or 'one' follows: 'the same bin', 'the same one'."""
-    while position < len(tokens) and tokens[position].tag is Tag.FILL:
-        position += 1
-    return position < len(tokens) and (tokens[position].tag is Tag.CONTAINER or tokens[position].text == "one")
 
 
 def _negates_property(token: Token) -> bool:
@@ -224,10 +251,17 @@ def _quantifier_phrase(tokens: list[Token], start: int, end: int, scope: Scope) 
         return [BinMention(start, end, anaphor="remaining")]
     span = tokens[start:end]
     pronominal = any(token.tag is Tag.OBJECT or token.text in PRONOUN_QUANTIFIERS for token in span)
-    counts_bins = _next_tag(tokens, end) is Tag.CONTAINER
-    if scope is Scope.REST or (scope is Scope.ALL and pronominal and not counts_bins):
-        return [ObjectMention(start, end, scope=scope)]
-    return []
+    counts_bins = _next_tag(tokens, end) in (Tag.CONTAINER, Tag.PRONOUN)
+    stands_alone = scope is Scope.ALL and pronominal and not counts_bins and not _floats(tokens, start, end)
+    return [ObjectMention(start, end, scope=scope)] if scope is Scope.REST or stands_alone else []
+
+
+def _floats(tokens: list[Token], start: int, end: int) -> bool:
+    """A lone 'all' after its noun or an auxiliary repeats the subject: 'the red ones should all go left'."""
+    if end - start > 1 or start == 0:
+        return False
+    before = tokens[start - 1]
+    return before.value in ("modal", "copula") or before.tag in (Tag.OBJECT, Tag.COLOUR, Tag.SHAPE, Tag.PRONOUN)
 
 
 def _names_bin(tokens: list[Token], start: int, end: int) -> bool:
@@ -405,11 +439,34 @@ def _apply_void(mentions: list[Mention], tokens: list[Token], position: int) -> 
             mentions[first].negated = True
 
 
-_OPERATORS = {Tag.LEAVE: _apply_leave, Tag.NOT: _apply_not, Tag.EXCEPT: _apply_except, Tag.VOID: _apply_void}
+def _apply_universal(mentions: list[Mention], tokens: list[Token], position: int) -> None:
+    """'regardless of colour' strengthens the object list before it in its sentence, else the one after it."""
+    def same_sentence(a: int, b: int) -> bool:
+        return all(token.tag is not Tag.BREAK for token in tokens[a:b])
+    objects = [i for i, mention in enumerate(mentions) if isinstance(mention, ObjectMention)]
+    before = [i for i in objects if mentions[i].end <= position and same_sentence(mentions[i].end, position)]
+    after = [i for i in objects if mentions[i].start > position and same_sentence(position, mentions[i].start)]
+    for index in _run_back(mentions, tokens, before[-1]) if before else _list_run(mentions, tokens, after[0]) if after else []:
+        mentions[index].universal = True
+
+
+def _apply_correction(mentions: list[Mention], tokens: list[Token], position: int) -> None:
+    """'sorry, I meant the right bin': what the rest of that sentence says replaces what was said before."""
+    first = _first_after(mentions, position)
+    if first == len(mentions) or sum(t.tag is Tag.BREAK for t in tokens[position:mentions[first].start]) > 1:
+        return
+    start = mentions[first].start
+    end = next((i for i in range(start, len(tokens)) if tokens[i].tag is Tag.BREAK), len(tokens))
+    for mention in mentions[first:]:
+        mention.corrects = mention.corrects or mention.start < end
+
+
+_OPERATORS = {Tag.LEAVE: _apply_leave, Tag.NOT: _apply_not, Tag.EXCEPT: _apply_except, Tag.VOID: _apply_void,
+              Tag.UNIVERSAL: _apply_universal, Tag.CORRECTION: _apply_correction}
 
 
 # ---------------------------------------------------------------- cues
-def _mark_additions(mentions: list[Mention], tokens: list[Token]) -> None:
+def _mark_cues(mentions: list[Mention], tokens: list[Token]) -> None:
     """Flag object mentions with 'too', 'as well', 'same for' beside them in their own clause."""
     boundaries = (Tag.BREAK, Tag.COMMA, Tag.CLAUSE)
     for index, mention in enumerate(mentions):
@@ -420,6 +477,23 @@ def _mark_additions(mentions: list[Mention], tokens: list[Token]) -> None:
         before = _until_boundary(reversed(tokens[low:mention.start]), boundaries)
         after = _until_boundary(tokens[mention.end:high], boundaries)
         mention.add = any(token.tag is Tag.ADD for token in before + after)
+
+
+def _mark_sentences(mentions: list[Mention], tokens: list[Token]) -> None:
+    """Number each mention's sentence; a mention is descriptive when its sentence has none of the other kind."""
+    sentence_of, topic_of, sentence, topic = [], [], 0, 0
+    for token in tokens:
+        sentence_of.append(sentence)
+        topic_of.append(topic)
+        sentence += token.tag is Tag.BREAK
+        topic = topic if token.tag is not Tag.BREAK or token.text == ":" else sentence
+    for mention in mentions:
+        mention.sentence, mention.topic = sentence_of[mention.start], topic_of[mention.start]
+    with_objects = {m.sentence for m in mentions if isinstance(m, ObjectMention)}
+    with_bins = {m.sentence for m in mentions if isinstance(m, BinMention)}
+    for mention in mentions:
+        others = with_bins if isinstance(mention, ObjectMention) else with_objects
+        mention.descriptive = mention.sentence not in others
 
 
 def _until_boundary(tokens: Iterable[Token], boundaries: tuple[Tag, ...]) -> list[Token]:

@@ -6,7 +6,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
-### Sat 14.11, 02:45
+### Sat 14.11, 02:40
 - **Best version:** none of ours yet. Floor = organiser baseline (rung 1 only), numbers below.
 - **Now:** five workstreams in parallel, each in its own git worktree (`ws/*` branches) and on its own sim:
   policy core (state machine, verification, retries, hand-in image), motion (grasp research per shape, faster
@@ -24,15 +24,15 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 |---|---|---|---|---|---|
 | classical baseline (image) | nominal | 1000–1001 | 6/8 | +3.00 | pass |
 | oracle (privileged poses) | nominal | 1000–1002 | 12/12 | +4.00 | pass |
-| classical baseline (server) | DR train | 1000–1002 (run in progress) | 6/12 | +2.00 | pass |
+| **classical baseline (server)** | **DR train** | **1000–1007** | **13/31 (42 %)** | **+1.62 ± 0.86** | **pass** |
 
-Under DR the baseline loses a third of what it sorted in the nominal scene on the same seeds (2/3, 2/5, 2/4
-versus 3/3, 3/5). It never reads the instruction, so on `sort_language` it scores about −1 per object whenever the
+Per seed under DR: 2/3, 2/5, 2/4, 3/3, 0/5, 2/4, 1/4, 1/3 (the first two without DR: 3/3, 3/5). 100–200 s of sim
+time per episode. It never reads the instruction, so on `sort_language` it scores about −1 per object whenever the
 mapping differs from the fixed one.
 
 ## Ideas
 
-### 1. Read the instruction (rule-based parser), 03:10
+### 1. Read the instruction (rule-based parser), 02:55
 - **What:** `halal.language`: tagger + chunker + pairing search over a closed vocabulary, deterministic, 0.4 ms,
   returns a mapping (colour, shape or colour/shape keys, "everything else") with a confidence.
 - **Why:** rung 2 pays +2 per object and the finals weigh the unseen instruction ×1.5; the baseline ignores the text.
@@ -41,13 +41,15 @@ mapping differs from the fixed one.
 
 | Split | Colour-only paraphrases | All categories | Wrong with confidence ≥ 0.5 |
 |---|---|---|---|
-| dev (2781 cases) | 99.1 % exact | 95.0 % | 3.0 % |
-| test (2853 cases) | 100 % | 93.5 % | 4.0 % |
+| dev (2781 cases), v1 → v2 | 99.1 → 100 % exact | 95.0 → 98.7 % | 3.0 → 1.3 % |
+| test (2853 cases), v1 → v2 | 100 → 100 % | 93.5 → 93.5 % | 4.0 → 1.5 % |
 
-- First version; misses are bin synonyms (ordinals from a stated side), some "respectively" forms, noisy text and
-  colour+shape mixtures. Still being improved. Sim effect: measured with the first proxy run of our policy.
+- v2 (03:10): a stated counting side governs ordinals, rules are resolved over the nine object types by
+  specificity, explicit pairs beat enumerations. Remaining test misses: ad-hoc bin labels ("call the bins A, B,
+  C"), a list ordered by direction of travel, self-corrections, one colour+shape form, elimination puzzles.
+  Still being improved. Sim effect: measured with the first proxy run of our policy.
 
-### 2. Perception that survives randomisation (`topface` detector), 03:35
+### 2. Perception that survives randomisation (`topface` detector), 03:05
 - **What:** depth-only self-calibration of the head camera per episode (counter plane → roll, pitch, height; front
   wall of the bin row → yaw, x, y), objects found as blobs at object-top height, the three known outlines fitted
   to a metric top view (gives centre, shape, yaw; hidden cells cost evidence, not accuracy), colour from the most
@@ -66,18 +68,43 @@ mapping differs from the fixed one.
 | yaw error, median / p95 | not produced | 0.5° / 1.6° |
 | runtime | 21 ms | 40 ms |
 
-- Open: the counter height is anchored to the scene file (exact in sim, unknown on the robot); a reference from
-  the robot's own hands is being built. Sim effect on sorting: to be measured against the organiser detector.
+- Sim effect on sorting: being measured against the organiser detector (policy A/B legs).
 
-### 3. Sim throughput, 03:05
+### 2b. Camera pose from the robot's own arms, perceived scene layout, 03:30
+- **What:** depth pixels on both forearms and hands are registered against the surface posed by forward kinematics
+  of the measured joints (6-DOF, 28 ms, once per episode): that ties the camera to the frame the arm moves in.
+  The scene-anchored pose (plane + bin row) is used only when the hands confirm it within 10 mm; otherwise the
+  hand pose decides and the bins and counter plane are reported where they are seen (`Detector.layout()`).
+- **Why:** on the real recordings the bins and table sit centimetres and degrees away from the scene file
+  relative to the robot, and the nominal head calibration is 30–90 px off; anchoring the camera to the bins there
+  would move every object by centimetres. Only the arm is rigidly tied to the arm frame.
+
+| 120 DR frames | xy error median / p95 / max | z error median / p95 / max |
+|---|---|---|
+| nominal calibration | 11.1 / 22.4 / 29.1 mm | 6.2 / 17.9 / 22.2 mm |
+| hands only | 2.2 / 2.9 / 3.8 mm | 3.7 / 4.2 / 4.4 mm |
+| scene anchor (plane + bins), also the fusion in sim | 1.7 / 2.5 / 2.7 mm | 0.0 / 0.3 / 0.3 mm |
+
+- Bins found by depth geometry alone (anchor off): centres within 4.9 mm median, 7.5 mm max.
+- Caveat: sim has exact kinematics, exact meshes and clean depth. Real wrists carry a camera mount and cables,
+  and glossy black fingers are hard for stereo depth; unmeasured until a drop with depth arrives.
+- Colour is now three hue basins; hues between them (orange) are not returned.
+
+### 3. Sim throughput, 02:50
 - **What:** start every sim with `OMP_NUM_THREADS=1`.
 - **Why:** `perf` showed 81 % of a sim's CPU in OpenMP spin-waits: torch on CPU opens a 30-thread pool for
   single-environment tensors.
 - **Effect:** real-time factor of a third sim under load 0.29 → 0.44, CPU per sim 5.5 → 2.4 cores; an oracle
-  episode on the tuned sim behaves normally (3/3, gate pass). All three sims with the setting: not measured yet.
+  episode on the tuned sim behaves normally (3/3, gate pass). All three sims restarted with it by 03:10 and
+  running jobs: 0.40 + 0.36 + 0.49 = 1.25 sim-seconds per second, against 0.54 with two untuned sims.
+- **Final settings (03:25, now the `sims.sh` defaults):** plus four pinned cores per sim, Kit task pool 4, PhysX 2
+  threads: 0.58 idle and ~0.45 under an evaluator on the test sim (like for like: 0.44 → 0.585 idle, 0.37 → 0.445
+  with a client). Pinning alone changed nothing. Not yet measured with all three sims on the final settings.
+- **Found on the way:** the sim is not deterministic run to run (same seed, same policy, a grasp fails in some
+  runs); the DR camera corruption in organiser code costs 5 ms per step once a client has called `randomize`.
 - **Failed:** dropping the wrist cameras from the sim crashes the task.
 
-### 4. Motion planning, 03:25
+### 4. Motion planning, 03:00
 - **What:** joint-space carries first, Cartesian segments shortcut to one joint move when the grasp point stays
   on the line, cached reach check, bin margin 0; options on `plan_pick` for a release offset inside the bin,
   ending above the bin instead of at home, and placing on the counter; counter height from the detection.
@@ -88,7 +115,7 @@ mapping differs from the fixed one.
 - **Grasp sweep, first numbers** (single object, hard DR corner, exact pose, organiser pinch): cube 12/12,
   cylinder 9/12. Triangles and face-aligned grasps running.
 
-### 5. What the real robot data says (organisers' first drop), 03:20
+### 5. What the real robot data says (organisers' first drop), 02:55
 - 20 teleop episodes, left hand only, foam objects on bare wood: not the final scene, but the hands are real.
 - The finger contact signal exists but free fingers carry a 0.02–0.04 rad bias and lag 300–380 ms; it needs a
   closure commanded ≥ 0.2 rad past contact and a per-episode empty-hand reference. A sum over all finger joints
