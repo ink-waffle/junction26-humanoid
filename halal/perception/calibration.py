@@ -55,16 +55,22 @@ class SelfCalibration:
         floor = self.counter_fit(depth, nominal)
         return self._anchored(depth, nominal, floor) if floor else None
 
-    def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray]) -> Camera | None:
-        """The pose that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
+    def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray]) -> HandFit | None:
+        """The fit that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
         return self._by_hands(depth, nominal, joints, self.counter_fit(depth, nominal))
 
-    def consensus(self, poses: list[Camera]) -> Camera | None:
-        """Of several believed arm poses of one episode, the one nearest to all others at the object band; None of none."""
-        if not poses:
+    def consensus(self, fits: list[HandFit]) -> Camera | None:
+        """Of an episode's believed arm fits, those about as clear of the counter as the clearest; of them the pose nearest to all others."""
+        if not fits:
             return None
+        clearest = max(fit.clear_share for fit in fits)
+        poses = [fit.camera for fit in fits if fit.clear_share >= clearest - self.cfg["hands"]["clear_margin"]]
         apart = [[self.apart(a, b) for b in poses] for a in poses]
         return poses[int(np.argmin(np.sum(apart, axis=1)))]
+
+    def clear(self, fit: HandFit) -> bool:
+        """True for an arm fit with (nearly) the whole visible model clear of the counter, as at home; hands on the table give less."""
+        return fit.clear_share >= 1.0 - self.cfg["hands"]["clear_margin"]
 
     def counter(self, depth: np.ndarray, camera: Camera) -> PlaneFit:
         """The counter plane as this camera sees it now; the scene file's level plane when it cannot be fitted."""
@@ -85,22 +91,27 @@ class SelfCalibration:
         plane = fit_plane(points[near], c["tolerances"])
         return plane if plane.inliers >= c["min_points"] and plane.rms <= c["max_rms"] else None
 
-    def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> Camera | None:
+    def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> HandFit | None:
         fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
         if fit is None:
             LOG.info("arms: too little of them in view")
             return None
-        checks = self.hand_checks(fit, camera)
-        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth, pixels on model %.2f, spread %.1f mm: %s",
-                 fit.points, 1e3 * fit.rms, fit.coverage, fit.known, fit.inliers, 1e3 * fit.spread.max(),
+        checks, (turn, shift) = self.hand_checks(fit, camera), self.displacement(fit, camera)
+        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth (judged on %d of %d visible points, those clear "
+                 "of the counter), pixels on model %.2f, spread %.1f mm, camera turned %.1f deg, shifted %.0f mm: %s", fit.points, 1e3 * fit.rms,
+                 fit.coverage, fit.known, fit.clear, fit.visible, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
                  "trusted" if all(checks.values()) else f"rejected {checks}")
-        return fit.camera if all(checks.values()) else None
+        return fit if all(checks.values()) else None
+
+    @staticmethod
+    def displacement(fit: HandFit, start: Camera) -> tuple[float, float]:
+        """How far a hand fit moved the camera from the pose it started at: turn (deg) and shift (m)."""
+        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ start.T[:3, :3].T).as_rotvec()))
+        return float(turn), float(np.linalg.norm(fit.camera.T[:3, 3] - start.T[:3, 3]))
 
     def hand_checks(self, fit: HandFit, start: Camera) -> dict[str, bool]:
         """Every test a hand fit must pass to be believed, by name."""
-        c = self.cfg["hands"]
-        turn = np.degrees(np.linalg.norm(Rotation.from_matrix(fit.camera.T[:3, :3] @ start.T[:3, :3].T).as_rotvec()))
-        shift = np.linalg.norm(fit.camera.T[:3, 3] - start.T[:3, 3])
+        c, (turn, shift) = self.cfg["hands"], self.displacement(fit, start)
         return {"rms": fit.rms <= c["max_rms"], "spread": fit.spread.max() <= c["max_spread"], "coverage": fit.coverage >= c["min_coverage"],
                 "inliers": fit.inliers >= c["min_inliers"], "turn": turn <= c["max_turn_deg"], "shift": shift <= c["max_shift"]}
 

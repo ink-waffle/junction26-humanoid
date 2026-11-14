@@ -60,6 +60,7 @@ perception:
       min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
       max_turn_deg: 10.0      # nor one that moves the camera further than a head calibration can be wrong (recordings: 7.4 deg, 4 cm)
       max_shift: 0.07
+      clear_margin: 0.05      # fits less clear of the counter (visible model share) than the clearest by more: not used (hands on the table)
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
@@ -89,7 +90,7 @@ perception:
       min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
-    arm_fits: 5               # believed arm fits gathered per episode; the one nearest to all others fixes the camera
+    arm_fits: 5               # believed arm fits clear of the counter gathered per episode; the one nearest to all others fixes the camera
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
     still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
     still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm
@@ -167,6 +168,7 @@ perception:
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
+      grey_chroma: 0.15       # a bare counter whose median colour has more chroma is not grey and not balanced on: wood 0.20 to 0.32, sim mat 0.09 at most, drop 2 0.10
   replay:                     # halal.eval.real_replay: a runner export through the perception chain
     still_s: 0.1              # a look: every joint where it stood this long ago ...
     still_tolerance: 0.02     # ... within this (rad) ...
@@ -281,7 +283,7 @@ motion:
   drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
     near: [0.06, 0.05, 0.04, 0.03, 0.02]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal); 0.02 only passes the landing rule at the reach limit
     side: 0.085               # from the side walls
-    rim: {shapes: [], near: [0.01, 0.0]}   # upright shapes that roll or slide in over the near wall get these insets when neither arm reaches a `near` one ([] = off)
+    rim: {shapes: [cylinder, triangle], near: [0.01, 0.0]}   # upright shapes that roll or slide in over the near wall get these insets when neither arm reaches a `near` one ([] = off)
   release_rise: [0.0, 0.03, 0.06, 0.09, 0.12]   # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
   min_retreat_up: 0.02        # a raised release shortens the retreat after it by the rise, down to this
   landing:                    # where released objects come to rest around the release point (forward, outward of the arm; m); a release whose box crosses an inner wall is refused

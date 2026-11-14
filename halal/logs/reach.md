@@ -59,3 +59,173 @@ it let insets through whose plan then failed in the IK chain, once per finger hi
 - Planning time is the first call per release point (cold cache); the pick itself is as long as before (8.8–8.9 s).
 - At the limit the IK ends 4–5 mm short of the release point (inside its 6 mm tolerance): the real inset is that much
   smaller than the table says.
+
+## Sweep r1 (side bins): boxes +6 cm, risen release against today's (sim d, stock hand, DR as it comes)
+
+Sim: `REAL_SIM=boxes,offsets`, bins +6 cm, counter +1 cm, 7 cm walls; bench spec key `scene` with the same values.
+Both arms, each into its own side bin, policy candidates, cube / cylinder / triangle 12 each per cell, code a7b7c93.
+
+| config | planned | binned | inset, rise | landing minus release point, x | centre to the nearest wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|
+| `release_rise: [0, 0.03, 0.06, 0.09, 0.12]` | 36/36 | 36/36 | 6 cm, +6 cm | −34…+56 mm (median +4) | 26 mm | 0 |
+| today (`[0.0]`) | 36/36 | 36/36 | 4 cm, 0 | −15…+51 mm (median +7) | 25 mm | 0 |
+
+Reading: at +6 cm the side bins work either way in sim. The rise buys 2 cm of inset; the landing spread from 6 cm
+higher is 90 mm wide against 66 mm, well inside the 204 mm box, and no object touched a rim (contact starts under
+22.5 mm). No verdict on the config value yet: the centre bin (where main loses plans at +6), +8 cm, the rim releases at
++10 / +12 and the soft hand are still running.
+
+## Sweeps r1 (centre bin, +6 cm) and r2 (side bins, +8 cm), stock hand
+
+Same sim settings as above with the bins as stated; centre bin: one arm at a time, release at y 0 (no slot shift),
+4 picks per shape and cell; side bins at +8: 12 per shape.
+
+| bins, bin | config | planned | binned | inset, rise | landing minus release point, x | centre to wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|---|
+| +6, centre | rise list | 12/12 | 12/12 | 5 cm, +6 cm | −25…+66 mm (median +13) | 25 mm | 0 |
+| +6, centre | today | 12/12 | 12/12 | 4 cm, 0 | −12…+33 mm (median +5) | 28 mm | 0 |
+| +8, side | rise list | 36/36 | 36/36 | 4 cm, +6 cm | −17…+62 mm (median +5) | 23 mm | 0 |
+
+- +8 cm side bins: main plans nothing there (offline 0/16); with the rise every pick planned and was binned. The
+  smallest margin at the rim is 0.5 mm over touching: an inset of 4 cm is the edge of contact-free, as expected from
+  an object 45 mm wide.
+- From 6 cm higher the landing spread is 80–90 mm wide (60–65 mm at the nominal height), median still within 13 mm of
+  the release point: objects do not fly on.
+
+## v18's centre-box refusals in the real-look sim (offline, 14.11)
+
+Run `rs18-all-soft` (bins +6 cm, counter +0.02, soft hands): five objects bound for the centre box got "no plan for
+any of N targets" for the rest of their episodes, in the same millisecond as the look and without a per-arm reason.
+Cause: v18's `reaches_bin` answered for `self.near_inset` as the previous plan left it. After a side-bin pick (inset
+5 cm, release x 0.513 as in the log) it is False for both arms on the centre box, which only reaches insets 3–4 cm
+there, so the policy's arm filter left no arm and `plan_pick` was never called. With `plan_pick` called directly v18
+plans all 24 cells (6 objects × 2 arms × 2 centre slots; 6–11 s per far-slot call). Main since a7b7c93: the filter
+stays True; rise `[0.0]` plans 12/24 (each arm's near slot, inset 4 cm; the far slot is refused by the landing rule at
+inset 3 cm), the rise list 24/24 (insets 4–6 cm), 18 s for the 24 calls against 106 s.
+
+## Sweeps r2 (centre bin, +8 cm) and r3 (side bins, +10 cm), stock hand
+
+`rim` = the rise list with `drop_inset.near: [0.02, 0.01]`. Expected value per object (EV) = (binned − off the counter −
+wrong bin) / carried, sort_fixed points.
+
+| bins, bin | config | planned | binned | counter / off | EV | inset, rise | landing minus release point, x | centre to wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|---|---|---|
+| +8, centre | rise list | 12/12 | 12/12 | 0 / 0 | +1.00 | 3 cm, +6 cm | −8…+110 mm (median +24) | 22 mm | 1 |
+| +10, side | rise list (insets ≥ 3 cm) | 8/24 | 8/8 | 0 / 0 | +1.00 | 3 cm, +9 cm | −2…+102 mm (median +31) | 28 mm | 0 |
+| +10, side | `rim` | 24/24 | 24/24 | 0 / 0 | +1.00 | 2 cm, +6 cm | +3…+129 mm (median +25) | 23 mm | 0 |
+
+- At +10 cm with insets ≥ 3 cm only the cubes planned, and only with the pinch candidate (its point in the palm is
+  7 mm further out than the cage's); cylinders and triangles: "arm cannot reach the bin" (16 of 24).
+- With an inset of 2 cm every pick planned and all 24 landed inside. The objects do not fall straight down at the
+  reach limit: they leave 3–129 mm forward of the release point (median +25 mm; at the nominal boxes the median is
+  +5…+7 mm), so the centre is 23 mm or more from the near wall when it passes the rim although it was released 20 mm
+  from it. The arm is nearly straight and tilted there; the forward drift is consistent in sim (0 of 24 short) but its
+  cause is not established and nothing says the real hand does the same.
+
+## Sweeps r3 (centre bin, +10 cm) and r4 (side bins, +12 cm): releases on the rim, stock hand
+
+Sim EV is an UPPER BOUND for the real robot: these releases only land inside because the objects leave the hand
+forward at the reach limit (median +46…+58 mm here), which is unexplained and unverified for the real soft hand.
+
+| bins, bin | config | planned | binned | on the counter / off | EV | inset, rise | landing minus release point, x (binned) | by shape |
+|---|---|---|---|---|---|---|---|---|
+| +10, centre | rise list (insets ≥ 3 cm) | 0/12 | | | | | | "arm cannot reach the center bin" |
+| +10, centre | `rim` [0.02, 0.01] | 12/12 | 10/12 | 2 / 0 | +0.83 | 1 cm, +6 cm | +15…+106 mm (median +58) | cube 2/4, cylinder 4/4, triangle 4/4 |
+| +12, side | `rim` [0.02, 0.01, 0.0] | 24/24 | 14/24 | 10 / 0 | +0.58 | 0 cm, +6 cm | +27…+87 mm (median +46) | cube 0/8, cylinder 6/8, triangle 8/8 |
+
+- The centre bin at +10 cm (release at y 0) reaches only 1 cm inside the wall; the side bins at +12 cm only the wall's
+  inner face (inset 0). Every miss came to rest on the counter in front of the box (0 points); nothing left the counter
+  and nothing reached another box in 36 rim releases.
+- Shape decides: triangles 12/12, cylinders 10/12, cubes 2/12 (why the cube falls short was not traced).
+
+## Sweeps r4 (centre bin, +12 cm) and r5 (soft hand, side bins, +6 cm)
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|---|
+| +12, centre, stock | `rim` [0.02, 0.01, 0.0] | 4/12 | 4 | 0/4 | 4 / 0 | 0 cm, +6 cm | | all four on the rim |
+| +6, side, soft (`HAND_GAINS` 1.5, 0.2, 0.0075) | rise list | 36/36 | 35 | 35/35 | 0 / 0 | 6 cm, +6 cm | −31…+60 mm (median +2) | 29 mm, 0 contacts |
+
+- +12 cm centre: only cubes planned (pinch candidate, inset 0), none went in; cylinders and triangles "arm cannot
+  reach the center bin". The centre box at +12 cm is out of reach for every release.
+- Soft hand at +6 cm: the risen release behaves as on the stock hand (stock: 36/36, −34…+56 mm, 26 mm). One cube was
+  lost during the carry (a grasp matter; it is not in the 35).
+
+## Sweep r5 (soft hand, side bins, +8 cm) and the landing box of risen releases
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|---|
+| +8, side, soft | rise list | 36/36 | 33 | 33/33 | 0 / 0 | 4 cm, +6 cm | −17…+79 mm (median −2) | 23 mm, 0 contacts |
+
+Three objects were lost before the release (not lifted, lost in the lift, lost in the carry: grasp matters).
+
+Landing minus release point over every binned release of r1–r5 (outward = away from the robot's midline):
+
+| hand, release | n | x min…max | x p5 / median / p95 | outward y min…max |
+|---|---|---|---|---|
+| stock, today's height | 48 | −15…+51 mm | −13 / +6 / +32 | −49…+46 mm |
+| stock, risen 6–9 cm | 152 | −34…+129 mm | −17 / +17 / +88 | −57…+89 mm |
+| soft, risen 6 cm | 68 | −31…+79 mm | −17 / 0 / +42 | −31…+83 mm |
+
+- Backward the risen release is no worse than the box the motion log has for the nominal height (−32 mm): −34 mm.
+  Forward it reaches +129 mm on the stock hand, with the long tail from the releases at the reach limit (insets
+  ≤ 2 cm, medians +25…+58 mm); sideways the spread grows to −57…+89 mm.
+- The soft hand shows no forward drift at +6 / +8 cm (median 0); it was not run at the reach limit, so whether the
+  drift that carries the rim releases inside exists there is unknown. Sim EV of the rim releases stays an upper bound.
+
+Verdict so far: `release_rise: [0, 0.03, 0.06, 0.09, 0.12]` holds on both hands up to +8 cm (164/164 carried objects
+binned at +6 / +8, no rim contact that kept an object out). Insets under 3 cm: pending the joint proposal with motion.
+Sim d is back on stock settings.
+
+## Sweep r6: soft hand, side bins, +10 cm (the real hand's class at the reach limit)
+
+| config | planned | carried | binned | on the counter / off | inset, rise | landing minus release point, x | centre to wall passing the rim, min |
+|---|---|---|---|---|---|---|---|
+| rise list, insets ≥ 3 cm | 0/24 | | | | | | "arm cannot reach the bin" (the soft list has no pinch) |
+| `rim` [0.02, 0.01] | 24/24 | 22 | 22/22 (cube 6/6, cylinder 8/8, triangle 8/8) | 0 / 0 | 2 cm, +6 cm | +11…+148 mm (median +40) | 29 mm, 0 contacts |
+
+- The forward drift at the reach limit exists on the soft-hand sim too (median +40 mm; stock +25 mm at the same
+  point), although it is absent at +6 / +8 cm (median 0): it belongs to the nearly straight arm, not to the hand class.
+  Its cause is still not traced, and the soft-hand sim has no backlash or stiction: the EV stays an upper bound.
+- Two objects were lost before the release (lift, carry). Sim d is back on stock settings.
+- Percentiles of landing minus release point, binned releases (min / p2.5 / median / p97.5 / max, mm): stock risen,
+  inset ≥ 3 cm (n 104): x −34 / −26 / +8 / +75 / +110, outward y −52 / −45 / +8 / +71 / +89; soft risen, inset ≥ 3 cm
+  (n 68): x −31 / −20 / 0 / +52 / +79, y −31 / −26 / +6 / +37 / +83; stock risen at the limit, inset ≤ 2 cm (n 48):
+  x +3 / +6 / +46 / +117 / +129, y −57 / −46 / −4 / +60 / +82.
+
+## Sweep r7: soft hand, centre bin, +10 cm (a 1 cm inset: the rim release on the real hand's class)
+
+Same sim settings (soft: `HAND_GAINS` 1.5, 0.2, 0.0075), centre bin, one arm at a time, release at y 0, 4 picks per
+shape, code as for r1–r6 (no landing rule). Columns as r3/r4; "landing" is over every carried object.
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | centre to wall passing the rim, min | by shape (binned / carried) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| +10, centre, soft | `rim` [0.02, 0.01] | 12/12 | 11 | 11/11 | 0 / 0 / 0 | +1.00 | 1 cm, +6 cm | +16…+107 mm (median +49) | 26 mm | cube 3/3, cylinder 4/4, triangle 4/4 |
+
+- Per shape, landing minus release point x (median): cube +16…+19 (+18), cylinder +21…+107 (+82), triangle +48…+62 (+51) mm.
+  Stock hand at the same point (r3): cube 2/4 (both misses rest 27–28 mm in front of the near wall), cylinder 4/4,
+  triangle 4/4.
+- One cube was not lifted (grasp matter; not in the 11). The forward drift at the reach limit is there on the soft hand
+  too (median +49 mm). EV stays an upper bound for the real robot (no backlash / stiction in the soft sim).
+
+## Sweep r8: soft hand, side bins, +12 cm (inset 0: the release over the wall's inner face)
+
+Same settings as r7, side bins, both arms, 4 picks per shape and cell.
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | by shape (binned / carried, EV) |
+|---|---|---|---|---|---|---|---|---|---|
+| +12, side, soft | `rim` [0.02, 0.01, 0.0] | 24/24 | 21 | 10/21 | 11 / 0 / 0 | +0.48 | 0 cm, +6 cm | −138…+78 mm (median −27) | cube 0/5 (0.00), cylinder 3/8 (+0.38), triangle 7/8 (+0.88) |
+
+- Stock hand at the same point (r4): cube 0/8, cylinder 6/8, triangle 8/8. The soft hand loses the cylinders: on the soft
+  hand the objects fall short at inset 0 (median −27 mm; cube −46, cylinder −36, triangle +41), where the stock hand's
+  drift was forward (+31). At +10 cm with a 2 cm inset the soft drift was forward (+40, r6), so the drift is not reliable.
+- Misses rest 27–66 mm in front of the near wall (centre x 0.457–0.496), except one cylinder that rolled back 138 mm
+  (to x 0.385, into the object area). Nothing left the counter, nothing reached another box: 0 / 0 over every rim release
+  so far (r3, r4, r6, r7, r8: 118 carried, stock and soft).
+- Three objects lost before the release (2 cubes not lifted, 1 lost in the carry). Sim d back on stock.
+
+Shape gate, every rim release by inset (binned / carried; stock + soft):
+
+| inset | cube | cylinder | triangle |
+|---|---|---|---|
+| 1 cm (centre +10: r3 stock, r7 soft) | 2/4 + 3/3 = 5/7 | 4/4 + 4/4 | 4/4 + 4/4 |
+| 0 cm (side +12: r4 stock, r8 soft) | 0/8 + 0/5 = 0/13 | 6/8 + 3/8 = 9/16 | 8/8 + 7/8 = 15/16 |

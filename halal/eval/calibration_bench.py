@@ -52,9 +52,10 @@ def hands_row(frame: Frame, calibration: SelfCalibration, nominal: Camera, plane
     fit = calibration.hands.fit(obs["head_depth"], nominal, obs["arm_q"], obs["hand_q"], plane, calibration.band[-1])
     if fit is None:
         return {"hands_fit": False, "hands_ok": False}
-    checks = calibration.hand_checks(fit, nominal)
+    checks, (turn, shift) = calibration.hand_checks(fit, nominal), calibration.displacement(fit, nominal)
     return {"hands_fit": True, "hands_ok": all(checks.values()), **{f"check_{k}": bool(v) for k, v in checks.items()},
             "hands_rms_mm": 1e3 * fit.rms, "hands_points": fit.points, "hands_spread_mm": 1e3 * float(fit.spread.max()), "hands_coverage": fit.coverage, "hands_known": fit.known, "hands_inliers": fit.inliers,
+            "hands_clear": fit.clear / max(fit.visible, 1), "hands_turn_deg": turn, "hands_shift_mm": 1e3 * shift,
             "hands_mm": float(offset_mm(frame, fit.camera, band).mean()), "hands_camera": fit.camera}
 
 
@@ -125,7 +126,8 @@ def render(title: str, rows: Sequence[Row]) -> str:
         f"hand fit made {rate(rows, 'hands_fit'):>8}  believed {rate(rows, 'hands_ok'):>8}   band mm (all fits) {stats(fitted, 'hands_mm')}"
         f"   believed only {stats([r for r in fitted if r['hands_ok']], 'hands_mm')}",
         "  checks passed: " + ", ".join(f"{k[6:]} {rate(fitted, k)}" for k in checks)
-        + f"   rms mm {stats(fitted, 'hands_rms_mm')}   coverage {share(fitted, 'hands_coverage')}   known {share(fitted, 'hands_known')}   inliers {share(fitted, 'hands_inliers')}",
+        + f"   rms mm {stats(fitted, 'hands_rms_mm')}   coverage {share(fitted, 'hands_coverage')}   known {share(fitted, 'hands_known')}   inliers {share(fitted, 'hands_inliers')}"
+        + f"   judged clear of the counter {share(fitted, 'hands_clear')}   turn deg {stats(fitted, 'hands_turn_deg')}   shift mm {stats(fitted, 'hands_shift_mm')}",
         f"bins through the hand camera, centre mm {stats(rows, 'bins_mm')}   x only, signed {stats(rows, 'bins_x_mm', False)}"
         f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}",
         f"counter height under the band through the hand camera, mm {stats(rows, 'counter_mm')}",
