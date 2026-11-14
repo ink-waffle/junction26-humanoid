@@ -59,3 +59,18 @@ it let insets through whose plan then failed in the IK chain, once per finger hi
 - Planning time is the first call per release point (cold cache); the pick itself is as long as before (8.8–8.9 s).
 - At the limit the IK ends 4–5 mm short of the release point (inside its 6 mm tolerance): the real inset is that much
   smaller than the table says.
+
+## Sweep r1 (side bins): boxes +6 cm, risen release against today's (sim d, stock hand, DR as it comes)
+
+Sim: `REAL_SIM=boxes,offsets`, bins +6 cm, counter +1 cm, 7 cm walls; bench spec key `scene` with the same values.
+Both arms, each into its own side bin, policy candidates, cube / cylinder / triangle 12 each per cell, code a7b7c93.
+
+| config | planned | binned | inset, rise | landing minus release point, x | centre to the nearest wall passing the rim, min | rim contacts |
+|---|---|---|---|---|---|---|
+| `release_rise: [0, 0.03, 0.06, 0.09, 0.12]` | 36/36 | 36/36 | 6 cm, +6 cm | −34…+56 mm (median +4) | 26 mm | 0 |
+| today (`[0.0]`) | 36/36 | 36/36 | 4 cm, 0 | −15…+51 mm (median +7) | 25 mm | 0 |
+
+Reading: at +6 cm the side bins work either way in sim. The rise buys 2 cm of inset; the landing spread from 6 cm
+higher is 90 mm wide against 66 mm, well inside the 204 mm box, and no object touched a rim (contact starts under
+22.5 mm). No verdict on the config value yet: the centre bin (where main loses plans at +6), +8 cm, the rim releases at
++10 / +12 and the soft hand are still running.
