@@ -233,12 +233,8 @@ policy:
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
     unknown: 0.02             # no calibration close: the value that never calls a full hand empty
-  deeper_squeeze:             # rad added to the depth each grasp carries for its shape, per hand class
-    stiff: 0.0                # the sim hand: deeper drives cubes and cylinders past the fingertips
-    soft: 0.45                # the real hand (kp 1.5) needs it for grip; the planner clips at the thumb limit
-    unknown: 0.0
-  release_check_squeeze: 0.0  # after a grasp at least this deep the hand closes once more above the bin (a cube wedged at 0.30)
-  release_checks: 3           # such closes per pick (each reopens the hand) before the arm is given up for the episode
+  reopen_stagger_s: 0.25      # after such a close one finger opens this much later than the rest: frees an object wedged between the fingers
+  release_checks: 3           # closes of the hand above the bin after letting go (each reopens it) before the arm is retired for the episode
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done
   calibration_timeout_s: 5.0  # the first plan waits this long at most for the calibration close to finish

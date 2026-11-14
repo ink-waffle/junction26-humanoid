@@ -8,6 +8,7 @@ import numpy as np
 
 from aaltonomous.baselines.classical.planner import Plan, ramp
 
+from halal.motion.planner import LATE_FINGER
 from halal.policy.commands import OBS_LAG_TICKS
 
 
@@ -107,12 +108,12 @@ class GripWindow:
 class ReleaseCheck:
     """One more close on nothing after letting go, arm still above the bin: a hand that still holds something shows it."""
     arm: np.ndarray     # (n, 14)
-    hand: np.ndarray    # (n, 14): open (if not yet), stay open, close, hold, reopen to the released posture
+    hand: np.ndarray    # (n, 14): open (if not yet), stay open, close, hold, reopen with one finger late
     read_tick: int      # tick of this segment at which the grip score is read
 
     @classmethod
     def after(cls, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_ticks: int, settle_ticks: int,
-              hand_vel: float, dt: float) -> ReleaseCheck:
+              stagger_ticks: int, hand_vel: float, dt: float) -> ReleaseCheck:
         """The check for the hand of `window` from the commanded pose `arm_q`, `hand_q`, after `open_ticks` with the hand open."""
         joints = hand_slice(window.side)
         released, closed = hand_q.copy(), hand_q.copy()
@@ -120,5 +121,13 @@ class ReleaseCheck:
         opening = np.vstack([ramp(hand_q, released, hand_vel, dt), np.repeat(released[None], open_ticks, 0)])
         closing = ramp(released, closed, hand_vel, dt)
         still = np.repeat(closed[None], settle_ticks + 2 * OBS_LAG_TICKS, 0)
-        hand = np.vstack([opening, closing, still, ramp(closed, released, hand_vel, dt)])
+        hand = np.vstack([opening, closing, still, _staggered(ramp(closed, released, hand_vel, dt), closed, joints, stagger_ticks)])
         return cls(np.repeat(arm_q[None], len(hand), 0), hand, len(opening) + len(closing) + settle_ticks - 1)
+
+
+def _staggered(opening: np.ndarray, closed: np.ndarray, joints: slice, delay: int) -> np.ndarray:
+    """A hand's opening (n, 14) with its last finger starting `delay` ticks later: an object wedged between two fingers falls out."""
+    late = np.arange(14)[joints][LATE_FINGER]
+    rows = np.vstack([opening, np.repeat(opening[-1][None], delay, 0)])
+    rows[:, late] = np.vstack([np.repeat(closed[None], delay, 0), opening])[:, late]
+    return rows

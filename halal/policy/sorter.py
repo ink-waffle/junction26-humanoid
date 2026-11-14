@@ -65,7 +65,7 @@ class Situation:
     attempts: Attempts
     shapes: Shapes
     released: Mapping[str, int]
-    blocked: frozenset[str]     # arms whose hand could not let go of an object: not used again this episode
+    arms: tuple[str, ...]       # arms still in use: one whose hand could not let go of an object is retired for the episode
     file_layout: bool
     hands_pending: bool         # a calibration close is running: plan only once the hands are known
     primer: bool                # only show the frame to the detector: its arm-based camera fit wants two still looks
@@ -213,8 +213,8 @@ class SortPolicy:
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
-                              self.shapes, dict(self.released), frozenset(self.blocked), self.use_file_layout,
-                              calibrate, primer)
+                              self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
+                              self.use_file_layout, calibrate, primer)
         self.jobs.submit(lambda cancelled: self._look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -245,9 +245,9 @@ class SortPolicy:
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
-        deeper = {side: self.settings["deeper_squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
-        pick, unplannable = self.chooser.choose(clear, situation.released, deeper, situation.blocked, situation.arm_q,
-                                                situation.hand_q, cancelled)
+        hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
+        pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
+                                                cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
     def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
@@ -341,8 +341,6 @@ class SortPolicy:
         self.active = ActivePick(pick, window)
         if window is None:
             self.stream.load(pick.plan.arm, pick.plan.hand)
-        elif pick.depth < self.settings["release_check_squeeze"]:
-            self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS])
         else:
             self._load_with_release_check(pick.plan, window)
         self.stage, self.next_view = Stage.MOVING, View.HOME
@@ -361,7 +359,8 @@ class SortPolicy:
 
     def _release_check(self, arm_q: np.ndarray, hand_q: np.ndarray, window: GripWindow, open_s: float) -> ReleaseCheck:
         return ReleaseCheck.after(arm_q, hand_q, window, round(open_s * HZ), self._grip_settle_ticks,
-                                  self.planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
+                                  round(self.settings["reopen_stagger_s"] * HZ), self.planner.cfg["motion"]["hand_max_vel"],
+                                  1.0 / HZ)
 
     def _check_release(self, obs: Mapping[str, Any], t: float) -> None:
         """The hand has closed again after letting go: if it still holds something, open and close once more, then give the arm up."""
