@@ -60,19 +60,22 @@ def hands_row(frame: Frame, calibration: SelfCalibration, nominal: Camera, plane
 
 
 def layout_row(frame: Frame, calibration: SelfCalibration, finder: BinFinder, camera: Camera, scene: Scene, surface: np.ndarray) -> Row:
-    """Bins by geometry and the counter height under the band through `camera`, against the truth."""
+    """Bins by geometry (when a row of boxes is found) and the counter height under the band through `camera`, against the truth."""
     depth, file = frame.obs["head_depth"], scene_layout(scene)
     counter = calibration.counter(depth, camera)
     found = finder.find(depth, camera, counter)
+    counter_mm = 1e3 * float(counter.z_at(surface[-1, :2]) - truly(frame, surface[-1:])[0, 2])
+    if found is None:
+        return {"row_found": False, "counter_mm": counter_mm}
     true = {name: truly(frame, np.r_[xy, scene.counter_z][None], name)[0] for name, xy in file.bins.items()}
     half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2
     rims = [truly(frame, np.r_[xy + half * signs, scene.counter_z + scene.cfg["bins"]["wall_height"]][None], name)[0, 2]
             for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
     rim = finder.rim_z(depth, camera, counter, found)
-    return {"rim_mm": None if rim is None else 1e3 * float(rim - max(rims)), "bins_y_mm": [1e3 * float(found[name][1] - true[name][1]) for name in file.bins],
+    return {"row_found": True, "rim_mm": None if rim is None else 1e3 * float(rim - max(rims)),
+            "bins_y_mm": [1e3 * float(found[name][1] - true[name][1]) for name in file.bins],
             "bins_mm": [1e3 * float(np.linalg.norm(found[name] - true[name][:2])) for name in file.bins],
-            "bins_x_mm": [1e3 * float(found[name][0] - true[name][0]) for name in file.bins],
-            "counter_mm": 1e3 * float(counter.z_at(surface[-1, :2]) - truly(frame, surface[-1:])[0, 2])}
+            "bins_x_mm": [1e3 * float(found[name][0] - true[name][0]) for name in file.bins], "counter_mm": counter_mm}
 
 
 def measure(frame: Frame, calibration: SelfCalibration, finder: BinFinder, nominal: Camera, scene: Scene) -> Row:
@@ -129,7 +132,8 @@ def render(title: str, rows: Sequence[Row]) -> str:
         + f"   rms mm {stats(fitted, 'hands_rms_mm')}   coverage {share(fitted, 'hands_coverage')}   known {share(fitted, 'hands_known')}   inliers {share(fitted, 'hands_inliers')}"
         + f"   judged clear of the counter {share(fitted, 'hands_clear')}   turn deg {stats(fitted, 'hands_turn_deg')}   shift mm {stats(fitted, 'hands_shift_mm')}",
         f"bins through the hand camera, centre mm {stats(rows, 'bins_mm')}   x only, signed {stats(rows, 'bins_x_mm', False)}"
-        f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}",
+        f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}"
+        f"   no row of boxes found {sum(r.get('row_found') is False for r in rows)}",
         f"counter height under the band through the hand camera, mm {stats(rows, 'counter_mm')}",
         f"highest bin rim through the hand camera, mm, signed {stats(rows, 'rim_mm', False)}   worst low {min((r['rim_mm'] for r in rows if r.get('rim_mm') is not None), default=float('nan')):.1f}",
         f"scene anchor and hand fit apart at the band, mm {stats(rows, 'apart_mm')}",
