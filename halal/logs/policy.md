@@ -66,8 +66,10 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v6 | ec29a3c0ad75 | 58573f1 | – | 6/6, 6/6 then stopped | – | – | pre-check pass | v4 + perception 47e63f3 + release check after grasps deeper than 0.6 + motion 44bc3a4; replaced after 5 min: v4's unseen leg had a cube wedge at depth 0.30 |
 | v7 | 5a8d69474d2e | 88aacba | 3/3, 5/5 then stopped | 2/3, 2/3 then stopped | – | – | pre-check pass | release check after every grasp; the check found a triangle still in the hand in both known episodes (0.096, like its carry score) and three plain reopenings did not free it: arm retired with the object in it |
 | v8 | 550b70a8b003 | 2a1155c | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +6.50 ± 0.87, 26/28 (1 time limit) | **+20.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 166) | v7 + hand-aware grasps (`candidate_grasps(hand=...)`) + a late-finger opening at the end of the check; nothing in a wrong bin or off the counter; the unseen leg is its second run (`v8-image-a2`), the first was killed by a container name clash after 2 episodes |
-| v9 | b06b10e1cb9a | 7dee1dd | running | running | running | – | pre-check pass | v8 + release check started during the retreat + three picks for a toppled object |
-| v10 | – | 513e266 | – | – | – | – | mock suites pass | v9 + motion's staggered release (main 2120e4f) + finger-by-finger reopening before every re-check + last check back home before an arm is retired + hand opens on the way home + release slots sideways only |
+| v9 | b06b10e1cb9a | 7dee1dd | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +6.50 ± 1.94, 26/28 (1 time limit) | **+20.63** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 162) | v8 + release check started during the retreat + three picks for a toppled object; 3 wedge incidents, 3 arms retired, 1 object lost to that; 1 triangle lost after 4 empty picks |
+| v10 | 7e65414e990c | 513e266 | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.13** | PASS (through the image, 0 clips, ≥ 29.99 Hz, rt ≥ 186) | v9 + motion's staggered release (main 2120e4f) + finger-by-finger reopening before every re-check + last check back home before an arm is retired + hand opens on the way home + release slots sideways only; 86 release checks, 0 positive; lost: the seed-1001 triangle, pushed out of view by its first pick |
+| v11 | 13ae623395f5 | 8428e32 | soft sim only: +3.88 ± 0.78, 31/31 | – | – | – | PASS (soft sim) | v10 + main b28f322 + soft hands told by a 0.002 rad bias + release check only after unknown-shape picks + known shapes first + the check back home at the calibration posture; not run on the stock sims (v12 contains it) |
+| v12 | d2cadf30d4c2 | 8382cb2 | running | running | running | – | pre-check pass | v11 + main 1f02750 (vertex-aligned triangle grasp, soft carry at 4 rad/s²) + lag as a second vote for a soft hand + slots 65 / 60 mm apart + attempts follow an object pushed in small steps |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -208,12 +210,20 @@ read once more there: only a positive read at home retires the arm; (4) after an
 the move home if that keeps the plan's own clearance (always, in the mock: 5–12 cm), so the check costs ~21
 ticks (0.7 s) per pick; (5) every release logs its verdict. Mock (object kept for the first n openings): n = 1
 freed at the first re-check; n = 3 freed before the way home, arm kept, 3/3; n ≥ 4 arm retired. 0 clips.
-Verdict: pending v10.
+Verdict (v10, 24 episodes): 86 releases read, 0 positive, highest empty read 0.004 (threshold 0.02); the check
+cost 18–22 ticks per pick. v9, same check without the stagger: 3 positive in 82. With the staggered release the
+check finds nothing, so from v11 on it runs only after picks of objects without a shape
+(`policy.release_check_after: [unknown]`; motion's bench: 3 of 24 stuck at the unknown-shape depth with a plain
+release). From v11 the read back home closes to the calibration posture (the one posture with a measured
+empty-hand reading), two positive reads above the bin that it does not confirm switch the check off for the
+episode (`policy.release_check_patience`), and a hand without a calibration close is never checked.
 
 ### Release slots with the staggered release (v10)
 The staggered release lands objects −27..+118 mm ahead of the release point and −48..+63 mm outward (motion's
 bench, n = 119): two slots cannot be separated forward any more. Slots now differ sideways only: side bins 0 and
 4 cm outward, centre bin ±2 cm (±3.5 cm would leave 4 mm to the side wall for an outward throw).
+v12, with motion's release points 8.5 cm inside the side walls (landing box x −28..+77 mm, outward −40..+48 mm):
+side bins 2 cm inward and 4.5 cm outward (65 mm apart), centre bin ±3 cm, so two objects cannot rest on each other.
 
 ### Two evaluators on one sim (14.11, 09:28 UTC, my mistake)
 `halal.eval.proxy --port P` serves leg i on P + i and `serve_image.sh` names its container `halal-eval-<port>`
@@ -222,3 +232,31 @@ container, and a second evaluator on a sim makes both episodes garbage (a calibr
 soft, bias 0.34 / 0.56 rad). Runs now start through `/data/scratch/policy/run_legs.sh`, which refuses a sim that
 has a client, a port in use and an existing container name. Discount: `v8-image-a_1114_090854` unseen leg (2 clean
 episodes, 6 crashed), `v8-seeds1008-c` seeds 1008 and 1009.
+
+### Soft-hand sim rehearsal (14.11, sim `c` with `HAND_GAINS="1.5,0.2,0.0075"`, fixed leg, seeds 1000–1007)
+Caveat: gains fitted to the real finger's free step response; no friction, dead zone or backlash in the sim finger.
+
+| Image | Hand class (16 closes) | Picks held at first try | Lift score held / empty | Objects | Gate |
+|---|---|---|---|---|---|
+| v8 (2 episodes, stopped) | stiff 4/4: bias 0.0055 rad, lag 0.137–0.149 s | 6/19 | 0.166–0.287 / 0.004–0.005 (threshold 0.02) | 7/8 | pass, 0 clips |
+| v11 | soft 16/16: bias 0.0055, lag 0.126–0.139 | 31/31 (cube 9, cylinder 17, triangle 5) | 0.313–0.567 / – (threshold 0.15) | 31/31, +3.88 ± 0.78 | PASS, 0 clips |
+| v11 tree, release check after every shape (4 seeds) | soft | 12/12 in three episodes, then see below | empty hand at the soft grasp posture 0.009–0.013 (13 reads), no positive | 13/15 | pass, 0 clips |
+
+What broke, by cost:
+1. Identification (v8–v10): `stiff_hand_bias` 0.01 sat between the soft sim's 0.0055 and the real hand's 0.02–0.04; the
+   stiff grasps hold 1 in 3 on a soft hand. v11: 0.002 (stiff sim 0.0001). v12 adds the lag as a second vote
+   (`stiff_hand_lag_s` 0.125; stiff sim 0.09–0.107, soft sim 0.126–0.149: thin, hence only an OR).
+2. A cube lost in the carry (lift score 0.384, 0.012 a second later; right arm across the body, 8 rad/s²): motion's
+   soft grasps carry at 4 rad/s² from main 6933099 (v12).
+3. Retries: motion's second cube candidate, the organiser `pinch`, has no soft closure (7 picks, 7 empty), and the
+   policy repeated it seven times as "try 2", each push 2–3 cm, walking the cube from x 0.331 to 0.227: the
+   position memory (3 cm radius) saw every new spot next to exactly one earlier pick. v12: after an empty pick the
+   nearest detection of that colour within `policy.displaced_radius` inherits at least the attempts of the missed
+   spot, so tries count up, arm and grasp rotate and `max_attempts` ends it.
+Not exercised: stiction-driven effects, a failed soft cage grasp on a clean scene, the soft hand's release of a
+wedged object.
+
+### Toppled or pushed objects (v9–v12)
+Three blob picks (v9) are worth nothing: the seed-1001 yellow triangle (layout yaw −36°, right arm, cage) came up
+empty at the first pick in 5 of 5 runs of v8–v10; pushed 10 cm and read as a blob it was missed three more times
+(v9), in v10 it left the camera's view. The remedy is the grasp: motion's vertex-aligned `cage_apex` (v12).
