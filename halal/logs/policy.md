@@ -80,6 +80,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v20 | b7468d515c78 | a3498c7 | +3.88 ± 0.78, 31/31 | stopped | – | – | PASS on the fixed leg | v19 + main 9a0dc50 (perception H10 / H11: bins as seen without a measured camera; soft lists; early obstacle rejection); stopped after its fixed leg for v21 |
 | v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
 | v22 | cb81d93c1969 | e318a23 (= main cae48ed) | see below | | | | | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
+| v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | see below | | | | | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -726,3 +727,32 @@ On `grip_check_patience` (asked after the real-look run rs20: 27 of 40 releases 
 from teleop data): a check that is never distrusted would open the hand above the counter on every pick if a held
 object read below it. Its cost, ~5 s per truly empty pick once it is off, only arises in episodes whose grasps miss
 anyway. To revisit with the first real "grip score after the lift" of a held object.
+
+### A frozen head stream fails the look (v23, bdddb09)
+Both robot runs had a frozen colour stream (run 2 saw run 1's picture). v22 only logs it. Mock (`frozen_rgb.py`: an
+episode is fed the previous episode's last colour picture): v22 tree: the stale picture shows an empty counter and
+the policy sends `done` at 16 s with 5 of 5 objects on the counter. v23: a head image (colour or depth)
+byte-identical to the one an earlier look saw from another arm pose (`policy.frozen_frame_arm_move`) makes the look
+fail: no pick, pause, look again; the reference keeps the pose the frame was first seen from and survives the reset.
+
+| Case | v22 tree | v23 tree |
+|---|---|---|
+| colour frozen until t = 40 s | `done` at 16 s, 0/5 | 9 failed looks, first pick at 51 s, 4/5 at the limit |
+| colour and depth frozen until 40 s | `done` at 16 s, 0/3 | first pick at 48 s, 3/3 |
+| colour frozen all episode | `done` at 16 s, 0/5 | nothing moved, no `done`, 27 error lines |
+| live camera | 3/3, 4/4 | the same |
+
+Limit: without an earlier frame (first episode of a fresh container, arms at home) the first pick is still planned
+from the first picture. The scratch mock backend now stamps a frame counter into one pixel (no two real frames are
+byte-identical; the stock mock's were).
+
+### `hand_lead_cap` (v23, 464b1b8, off): what a `hand_max_lead` in the runner's filter would do
+Recorded |command − measured| per hand joint: stock sim at most 0.27 rad; soft-hand sim 18–50 ticks per episode above
+0.3 (max 0.40); real robot run 2: 183 ticks above 0.3 (max 0.67). Top commanded hand speed 1.97 rad/s everywhere.
+So a filter with `hand_max_lead` 0.3 aborts (30 clipped steps) on the soft sim in about half the episodes and on the
+real hand always; `hand_max_vel` 2.0 costs nothing. The contingency clamps every hand target to the measured joints
+± `policy.hand_lead_cap`, rate-limits the result and shortens replies to `lead_cap_ticks`. Mock (`lead_cap.py`,
+soft-ish hand, filter 0.3): no clamp: abort within 9–43 s, 0 sorted; cap 0.28: 3/3 and 4/4, 11–14 clipped steps per
+episode (8 at 0.25), grip scores unchanged (they are taken against the planned closed posture). Not a zero-clip
+solution: a reply clamps to a measurement 2–5 ticks old. Holds would press with a third less torque; not measured in
+the soft sim.
