@@ -216,3 +216,32 @@ hold), measured in the next sweeps.
 - Hence `candidate_grasps(..., hand="soft")`: same depths, but the fingers close too (`squeeze_axis` finger_0 −0.5 per
   rad, fingertips 47 mm/rad): ~7.5 N on every shape by the same model. Soft motion profile for the policy: arm
   acceleration 4 rad/s² for lift and carry (gravity is 3/4 of the load, so slowing down buys at most 26 %).
+
+## Sweeps 10 and 11: release at the policy's depths, plain versus staggered; how short the stagger can be
+
+Metric added after the policy's release check showed objects still in the cage after a plain opening: "out at open" =
+the carried object has dropped out of the hand by the END of the open phase, before any retreat motion.
+
+Sweep 10 (hard DR, 5 mm position error in a random direction, both arms, n = 24 per cell; stagger = second finger
+after the first has fully opened plus 0.25 s):
+
+| cell | binned | out at open | stuck in the hand |
+|---|---|---|---|
+| cube at 0.75 (unknown-shape depth), plain release | 21/24 | 21/24 | 3 |
+| cube at 0.75, staggered | 24/24 | 24/24 | 0 |
+| triangle at 0.80, plain | 24/24 | 24/24 | 0 |
+| triangle at 0.80, staggered | 24/24 | 24/24 | 0 |
+
+Sweep 11 (worst case again: squeeze 1.0, exact pose, n = 24 per cell; `release_stagger_s` = start delay of the second
+finger, ramps overlap): 0.25 s: cube 12/12, cylinder 12/12, all out at open; 0.5 s: cube 11/12 (one not lifted),
+cylinder 12/12, all carried ones out at open. Plain release in the same case (sweep 4): 8/24.
+
+Traces: with the stagger the object is on the bin floor 0.4–0.5 s after the opening starts, i.e. during the first
+finger's swing. That swing carries it forward first: landing minus release point over the staggered cells
+(n = 119): x −27…+118 mm, outward y −48…+63 mm (plain release, cube 0.75 and triangle 0.80: x −21…+83, y −37…+29).
+The bin's inner walls are at x −50 / +154 and y −70 / +134 from the release point, the object is 45 mm wide: every
+object landed inside, the closest 0.5 mm from a wall.
+
+Verdict: `motion.release_stagger_s: 0.25` is the default from here (+0.25 s per pick). Not reproduced in the bench: the
+policy's triangles that stayed in the cage at 0.80 after a plain opening (0 of 48 here at ≤ 5 mm error); the
+tolerance sweep adds plain-release cells with 10–15 mm forward error.
