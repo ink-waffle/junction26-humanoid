@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, DEFINING_WORDS, FUZZY_TARGETS, INTENSIFIED,
+from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, CORRECT_NOUNS, DEFINING_WORDS, EGOCENTRIC,
+                                            FUZZY_TARGETS, INTENSIFIED, LETTER_BINS,
                                             MAX_PHRASE, MODAL_FOLLOWERS, NAMING_WORDS, NOT_TYPOS, NUMBERS, PHRASES,
                                             RELATIVE_PRONOUNS, ROW_EQUATES, ROW_HEADINGS, ROW_JOINERS, ROW_LEADS,
                                             ROW_STARTERS, STAY_WORDS, SURFACES, TRAVEL_WORDS, WH_WORDS, WORDS, Tag)
@@ -275,6 +276,18 @@ def _resolve_aliases(tokens: list[Token]) -> list[Token]:
             token.text, token.tag, token.value = "", Tag.FILL, ""
         elif token.text in table and _is_label(token) and _names_bin(tokens, index):
             _retag(token, Tag.BIN, table[token.text])
+    return tokens if table else _resolve_letters(tokens)
+
+
+def _resolve_letters(tokens: list[Token]) -> list[Token]:
+    """Undefined 'L', 'M' / 'C', 'R' beside an arrow or a bin noun abbreviate the positions, if two or more occur."""
+    def beside(index: int) -> bool:
+        return not {Tag.ARROW, Tag.CONTAINER}.isdisjoint((_at(tokens, index - 1).tag, _at(tokens, index + 1).tag))
+    letters = [index for index, token in enumerate(tokens) if token.text in LETTER_BINS and beside(index)]
+    if len({tokens[index].text for index in letters}) > 1:
+        for index in letters:
+            _retag(tokens[index], Tag.BIN, LETTER_BINS[tokens[index].text])
+            tokens[index].issue = Issue("one-letter bin names read as left / center / right", tuning.LETTER_BIN)
     return tokens
 
 
@@ -341,7 +354,7 @@ def _label_lists(tokens: list[Token]) -> Iterator[list[int]]:
 def _resolve_left(tokens: list[Token]) -> list[Token]:
     """Read 'left' as 'remaining' or 'left alone' where it is a participle of 'leave'."""
     for index, token in enumerate(tokens):
-        if token.text == "left" and token.tag is Tag.BIN:
+        if token.text == "left" and token.tag is Tag.BIN and not token.soft:
             if _means_remaining(tokens, index):
                 _retag(token, Tag.REST)
             elif _means_left_alone(tokens, index):
@@ -378,11 +391,20 @@ def _stays_put(tokens: list[Token], index: int) -> bool:
 
 
 def _resolve_right(tokens: list[Token]) -> list[Token]:
-    """Drop 'right' used as an intensifier: 'right away', 'right into the left bin'."""
+    """Drop 'right' that names no position: 'right into the left bin', 'the right (= correct) bins'."""
     for index, token in enumerate(tokens):
-        if token.text == "right" and token.tag is Tag.BIN and _is_intensifier(tokens, index):
-            _retag(token, Tag.FILL)
+        if token.text == "right" and token.tag is Tag.BIN and not token.soft:
+            if _is_intensifier(tokens, index) or _means_correct(tokens, index):
+                _retag(token, Tag.FILL)
     return tokens
+
+
+def _means_correct(tokens: list[Token], index: int) -> bool:
+    """'the right bins', 'its right bin', 'the right place': not one position; 'left and right bins' is a list."""
+    before, after = _at(tokens, index - 1), _at(tokens, index + 1)
+    plural_bins = after.tag is Tag.CONTAINER and after.text.endswith("s") and before.tag not in (Tag.AND, Tag.COMMA)
+    own_bin = after.tag is Tag.CONTAINER and before.text in ("its", "their")
+    return plural_bins or own_bin or after.text in CORRECT_NOUNS
 
 
 def _is_intensifier(tokens: list[Token], index: int) -> bool:
@@ -402,7 +424,9 @@ def _resolve_between(tokens: list[Token]) -> list[Token]:
             continue
         ends = [t for t in tokens[index + 1:index + 7] if t.tag is Tag.BIN][:2]
         after = _at(tokens, _skip(tokens, index + 1, (Tag.FILL,)))
-        bare = not ends and (_at(tokens, index - 1).text == "in" or after.tag in (Tag.PRONOUN, Tag.REST, Tag.OBJECT))
+        before = _at(tokens, index - 1)
+        refers = before.text == "in" or before.tag is Tag.CONTAINER or after.tag in (Tag.PRONOUN, Tag.REST, Tag.OBJECT)
+        bare = not ends and refers
         if {t.value for t in ends} == {"left", "right"} or bare:
             for end in ends:
                 _retag(end, Tag.FILL)
@@ -428,7 +452,8 @@ def _resolve_ordinals(tokens: list[Token]) -> list[Token]:
     for index in elliptic:
         after = _at(tokens, index + 1)
         names_object = after.tag in (Tag.COLOUR, Tag.SHAPE) or (after.tag is Tag.OBJECT and after.text != "one")
-        if sides and _at(tokens, index - 1).text == "the" and not names_object:
+        positioned = _at(tokens, index - 1).text == "the" or after.tag is Tag.LINK
+        if sides and positioned and not names_object:
             _set_ordinal(tokens[index], max(sides))
         else:
             _retag(tokens[index], Tag.FILL)
@@ -454,7 +479,7 @@ def _set_ordinal(token: Token, side: str) -> None:
     row = BINS[::-1] if side == "right" else BINS
     token.tag, token.value = Tag.BIN, row[int(token.value) - 1]
     if not side:
-        token.issue = Issue(f"'{token.text}' bin counted from the left", tuning.ORDINAL_ASSUMED)
+        token.issue = Issue("numbered bins counted from the left", tuning.ORDINAL_ASSUMED)
 
 
 def _resolve_numbered(tokens: list[Token]) -> list[Token]:
@@ -489,6 +514,24 @@ def _resolve_relative(tokens: list[Token]) -> list[Token]:
         else:
             token.value = token.value if anchor.value in ("center", token.value) else "center"
             _retag(anchor, Tag.FILL)
+    return tokens
+
+
+def _resolve_round(tokens: list[Token]) -> list[Token]:
+    """'round objects', 'anything round' are cylinders; 'in this round', 'the other way round' are not."""
+    for index, token in enumerate(tokens):
+        before, after = _at(tokens, index - 1), _at(tokens, index + 1)
+        listed = after.tag in (Tag.AND, Tag.COMMA) and _at(tokens, index + 2).tag in (Tag.SHAPE, Tag.OBJECT)
+        describes = after.tag in (Tag.OBJECT, Tag.SHAPE) or before.value == "copula" or before.tag is Tag.ALL
+        if token.text == "round" and not (describes or listed):
+            _retag(token, Tag.FILL)
+    return tokens
+
+
+def _soften_egocentric(tokens: list[Token]) -> list[Token]:
+    """'the bin straight ahead', 'in front of you' place the center bin, but may also just set the scene."""
+    for token in tokens:
+        token.soft = token.soft or (token.tag is Tag.BIN and not EGOCENTRIC.isdisjoint(token.text.split()))
     return tokens
 
 
@@ -601,6 +644,7 @@ def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
 
 
 _CONTEXT_RULES = (_expand_rows, _resolve_aliases, _resolve_left, _resolve_right, _resolve_between,
-                  _resolve_ordinals, _resolve_numbered, _resolve_relative, _resolve_can, _resolve_blocks,
+                  _resolve_ordinals, _resolve_numbered, _resolve_relative, _soften_egocentric, _resolve_round,
+                  _resolve_can, _resolve_blocks,
                   _resolve_but, _resolve_pronouns, _resolve_no, _resolve_not, _resolve_unless, _resolve_same,
                   _flag_viewpoint)
