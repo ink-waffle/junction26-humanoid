@@ -75,8 +75,8 @@ class HandCalibrator:
         return "unknown" if hand is None else "stiff" if hand.stiff else "soft"
 
     def grasp_class(self, side: str) -> str:
-        """The class grasps are built for: an uncalibrated hand is treated as stiff (shallower, never ejects)."""
-        return "soft" if self.hand_class(side) == "soft" else "stiff"
+        """The class grasps are built for: soft unless a completed calibration says stiff (soft grasps on a stiff hand cost little)."""
+        return "stiff" if self.hand_class(side) == "stiff" else "soft"
 
     def empty_error(self, side: str) -> np.ndarray | float:
         hand = self.hands.get(side)

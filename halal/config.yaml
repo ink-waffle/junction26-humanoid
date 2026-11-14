@@ -239,7 +239,7 @@ policy:
   grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
-    unknown: 0.02             # no calibration close: the value that never calls a full hand empty
+    unknown: 0.02             # no calibration close, no empty-hand error to subtract: a real empty hand then reads 0.06-0.12 = held (6 s lost), a full hand is never dropped
   release_check_after: [unknown]   # detected shapes (unknown = none) whose picks end with a close of the hand above the bin: the staggered release left 0 of 120 known shapes in the hand
   release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
   release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
