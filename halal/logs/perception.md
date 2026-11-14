@@ -773,6 +773,25 @@ black (the env's mock renders nothing), so such frames are skipped; (2) runner-f
 The sim arm is dark all over, so its dark-pixel share mixes hand and forearm; on the real robot only the hand is dark. In the
 sim's light the hand reads brighter than 60 in half of its pixels, hence the low outline share there; the real hand reads 43.
 
+**H12. A barely seen top face gives way to a lying prism** (`straggler.yield_visible`). Why the lying prisms of `realsim_looks`
+dropped from 1.000 to 0.82 under typical depth: noise and edge fattening widen the ridge at 45 mm into a strip that survives
+the top-face seed's opening; the outline fit accepts it as a top face seen 3 to 16 % (shape None, 16 mm off the ridge centre)
+and its claim radius removes the blob before the roof fit can see it. In all 39 misses of a 200-look sample no roof was even
+tried. Now an ACCEPTED top face seen less than 20 % claims nothing: if the blob there fits a roof, the lying prism replaces
+it; if not, the face stays and the blob is dropped as before. Faces the geometry rejects (a hand around an object, a wrong
+size) claim as before; without that the first version put four held objects and one false lying into clean `motion`.
+
+| | lying seen as such, before -> after | xy p95 mm |
+|---|---|---|
+| `realsim_looks` still looks (600 lying), sim depth | 1.000 -> 1.000 | 3.5 -> 3.5 |
+| typical | 0.820 -> 1.000 | 15.0 -> 5.5 |
+| bad | 0.493 -> 0.578 | 15.8 -> 13.2 |
+| `motion` (237 lying), mild / typical / bad | 0.776 -> 0.776, 0.743 -> 0.759, 0.443 -> 0.468 | 5.4, 6.2 -> 6.0, 11.7 -> 11.2 |
+
+Called lying without being one: unchanged (0 on `realsim_looks` at every level; `motion` 0 / 1 / 0 -> 0 / 1 / 1; `dr_train` 0 / 0 / 1).
+All clean sets including `motion`: identical line by line. What limits `motion` under noise is a different thing: prisms the
+roof fit does not accept (one face seen, support) and prisms under an arm.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
