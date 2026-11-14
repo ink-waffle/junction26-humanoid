@@ -674,6 +674,19 @@ What follows for the policy: a black object is a target only if the mapping reac
 shape key or `default` ("all cubes left", "everything else right"), exactly like any colour. Under a colours-only
 instruction that does not name black it has no bin and stays an obstacle.
 
+**H9. `agree_within` 25 -> 12 mm** (the change "Next 1" was waiting for). A table displaced by 1 to 1.5 cm passes every guard of
+the scene anchor (3 deg, 3 cm), and with hands and anchor "agreeing" within 25 mm the scene file was believed: the camera was
+moved to put the row where the file has it, and with it every object. `--shift nudge` (bins +1 cm, counter +5 mm, 0.5 deg) and
+`push` (bins +1.5 cm only), dev: anchor accepted 90 of 90, pose by scene, band error 13.5 / 13.6 / 13.6 and 16.0 / 16.0 / 16.0 mm,
+while the hand fit of the same frames is 3.9 / 4.2 / 4.4. How far anchor and hand fit are apart at the band, median / p95 / max:
+table as recorded: clean 5.8 / 6.1 / 6.3 (`lowhands` 7.2), mild 6.1 / 6.7 / 7.2, typical 6.0 / 7.3 / 9.7, bad 6.8 / 11.9 / 26.1;
+`nudge` 17.8 / 18.2 / 18.5 (typical 19.8 max), `push` 19.0 / 19.4 / 19.7, `slight` (2 cm) 30. So 12 mm lies between everything
+measured on the true table up to typical depth and the smallest displacement tried. After: `nudge` / `push` use the hands in
+90 of 90, camera part 2.4 / 2.9 / 3.5 and 2.4 / 3.0 / 3.5 clean, 2.5 / 3.5 / 4.1 and 2.5 / 3.6 / 4.2 typical. All clean sets including
+`motion` and the table as recorded under typical depth: identical. Cost: at bad depth on the true table 4 of 90 looks now go by
+the hands (camera part p95 4.1 -> 5.4, max 6.2 -> 16.9). In sim 6 mm of the disagreement is the principal point; on the real
+robot a displacement under about 1 cm in the direction the hands cannot tell still goes by the scene file.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
@@ -704,7 +717,7 @@ Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-ou
 
 ## Next
 
-1. First real depth drop: hand fit on real data, then `agree_within` (10–12 mm instead of 25) and the blend decision. Check
+1. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
    first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
 2. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
    actuator lag showing in the render but not in `hand_q`): not investigated beyond the measurement above.

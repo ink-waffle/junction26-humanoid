@@ -87,6 +87,8 @@ def measure(frame: Frame, calibration: SelfCalibration, finder: BinFinder, nomin
     arms = row.pop("hands_camera", None)
     chosen = calibration.decide(nominal, anchor, arms if row["hands_ok"] else None)
     row.update(source=chosen.source, chosen_mm=float(offset_mm(frame, chosen.camera, band).mean()))
+    if anchor is not None and arms is not None:
+        row["apart_mm"] = 1e3 * calibration.apart(anchor, arms)
     if arms is not None:
         row.update(layout_row(frame, calibration, finder, arms, scene, surface))
     return row
@@ -128,6 +130,7 @@ def render(title: str, rows: Sequence[Row]) -> str:
         f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}",
         f"counter height under the band through the hand camera, mm {stats(rows, 'counter_mm')}",
         f"highest bin rim through the hand camera, mm, signed {stats(rows, 'rim_mm', False)}   worst low {min((r['rim_mm'] for r in rows if r.get('rim_mm') is not None), default=float('nan')):.1f}",
+        f"scene anchor and hand fit apart at the band, mm {stats(rows, 'apart_mm')}",
         f"pose a look with both references would use: {sources}   band mm {stats(rows, 'chosen_mm')}"])
 
 

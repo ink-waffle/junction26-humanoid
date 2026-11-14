@@ -6,7 +6,7 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 perception:
   detector: topface           # key of halal.perception.DETECTORS
   calibration:                # head camera pose per episode (halal.perception.calibration)
-    agree_within: 0.025       # hands and scene anchor this close at the object band: the scene file is believed (see log)
+    agree_within: 0.012       # hands and scene anchor this close at the object band: the scene file is believed (see log: H9)
     max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
@@ -188,6 +188,10 @@ perception:
     sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
     shifts:                   # --shift: where the table stands against the scene file (real: drops 1 and 2, realdata.md B7)
       # bins further and to the left (m), gap between boxes (m; scene 0.05, recordings about 0.022), counter higher (m), far edge up (deg)
+      slight: {bins_x: 0.02, bins_y: 0.01, gap: 0.05, counter_z: 0.010, pitch_deg: 1.0}   # inside the scene anchor's guards
+      inch: {bins_x: 0.025, bins_y: -0.02, gap: 0.04, counter_z: -0.005, pitch_deg: 2.0}
+      nudge: {bins_x: 0.01, bins_y: 0.005, gap: 0.05, counter_z: 0.005, pitch_deg: 0.5}
+      push: {bins_x: 0.015, bins_y: 0.0, gap: 0.05, counter_z: 0.0, pitch_deg: 0.0}
       near: {bins_x: 0.05, bins_y: 0.0, gap: 0.05, counter_z: 0.020, pitch_deg: 1.5}
       real: {bins_x: 0.07, bins_y: 0.0, gap: 0.05, counter_z: 0.015, pitch_deg: 7.0}
       far: {bins_x: 0.14, bins_y: 0.0, gap: 0.05, counter_z: 0.0, pitch_deg: 9.0}
