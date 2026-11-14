@@ -59,7 +59,7 @@ class PickPlanner(Planner):
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
-        with self._grasp_applied(grasp, side, depth), self._counter_under(target):
+        with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
             for self.near_inset, self.low in itertools.product(insets, self._sequences(place_xy)):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
@@ -305,6 +305,16 @@ class PickPlanner(Planner):
         plan.arm, plan.hand = plan.arm[:last], plan.hand[:last]
         plan.phases = [phase for phase in plan.phases if phase[2] <= last]
         return plan
+
+    @contextmanager
+    def _sized_as(self, det: Any) -> Iterator[None]:
+        """Plan for the height the detection measured (`det.size`); the configured object height when it has none."""
+        nominal = self.height
+        self.height = float(getattr(det, "size", None) or nominal)
+        try:
+            yield
+        finally:
+            self.height = nominal
 
     @contextmanager
     def _counter_under(self, det: Any) -> Iterator[None]:
