@@ -6,6 +6,23 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 21:45
+- **Hand-in candidate still v19.** Built and pre-checked since: **v22** (`:v22-multi` `sha256:e4cf710e…`; amd64
+  `sha256:cb81d93c…`) = v21 + hands resting on the counter leave it first (by way of the clear-view pose if needed),
+  no white balance on a non-grey table (orange on wood was "yellow"), hand-fit coverage judged on the arm clear of the
+  table, consensus preferring the clearest fits, far-box landing rule, rim release for cylinders and triangles;
+  **v23** (`:v23-multi` `sha256:0c557cd9…`) = v22 + no picks while the head image is frozen, the episode keeps its
+  last found box row, warm split only up to a real yellow, turned starts for the hand fit, an "outline:" log line.
+- **v22 in sim:** stock legs 59/59 so far (gate 16/16); **real-look sim with tonight's head-calibration error (7.4°,
+  4 cm), table 2 cm aside, soft hands: v20 7/31 → v21 30/31 → v22 30/31**, every hand fit trusted (it reports the
+  camera turned 6.4–7.7° / 21–42 mm, against 7.6° / 40 mm injected). The only object lost: a lying prism on the right,
+  right arm (under investigation).
+- **Robot analysis** (`halal/logs/robot.md`): hands started on the table, hand fit rejected (floor gate, coverage),
+  nominal camera ~3 cm off, boxes 8–13 cm farther, frozen colour stream, white balance on wood. All but the
+  organisers' items are addressed in v22/v23. **Red-team review** of every world assumption: `halal/logs/assumptions.md`.
+- **Far boxes** (reach): risen releases 164/164 binned at +6/+8 cm; rim releases (cylinders, triangles) 134 with
+  nothing off the counter; cubes stay out (0/13 at the wall).
+
 ### Sat 14.11, 20:10
 - **Hand-in candidate: v19** (`sha256:ede4203e…`, `:v19-multi`): stock 87/87, gate 24/24, soft 31/31, equal to v18 on every leg, with the centre-box fix, `release_rise`, black objects, 12 mm anchor agreement. Built and published since: **v20** (amd64 `sha256:b7468d51…`, `:v20-multi`) = v19 +
   layout by geometry on an unanchored camera (H11), lying-prism grasps for both hands, soft cube `cage_deep`, early
