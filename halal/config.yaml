@@ -422,6 +422,6 @@ policy:
   stiff_hand_lag_s: 0.125     # and its lag behind the command must be under this (sim 0.09-0.107 s, soft-hand sim 0.137-0.149, real 0.14-0.2)
   calibration_sample_ticks: 5 # ticks between hand samples during the calibration close (short replies cost policy rate)
   transit_clearance: 0.02     # hand points stay this far above the counter and the bin rims on moves home; a move that starts lower (hands resting on the counter) must only never sink below its start
-  frozen_frame_arm_move: 0.05 # an arm joint moved this much (rad) since a head image (colour or depth) was first seen, and the image is still byte-identical: frozen stream, the look fails and no pick starts
+  frozen_frame_arm_move: 0.05 # an arm joint stands this far (rad) from where a head image (colour or depth) was first seen, or the arms travelled this far and came back, and the image is still byte-identical: frozen stream, the look fails and no pick starts
   background_nice: 10         # niceness of the planning thread (Linux)
   gil_switch_s: 0.001         # planning is pure Python: hand the interpreter back to act() this often

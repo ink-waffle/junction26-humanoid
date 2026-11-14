@@ -11,6 +11,11 @@ Action = dict[str, Any]
 OBS_LAG_TICKS = 2   # the runner asks for a chunk one tick early: its observation is from two ticks before that chunk
 
 
+def arm_travel(start: np.ndarray, arm: np.ndarray) -> float:
+    """How far a reply moves the arms from `start`: the largest joint step of each tick, summed (rad)."""
+    return float(np.abs(np.diff(np.vstack([start, arm]), axis=0)).max(axis=1, initial=0.0).sum())
+
+
 class CommandStream:
     def __init__(self, spec: JointSpec, chunk_ticks: int, hold_ticks: int) -> None:
         self.spec, self.chunk_ticks, self.hold_ticks = spec, chunk_ticks, hold_ticks
