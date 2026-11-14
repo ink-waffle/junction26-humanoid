@@ -829,3 +829,35 @@ offset), sha256 of every plan:
 
 Default `shapes: []` (90c4eb7). The soft-hand rim sweep r8 (side +12, inset 0) binned cylinders 3/8, triangles 7/8,
 cubes 0/5, nothing off the counter; the orchestrator turns it on for `[cylinder, triangle]` (commit on ws/reach).
+
+## Design note (not built): correct the measured palm height before the close
+
+Why: on the real arm the hand settles 7–8 mm (palm) and about 10 mm (fingertips) under its command at the bottom of
+the descent (section above); the fingertips close at table level. Neither the stiff sim arm nor the soft-hand sim
+sags, so the fix must act on a measured signal and do nothing where there is no sag.
+
+Motion side (planner, config `motion.palm_check: {apply, tolerance, contact_xy, max_lift, settle_s}`):
+- `palm_error(side, measured_arm_q, planned_arm_q) -> (dz, dxy)`: FK of the grasp point for both, measured minus planned.
+- `sag_corrected(plan, side, measured_arm_q, tick) -> Plan`: from `tick` on, hold the bottom of the descent for up to
+  `settle_s`, then run the close with the arm at the IK of the planned grasp point raised by −dz (z only, at most
+  `max_lift`), and fade that joint offset out over the lift; `dry_run_safety` from the current command, refused =
+  the plan unchanged. It follows the pattern of `resqueezed` / `aborted`: a plan transformed on a measured signal.
+- Correct only when the palm is LOWER than planned by more than `tolerance` (about 4 mm) and `dxy` < `contact_xy`
+  (about 8 mm). A hand that touches the table or the object top reads higher than planned and is never pushed down;
+  a large sideways error means contact (run 2, pick 3: 16 mm in x and y): skip and log.
+
+Policy hook (the policy engineer's part):
+- Load the pick with a stream cut at the last descend tick (`CommandStream.load(..., cuts=[...])`), so that an `act()`
+  call observes the bottom before the close is sent. Today the close follows the descent in the same chunk stream.
+- At the first `act()` with `observed_tick` ≥ that tick: `palm_error` on `obs["arm_q"]`. Over the tolerance:
+  `sag_corrected`, reload the stream with the new plan's remaining rows, and shift the active pick's tick indices
+  (grip window, release check tick) by the rows inserted and by the reload position, as `_load_with_release_check`
+  already does for its sub-trajectory. Measured at the cut, part of the error is still lag (run 2: 11–13 mm moving,
+  7–8 mm settled), so re-measure during the hold and correct with the settled value.
+- Under the tolerance: nothing changes and no time is spent (sim, stiff arm).
+
+Rollout: first `apply: false` (measure and log `dz`, `dxy` at the cut and after settling, every pick), which costs
+nothing and gives tomorrow's real runs the numbers; then `apply: true`. Checks: sim proxy leg = 0 corrections
+triggered (the sim arm's error at the cut must be measured first and stay under the tolerance); only the real robot can
+show the effect. Worst case of a wrong correction: the close runs up to `max_lift` higher on a 45 mm object, still
+on it; a lag-only trigger costs `settle_s` per pick.
