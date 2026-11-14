@@ -77,6 +77,7 @@ F_ATTACHED = 0.85
 F_UNPAIRED_OBJECT = 0.6
 F_UNPAIRED_BIN = 0.8
 F_CONFLICT = 0.4
+F_FAMILY_CLASH = 0.4             # "red left, orange right": two hues of one colour family sent to different bins
 F_UNDETERMINED = 0.7             # a group is mentioned but its bin cannot be worked out
 F_ELIMINATION = 0.9              # bin inferred from two excluded bins
 F_CORRECT_BIN = 0.8              # "the right bin" read as "the correct bin" while some colours stay unassigned

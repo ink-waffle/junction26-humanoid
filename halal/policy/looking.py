@@ -7,6 +7,7 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
+from halal.language import SHAPES
 from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection, SceneLayout, scene_layout
 from halal.policy.area import ObjectArea
@@ -81,12 +82,17 @@ class Looker:
         inside = [det for det in detections if self.area.contains(det.top[:2], layout.bins)]
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
         self._follow_missed(inside, situation)
-        targets = self._targets(inside, situation)
+        targets = self._targets(inside, detections, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
         pick, unplannable = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
-                                                cancelled)
+                                                [det.top for det in detections], cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
+
+    def _neighbours(self, det: ObjectDetection, everything: list[ObjectDetection]) -> int:
+        """Other detections of the look, sortable or not, within reach of a hand that grasps `det`."""
+        gaps = [float(np.linalg.norm(other.top[:2] - det.top[:2])) for other in everything if other is not det]
+        return sum(gap < self.settings["neighbour_radius"] for gap in gaps)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
         """A failed grasp pushes its object a few centimetres: the nearest detection of that colour inherits its attempts."""
@@ -98,14 +104,16 @@ class Looker:
         if nearest is not None and float(np.linalg.norm(nearest - missed.xy)) < self.settings["displaced_radius"]:
             attempts.follow(missed.xy, nearest)
 
-    def _targets(self, detections: list[ObjectDetection], situation: Situation) -> list[Target]:
+    def _targets(self, detections: list[ObjectDetection], everything: list[ObjectDetection], situation: Situation) -> list[Target]:
         """Confident detections with their clearest-seen shape that the instruction sends to a bin and that have picks left."""
         targets = []
         for seen in detections:
             det = replace(seen, shape=situation.shapes.clearest(seen.top[:2], seen.shape, seen.visible))
             sure = det.confidence >= self.settings["min_detection_confidence"]
             bin_name = situation.bin_for(det.color, det.shape) if sure else None
+            if sure and bin_name is None and det.shape is None and any(situation.bin_for(det.color, shape) for shape in SHAPES):
+                log.info("the %s object at (%+.3f,%+.3f) stays: shape unknown under a shape-keyed instruction", det.color, *det.top[:2])
             limit = self.settings["max_attempts"] if det.visible > 0 else self.settings["blob_attempts"]
             if bin_name is not None and situation.attempts.picks(det.top[:2]) < limit:
-                targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2])))
+                targets.append(Target(det, bin_name, situation.attempts.count(det.top[:2]), self._neighbours(seen, everything)))
         return targets

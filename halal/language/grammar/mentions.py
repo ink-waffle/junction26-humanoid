@@ -6,7 +6,8 @@ from enum import Enum, auto
 from typing import Iterable, Union
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (DEFAULT_KEY, NOUN_FILLERS, PRONOUN_QUANTIFIERS, RELATIVE_PRONOUNS, Tag)
+from halal.language.grammar.lexicon import (DEFAULT_KEY, HUES, NOUN_FILLERS, PRONOUN_QUANTIFIERS, RELATIVE_PRONOUNS,
+                                            Tag)
 from halal.language.grammar.tokens import Issue, Token
 
 _NOUN_TAGS = frozenset({Tag.ALL, Tag.REST, Tag.COLOUR, Tag.SHAPE, Tag.OBJECT})
@@ -38,6 +39,7 @@ class ObjectMention:
     end: int
     colour: str | None = None
     shape: str | None = None
+    hue: str = ""                   # the colour as worded: "orange" is a hue of the red family, "purple" of the blue
     scope: Scope = Scope.PLAIN
     negated: Negation = Negation.NONE
     known: bool = True              # False for a colour the scene lacks, or a group named in passing ("whether ...")
@@ -125,7 +127,7 @@ def find_mentions(tokens: list[Token]) -> list[Mention]:
             _OPERATORS[token.tag](mentions, tokens, position)
     _mark_cues(mentions, tokens)
     _mark_sentences(mentions, tokens)
-    _read_cubes_as_objects(mentions)
+    _read_cubes_as_objects(mentions, tokens)
     return mentions
 
 
@@ -248,8 +250,8 @@ def _noun_phrase(tokens: list[Token], start: int, end: int) -> list[Mention]:
         return _quantifier_phrase(tokens, start, end, scope)
     headless = not shapes and all(token.tag is not Tag.OBJECT for token in span)
     return [ObjectMention(start, end, colour.value or None if colour else None, shape.value if shape else None,
-                          scope, _negated_property(span), known=colour is None or bool(colour.value),
-                          headless=headless, issues=_issues(span))
+                          HUES.get(colour.text, "") if colour else "", scope, _negated_property(span),
+                          known=colour is None or bool(colour.value), headless=headless, issues=_issues(span))
             for colour in colours or [None] for shape in shapes or [None]]
 
 
@@ -535,15 +537,16 @@ def _until_boundary(tokens: Iterable[Token], boundaries: tuple[Tag, ...]) -> lis
     return kept
 
 
-def _read_cubes_as_objects(mentions: list[Mention]) -> None:
-    """'red cubes left, blue cubes right' or 'red cube left, yellow middle': 'cube' is the generic noun."""
+def _read_cubes_as_objects(mentions: list[Mention], tokens: list[Token]) -> None:
+    """'red cubes left, blue cubes right', 'red cube left, yellow middle': 'cube' is generic; 'the red cube' is not."""
     objects = [m for m in mentions if isinstance(m, ObjectMention) and m.known]
     shaped = [m for m in objects if m.shape]
     contrast = any(m.shape != "cube" or not m.colour or m.negated is not Negation.NONE for m in shaped)
     has_rest_clause = any(m.scope is Scope.REST for m in objects)
     elliptic = [m for m in objects if m.colour and not m.shape]
     named_objects = any(not m.headless for m in elliptic)       # "yellow objects" beside "red cubes" is a contrast
-    if not shaped or contrast or has_rest_clause or named_objects:
+    plural = any(token.tag is Tag.SHAPE and token.text.endswith("s") for m in shaped for token in tokens[m.start:m.end])
+    if not shaped or contrast or has_rest_clause or named_objects or not (plural or elliptic):
         return
     if len({m.colour for m in shaped + elliptic}) < 2:
         return

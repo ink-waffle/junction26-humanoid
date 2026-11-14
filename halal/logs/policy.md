@@ -69,7 +69,8 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v9 | b06b10e1cb9a | 7dee1dd | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +6.50 ± 1.94, 26/28 (1 time limit) | **+20.63** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 162) | v8 + release check started during the retreat + three picks for a toppled object; 3 wedge incidents, 3 arms retired, 1 object lost to that; 1 triangle lost after 4 empty picks |
 | v10 | 7e65414e990c | 513e266 | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.13** | PASS (through the image, 0 clips, ≥ 29.99 Hz, rt ≥ 186) | v9 + motion's staggered release (main 2120e4f) + finger-by-finger reopening before every re-check + last check back home before an arm is retired + hand opens on the way home + release slots sideways only; 86 release checks, 0 positive; lost: the seed-1001 triangle, pushed out of view by its first pick |
 | v11 | 13ae623395f5 | 8428e32 | soft sim only: +3.88 ± 0.78, 31/31 | – | – | – | PASS (soft sim) | v10 + main b28f322 + soft hands told by a 0.002 rad bias + release check only after unknown-shape picks + known shapes first + the check back home at the calibration posture; not run on the stock sims (v12 contains it) |
-| v12 | d2cadf30d4c2 | 8382cb2 | running | running | running | – | pre-check pass | v11 + main 1f02750 (vertex-aligned triangle grasp, soft carry at 4 rad/s²) + lag as a second vote for a soft hand + slots 65 / 60 mm apart + attempts follow an object pushed in small steps |
+| v12 | d2cadf30d4c2 | 8382cb2 | +3.88 ± 0.78, 31/31 | +6.75 ± 1.71, 27/28 | +7.00 ± 1.41, 28/28 | **+21.13** | PASS (through the image, 0 clips, ≥ 29.99 Hz, rt ≥ 151) | v11 + main 1f02750 (vertex-aligned triangle grasp, soft carry at 4 rad/s²) + lag as a second vote for a soft hand + slots 65 / 60 mm apart + attempts follow an object pushed in small steps; 48 of 48 hands classed stiff from a completed calibration; lost: a triangle knocked over by the grasp of its neighbour 7.5 cm away |
+| v13 | – | 8701a4e | – | – | – | – | mock suites pass | v12 + main f91db01 and 66b64dc (obstacle-aware plans, real colour words) + other detections passed as obstacles, a blocked target waits for its neighbour + free-standing objects first + soft grasps for a hand without a completed calibration + calibration at home when the start pose has no room |
 
 v2 in detail:
 - Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
@@ -240,6 +241,7 @@ Caveat: gains fitted to the real finger's free step response; no friction, dead 
 |---|---|---|---|---|---|
 | v8 (2 episodes, stopped) | stiff 4/4: bias 0.0055 rad, lag 0.137–0.149 s | 6/19 | 0.166–0.287 / 0.004–0.005 (threshold 0.02) | 7/8 | pass, 0 clips |
 | v11 | soft 16/16: bias 0.0055, lag 0.126–0.139 | 31/31 (cube 9, cylinder 17, triangle 5) | 0.313–0.567 / – (threshold 0.15) | 31/31, +3.88 ± 0.78 | PASS, 0 clips |
+| v12 | soft 16/16: bias 0.0055, lag 0.130–0.141 | 31/32, the retry sorted the object | 0.314–0.563 / 0.012 (threshold 0.15) | 31/31, +3.88 ± 0.78 | PASS, 0 clips |
 | v11 tree, release check after every shape (4 seeds) | soft | 12/12 in three episodes, then see below | empty hand at the soft grasp posture 0.009–0.013 (13 reads), no positive | 13/15 | pass, 0 clips |
 
 What broke, by cost:
@@ -260,3 +262,43 @@ wedged object.
 Three blob picks (v9) are worth nothing: the seed-1001 yellow triangle (layout yaw −36°, right arm, cage) came up
 empty at the first pick in 5 of 5 runs of v8–v10; pushed 10 cm and read as a blob it was missed three more times
 (v9), in v10 it left the camera's view. The remedy is the grasp: motion's vertex-aligned `cage_apex` (v12).
+
+### Vertex-aligned triangle grasp and neighbours (v12, v13)
+`cage_apex` (motion) holds the seed-1001 triangle at the first pick in both language legs of v12 (lift score
+0.095; 5 of 5 empty with `cage`). In the known leg that pick knocked over the blue triangle 7.5 cm away, which
+then took three empty picks and was lost; in the unseen leg it did not. v13 passes every detection of the look to
+`plan_pick(obstacles=...)`: a target whose options fail with "hand would touch" is not a failed attempt while
+another target can go; if none can, the first blocked target is planned without its nearest neighbour (logged).
+Targets without another detection within `policy.neighbour_radius` (9 cm) are picked first.
+
+### Which class for a hand nobody calibrated (v13)
+Motion's table: a soft hand with stiff grasps holds 2 of 18, a stiff hand with soft grasps loses only triangles
+(6/12). So only a completed calibration with a small bias and a small lag gives the stiff grasps; everything
+else is soft. The contact threshold of an uncalibrated hand stays 0.02 without an empty-hand error: an empty
+real hand then reads as held (one empty trip, ~6 s), a full hand is never opened at lift height. If the start pose
+leaves the hands no room to close (`calibration_clearance`), the arms go home and calibrate there before the
+first pick (mock: calibrated at home, 3/3).
+
+### Time limit (decision, not implemented)
+The limit is unknown (90–180 s) and the image assumes 120 s only to decide whether a pick still fits. Preferring
+a pick that ends before 90 s over the first in order would matter in a 2 s window of episodes that reach 82 s
+with two targets of different length left: about one object in a hundred episodes. Not built. Order of picks is
+least tried, known shape, free-standing, nearest its bin; a pick cut off by the limit keeps the object in the hand.
+
+### Finals robustness in the mock (v13 tree; kinematic mock world with a finger contact signal and runner-like observation lag)
+
+| Case | Objects | End | Clips |
+|---|---|---|---|
+| start pose far from home, hands closed | 3/3 | done, 57 s | 0 |
+| blank head frames for the first 40 calls | 4/4 | done, 91 s | 0 |
+| no depth at all | 0/3, nothing moved | time limit | 0 |
+| detector raises on looks 1 and 3 | 5/5 | done | 0 |
+| planner raises on its 2nd call / on every call | 3/3 / 0/3 | done / time limit | 0 |
+| reset during a 1 s plan, next episode at once | 5/5 in the next episode | done | 0 |
+| assumed limit 20 s, real limit 60 s | 3/3 | time limit at 60 s | 0 |
+| no room for the calibration close at the start pose | 3/3, calibrated at home | done | 0 |
+| instruction for one colour/shape ("Put the purple cube into the center box.") | 1 pick, the rest untouched | done, 31–34 s | 0 |
+| object stays in the hand for the first n openings (release check on) | n ≤ 3: 3/3, arm kept; n ≥ 4: arm retired | done / time limit | 0 |
+
+Worst `act()` 2–5 ms in every case. Not covered by the mock: physics of a failed grasp, real camera frames, a
+detector that never returns (the look would wait for it for the rest of the episode).

@@ -29,6 +29,11 @@ class HandCalibrator:
         self.hands: dict[str, HandResponse] = {}
         self.trace: CalibrationTrace | None = None
 
+    @property
+    def missing(self) -> bool:
+        """Wanted this episode and not started yet: so far the hands had no room to close where the arms were."""
+        return self.enabled and self.trace is None
+
     def due(self, arm_q: np.ndarray) -> bool:
         """Not done yet this episode, and both hands could close where they are without touching anything."""
         if not self.enabled or self.trace is not None:
@@ -70,8 +75,8 @@ class HandCalibrator:
         return "unknown" if hand is None else "stiff" if hand.stiff else "soft"
 
     def grasp_class(self, side: str) -> str:
-        """The class grasps are built for: an uncalibrated hand is treated as stiff (shallower, never ejects)."""
-        return "soft" if self.hand_class(side) == "soft" else "stiff"
+        """The class grasps are built for: soft unless a completed calibration says stiff (soft grasps on a stiff hand cost little)."""
+        return "stiff" if self.hand_class(side) == "stiff" else "soft"
 
     def empty_error(self, side: str) -> np.ndarray | float:
         hand = self.hands.get(side)
