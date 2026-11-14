@@ -175,7 +175,7 @@ Consequences
   below them, the left hand and silver forearm bottom-left, the right hand at the right edge. Both hands are in view
   at rest in every episode; the left arm hides up to a quarter of the image and a black cable loops around its wrist.
 - Full frame, no crop or rotation evident: the FK hand silhouette fits with the factory intrinsics of
-  `calibration.yaml` to 5 px (B7), and a 21 cm bin at 0.6 m spans the 215–235 px those intrinsics predict.
+  `calibration.yaml` to 5 px (B7). The focal length was not checked independently.
 - Not the printed scene: no 5 cm grid mat, the table is bare, glossy and light brown with specular highlights and
   screw heads; the bins are cardboard boxes wrapped in orange tape (brown inside, loose flaps on the rim, walls about
   7–8 cm) with orange tape strips on the table in front of them.
