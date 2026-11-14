@@ -123,10 +123,10 @@ def calibration_row(detector: TopFaceDetector, obs: Row, c: Mapping[str, Any]) -
            "anchor": anchor is not None, "hand_fit": fit is not None, "arm_through": "hand fit" if fit else "nominal camera",
            "arm_parts": arm_returns(depth, camera, points, links, c), "dark_returned": dark_returns(obs, camera, points, c)}
     if fit is not None:
-        checks = cal.hand_checks(fit, nominal)
+        checks, (turn, shift) = cal.hand_checks(fit, nominal), cal.displacement(fit, nominal)
         row.update(believed=all(checks.values()), failed=[k for k, ok in checks.items() if not ok], rms_mm=1e3 * fit.rms,
                    coverage=fit.coverage, known=fit.known, inliers=fit.inliers, spread_mm=1e3 * float(fit.spread.max()),
-                   moved_mm=1e3 * float(np.linalg.norm(fit.camera.T[:3, 3] - nominal.T[:3, 3])),
+                   clear=fit.clear, visible=fit.visible, turn_deg=turn, moved_mm=1e3 * shift,
                    apart_mm=None if anchor is None else 1e3 * cal.apart(anchor, fit.camera))
     return row
 
@@ -245,8 +245,9 @@ def depth_summary(rows: Sequence[Row], c: Mapping[str, Any]) -> list[str]:
            f"counter plane rms {median(rows, 'plane_rms_mm'):.1f} mm (sim 1.5, model typical 1.2, bad 1.6), tilt against the pelvis "
            f"{median(rows, 'plane_tilt_deg'):.1f} deg; valid depth {median(rows, 'valid_depth'):.2f} of the image",
            f"hand fit medians: rms {median(fits, 'rms_mm'):.1f} mm (sim 1.7, limit 4), covered {median(fits, 'coverage'):.2f} (limit 0.7) of the "
-           f"{median(fits, 'known'):.2f} that returned depth, pixels on model {median(fits, 'inliers'):.2f} (limit 0.5), camera moved "
-           f"{median(fits, 'moved_mm'):.1f} mm, apart from the scene anchor {median(fits, 'apart_mm'):.1f} mm (nan: no look had both)"]
+           f"{median(fits, 'known'):.2f} that returned depth, pixels on model {median(fits, 'inliers'):.2f} (limit 0.5), camera turned "
+           f"{median(fits, 'turn_deg'):.1f} deg and moved {median(fits, 'moved_mm'):.1f} mm, apart from the scene anchor "
+           f"{median(fits, 'apart_mm'):.1f} mm (nan: no look had both)"]
     for part in c["parts"]:
         seen = [row["arm_parts"][part] for row in rows if part in row["arm_parts"]]
         if seen:
@@ -294,7 +295,8 @@ def replay(episode: Episode, c: Mapping[str, Any], out: Path, overlays: int) -> 
 def look_line(row: Row) -> str:
     """One look with depth as a line of the report."""
     seen = ", ".join(f"{d['color']}/{d['shape'] or '?'}{'/lying' * d['lying']}({d['top'][0]:+.3f},{d['top'][1]:+.3f};v{d['visible']})" for d in row["detections"])
-    fit = (f"hand fit rms {row['rms_mm']:.1f} cov {row['coverage']:.2f} known {row['known']:.2f} on-model {row['inliers']:.2f} "
+    fit = (f"hand fit rms {row['rms_mm']:.1f} cov {row['coverage']:.2f} known {row['known']:.2f} (of {row['clear']}/{row['visible']} clear) "
+           f"on-model {row['inliers']:.2f} turn {row['turn_deg']:.1f} deg shift {row['moved_mm']:.0f} mm "
            f"{'believed' if row['believed'] else 'REJECTED ' + ','.join(row['failed'])}") if row["hand_fit"] else "no hand fit"
     bins = " ".join(f"{name[0]}({xy[0]:.3f},{xy[1]:+.3f})" for name, xy in row["bins"].items())
     rim = "none" if row["rim_z"] is None else f"{row['rim_z']:.3f}"

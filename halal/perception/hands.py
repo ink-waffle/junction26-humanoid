@@ -64,9 +64,11 @@ class HandFit:
     points: int             # depth pixels matched to the model at the final gate
     rms: float              # their point-to-surface distance, m
     spread: np.ndarray      # predicted standard deviation (xyz, m) this pose leaves on a point at `anchor`
-    coverage: float         # share of the visible model surface with depth at its pixels that has depth on it: low = it locked onto something else
-    known: float            # share of the visible model surface with depth on it or at its pixels: the rest returned nothing
+    coverage: float         # share of the clear visible model with depth at its pixels that has depth on it: low = it locked onto something else
+    known: float            # share of the clear visible model with depth on it or at its pixels: the rest returned nothing
     inliers: float          # share of the depth pixels around the arms that lie on the model: low = something else is there
+    clear: int              # visible model points above the floor gate (their depth can be evidence): what coverage and known judge
+    visible: int            # visible model points
 
 
 class HandReference:
@@ -112,10 +114,17 @@ class HandReference:
         seen = moved.deproject(pixels)
         around = np.isfinite(tree.query(seen, distance_upper_bound=self.cfg["gates"][0])[0])
         on_model = np.isfinite(tree.query(seen[around], distance_upper_bound=self.cfg["gates"][-1])[0])
-        covered = np.isfinite(cKDTree(seen[around][on_model]).query(model, distance_upper_bound=self.cfg["gates"][-1])[0])
-        known = covered | self._returned(depth, moved, model)
-        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.sum() / max(known.sum(), 1)), float(known.mean()),
-                       float(on_model.mean()))
+        clear = self._clear(first, moved, model, floor)
+        covered = np.isfinite(cKDTree(seen[around][on_model]).query(model[clear], distance_upper_bound=self.cfg["gates"][-1])[0])
+        known = covered | self._returned(depth, moved, model[clear])
+        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.sum() / max(known.sum(), 1)),
+                       float(known.mean()) if len(known) else 0.0, float(on_model.mean()), len(known), len(model))
+
+    def _clear(self, start: Camera, moved: Camera, model: np.ndarray, floor: PlaneFit | None) -> np.ndarray:
+        """True for model points whose depth pixel, as the fitted camera images them, would pass the floor gate of `_pixels`."""
+        if floor is None:
+            return np.ones(len(model), bool)
+        return start.deproject(moved.project(model)) @ floor.normal - floor.offset > self.cfg["floor_clearance"]
 
     @staticmethod
     def _returned(depth: np.ndarray, camera: Camera, model: np.ndarray) -> np.ndarray:
