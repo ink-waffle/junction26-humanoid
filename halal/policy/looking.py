@@ -19,6 +19,7 @@ from halal.policy.release import ReleaseSlots
 
 log = logging.getLogger(__name__)
 BinFor = Callable[[str, str | None], str | None]
+HEAD_IMAGES = ("head_rgb", "head_depth")
 
 
 @dataclass(frozen=True)
@@ -55,13 +56,13 @@ class Looker:
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings)
         self.detect_patience_s = float(settings["detect_deadline_s"])
-        self.last_frame: tuple[int, np.ndarray] | None = None   # hash of the last head colour image looked at, and the arm pose then
+        self.frames: dict[str, tuple[int, np.ndarray]] = {}   # per head image: hash of the one last looked at, and the arm pose it was first seen from
 
     def look(self, obs: Mapping[str, Any], situation: Situation, cancelled: Cancelled) -> Look | None:
         """Background job: detect and plan the next pick; None when a head image has not arrived."""
         if not (np.any(obs["head_rgb"]) and np.any(obs["head_depth"])):
             return None
-        self._check_frame_is_new(obs["head_rgb"], situation.arm_q)
+        self._refuse_frozen_frames(obs, situation.arm_q)
         detections = self._detect(obs)
         if situation.primer:
             self.planner.set_layout(self.detector.layout())   # moves checked before the first plan see the bins where they stand
@@ -70,12 +71,14 @@ class Looker:
             self.calibrator.finished.wait(self.settings["calibration_timeout_s"])
         return self._plan(self.detector.layout(), detections, situation, cancelled)
 
-    def _check_frame_is_new(self, head_rgb: np.ndarray, arm_q: np.ndarray) -> None:
-        """A colour image byte-identical to the last look's although the arms moved since is a frozen stream: say so."""
-        frame, last = hash(head_rgb.tobytes()), self.last_frame
-        if last is not None and frame == last[0] and float(np.abs(arm_q - last[1]).max()) > self.settings["frozen_frame_arm_move"]:
-            log.error("the head colour image is byte-identical to the last look's although the arms moved: the stream is frozen, colours and shapes are stale")
-        self.last_frame = (frame, np.array(arm_q, float))
+    def _refuse_frozen_frames(self, obs: Mapping[str, Any], arm_q: np.ndarray) -> None:
+        """A head image byte-identical to an earlier look's although the arms moved since is a frozen stream: the look fails, so nothing is picked from it."""
+        for name in HEAD_IMAGES:
+            frame, seen = hash(obs[name].tobytes()), self.frames.get(name)
+            if seen is None or frame != seen[0]:
+                self.frames[name] = (frame, np.array(arm_q, float))
+            elif float(np.abs(arm_q - seen[1]).max()) > self.settings["frozen_frame_arm_move"]:
+                raise RuntimeError(f"{name} is byte-identical to an earlier look's although the arms moved: frozen stream, no pick until a new frame arrives")
 
     def _detect(self, obs: Mapping[str, Any]) -> list[ObjectDetection]:
         """The detector's answer; a call that outlasts its deadline is left behind and the next one gets twice as long."""
