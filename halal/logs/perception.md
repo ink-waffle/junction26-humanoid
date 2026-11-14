@@ -655,7 +655,8 @@ Detector (`color.black`): a geometry-accepted object is black when most of its b
 (value below 0.5 x the counter's median brightness); confidence 0 at half of the pixels, 1 at 80 %. A dark object is black
 whatever its hue: the black hand has a blue cast that would otherwise name it blue. Stragglers (no top face) are never black.
 - `--blacken blue`, black objects found / named black of those found / at confidence >= 0.5: `dr_train` clean 158 of 158 / all / all;
-  typical 152 of 158 / all / all; bad 89 of 158 / all / all but one. `lookpose` 65, 65, 46 of 65, all named black. At bad the depth model takes
+  typical 152 of 158 / all / all; bad 89 of 158 / all. `lookpose` 65, 65, 46 of 65, all named black. At bad 1 of 403 (`dr_train`)
+  and 3 of 169 (`lookpose`) rightly named detections of any colour fall below 0.5. At bad the depth model takes
   70 % of every dark pixel's depth, so black objects lose their top face: that is the real risk for black foam, not the colour.
 - Nothing else turns black: every unpainted sim set including `motion` is identical line by line; with `--repaint` (real
   palette) on `dr_train`, `lowhands`, `closedhands`, `lookpose`: 0 black among 815 detections; real drop 2, 187 foam objects of
