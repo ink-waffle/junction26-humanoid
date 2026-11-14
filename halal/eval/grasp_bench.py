@@ -7,7 +7,7 @@ Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = gripp
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, its own `shapes` / `spots` / `yaws_deg` / `noise` /
 `repeats`, `squeeze`, `hand` (stiff | soft), `candidates`, `neighbour` ([forward, outward] m: a second object beside the target),
-`avoid` (pass the neighbour to the planner as an obstacle), `topple_deg` (before the pick a scripted push in about this
+`avoid` (pass the neighbour to the planner as an obstacle: true = its bare top, footprint = its detection), `topple_deg` (before the pick a scripted push in about this
 pelvis direction, mirrored for the right arm, tips the upright prism onto a side; it is then perceived as lying),
 `drop_shift` ([forward, outward] m added to the release point), `overrides`
 (organiser config keys), `motion` (our `motion` config keys),
@@ -82,7 +82,7 @@ class Pick:
     plan: Plan
     squeeze: float
     neighbour: str | None
-    neighbour_start: np.ndarray | None
+    neighbour_start: ObjectDetection | None
     lying: bool
 
 
@@ -305,12 +305,17 @@ class Bench:
         seen_yaw = yaw + sign * np.radians(case.yaw_noise_deg) if case.yaw_known and yaw is not None else None
         detection = ObjectDetection(color=BIN_COLOR[case.bin_name], top=top, shape=case.shape, yaw=seen_yaw, lying=lying,
                                     size=float(top[2] - self.scene.counter_z) if lying else None)
-        beside = np.asarray(truth[neighbour]["pos"], float) if neighbour else None
-        avoid = neighbour is not None and self.spec["variants"][case.variant].get("avoid", False)
-        grasp, plan = self._plan(case, detection, [beside + [0.0, 0.0, self.scene.object_height() / 2]] if avoid else [])
+        beside = self._neighbour_detection(truth[neighbour]) if neighbour else None
+        avoid = self.spec["variants"][case.variant].get("avoid", False) if neighbour else False
+        grasp, plan = self._plan(case, detection, [beside if avoid == "footprint" else beside.top] if avoid else [])
         depth = self._squeeze_override(case.variant)
         return Pick(case, name, pos, yaw, detection, grasp, plan, (grasp.squeeze if grasp else 0.0) if depth is None else depth,
                     neighbour, beside, lying)
+
+    def _neighbour_detection(self, state: Mapping[str, Any]) -> ObjectDetection:
+        """A neighbour as perception would report it at its true pose."""
+        top = np.asarray(state["pos"], float) + [0.0, 0.0, self.scene.object_height() / 2]
+        return ObjectDetection(color=state["color"], top=top, shape=state["shape"], yaw=perceived_yaw(state["shape"], state["quat_xyzw"]))
 
     def _squeeze_override(self, variant: str) -> float | None:
         """A variant's `squeeze` when it is one number for every shape; None leaves the depth to the grasp."""
@@ -406,12 +411,12 @@ class Bench:
         record["wall_gap_mm"] = round(1000 * self._wall_gap(pick.case.bin_name, final[pick.name]["pos"]), 1)
         record["rim_gap_mm"] = self._rim_gap(pick, trace["poses"][marks["open"] // self.settings["trace_every"]:, slot])
         if pick.neighbour is not None:
-            moved = np.subtract(final[pick.neighbour]["pos"], pick.neighbour_start)
-            record["neighbour_shift_mm"] = round(1000 * float(np.linalg.norm(moved[:2])), 1)
+            moved = np.subtract(final[pick.neighbour]["pos"][:2], pick.neighbour_start.top[:2])
+            record["neighbour_shift_mm"] = round(1000 * float(np.linalg.norm(moved)), 1)
             record["neighbour_tilt_deg"] = round(float(np.degrees(quat_tilt(final[pick.neighbour]["quat_xyzw"]))), 1)
             record["neighbour_outcome"] = outcomes.get(pick.neighbour)
-            top = pick.neighbour_start + [0.0, 0.0, self.scene.object_height() / 2]
-            record["neighbour_gap_mm"] = round(1000 * self.planners[pick.case.variant].digit_gap(pick.plan, pick.case.side, top), 1)
+            gap = self.planners[pick.case.variant].digit_gap(pick.plan, pick.case.side, pick.neighbour_start)
+            record["neighbour_clear_mm"] = round(1000 * gap, 1)
         record["failure"] = self._failure(record)
         return record
 
