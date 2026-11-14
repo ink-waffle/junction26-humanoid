@@ -44,6 +44,14 @@ Scene and view (head camera, 640×480, pitched 48° down)
   cut off. At `ARM_HOME` both hands are inside the head image and can hide objects near y ±0.17.
 - Bins: near edge x 0.40, centres (0.505, +0.26 / 0 / −0.26), 6 cm walls. The baseline releases 5 cm inside the near wall.
 - The mat has a printed 5 cm grid (`scene/assets/mat_texture.png`, same print on the real counter).
+- The sim head camera does not render with `calibration.yaml`'s principal point (325.0, 250.9): Omniverse ignores
+  aperture offsets, so the rendered image has it at the centre (319.5, 239.5), f = 604.8. Deprojecting with the
+  yaml puts objects ~6 mm too high and 4–5 mm off in xy even without DR (like 1.0° pitch + 0.5° yaw of camera
+  error). On the real robot the yaml is presumably right, so we do not hardcode the sim value: per-episode
+  self-calibration has to absorb it.
+- Organiser detector on 120 DR frames (472 objects): recall 0.99, colour 1.00, but precision 0.69 (phantom "yellow"
+  objects on washed-out bin rims) and top-centre xy error median 11.6 mm, p95 24 mm, almost all of it camera
+  model error. A third of the objects are partly hidden by the hands at `ARM_HOME` (thumbs over |y| > 0.1).
 
 Hand (left palm frame: x = finger direction, fingers curl towards −y, thumb in the z = 0 plane)
 - Index and middle fingertips sit at z = ±29 mm (57 mm apart); the thumb opposes them along x at z = 0.
