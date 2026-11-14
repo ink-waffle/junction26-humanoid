@@ -39,7 +39,9 @@ class PickPlanner(Planner):
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
         """Planner on the organiser config with our overrides (or `cfg`), the scene file and the sim home pose."""
         cfg, spec = cfg or config.baseline_config(), JointSpec()
-        return cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+        planner = cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+        planner.use_scene(planner.scene)
+        return planner
 
     @property
     def motion(self) -> dict[str, Any]:
@@ -57,7 +59,7 @@ class PickPlanner(Planner):
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
-        with self._grasp_applied(grasp, side, depth), self._counter_under(target):
+        with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
             for self.near_inset, self.low in itertools.product(insets, self._sequences(place_xy)):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
@@ -168,9 +170,11 @@ class PickPlanner(Planner):
         self.use_scene(Scene(cfg))
 
     def use_scene(self, scene: Scene) -> None:
-        """Replace the geometry (counter height, bins) all later plans work against."""
+        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall."""
         self.__dict__.setdefault("file_scene", self.scene)
-        self.scene = scene
+        cfg = copy.deepcopy(scene.cfg)
+        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"])
+        self.scene = Scene(cfg)
         self.__dict__.pop("_reach", None)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
@@ -256,16 +260,23 @@ class PickPlanner(Planner):
         """Fail a plan whose fingers or thumb, while down among the objects, come too close to another object."""
         limits = self.motion["obstacles"]
         reach = limits["radius"] + limits["finger_radius"] + limits["margin"]
-        ticks = [(name, tick) for name, first, stop in plan.phases if name in NEAR_OBJECTS_PHASES
-                 for tick in range(first, stop, OBSTACLE_CHECK_EVERY)] if plan.ok else []
-        for (name, tick), obstacle in itertools.product(ticks, self.obstacles):
-            points = self._digit_points(side, plan.arm[tick], plan.hand[tick])
-            low = points[points[:, 2] < obstacle[2] + limits["margin"]]
-            if len(low) and np.linalg.norm(low[:, :2] - obstacle[:2], axis=1).min() < reach:
+        for obstacle in self.obstacles if plan.ok else ():
+            if self.digit_gap(plan, side, obstacle) < reach:
                 plan.ok = False
-                plan.reason = f"hand would touch the object at ({obstacle[0]:+.3f},{obstacle[1]:+.3f}) during {name}"
+                plan.reason = f"hand would touch the object at ({obstacle[0]:+.3f},{obstacle[1]:+.3f})"
                 break
         return plan
+
+    def digit_gap(self, plan: Plan, side: str, obstacle: np.ndarray) -> float:
+        """Smallest horizontal distance (m) from an object's centre to a digit point below its top during descend and close; inf if none comes down."""
+        ceiling, gap = obstacle[2] + self.motion["obstacles"]["margin"], np.inf
+        for name, first, stop in plan.phases:
+            for tick in range(first, stop, OBSTACLE_CHECK_EVERY) if name in NEAR_OBJECTS_PHASES else ():
+                points = self._digit_points(side, plan.arm[tick], plan.hand[tick])
+                low = points[points[:, 2] < ceiling]
+                if len(low):
+                    gap = min(gap, float(np.linalg.norm(low[:, :2] - obstacle[:2], axis=1).min()))
+        return gap
 
     def _digit_points(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray) -> np.ndarray:
         """Joint, middle and tip of each distal finger link (index, middle, thumb) in the pelvis frame, (9, 3)."""
@@ -294,6 +305,16 @@ class PickPlanner(Planner):
         plan.arm, plan.hand = plan.arm[:last], plan.hand[:last]
         plan.phases = [phase for phase in plan.phases if phase[2] <= last]
         return plan
+
+    @contextmanager
+    def _sized_as(self, det: Any) -> Iterator[None]:
+        """Plan for the height the detection measured (`det.size`); the configured object height when it has none."""
+        nominal = self.height
+        self.height = float(getattr(det, "size", None) or nominal)
+        try:
+            yield
+        finally:
+            self.height = nominal
 
     @contextmanager
     def _counter_under(self, det: Any) -> Iterator[None]:

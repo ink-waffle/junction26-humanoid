@@ -370,3 +370,24 @@ counter and the fingers; every earlier sweep used the slippery-heavy corner. Sto
 Verdict: no weakness in this corner; all carried objects out of the hand within the open phase (99/99). The policy's
 miss with default hints is still not reproduced by the bench (the policy's own run with the vertex-aligned grasp
 holds it); vertex-aligned triangles stand at 96/96 over sweeps 13a, 15 and 16.
+
+## Real bin walls are 70 mm, the scene file says 60 mm (offline, 188 plans over 10 layouts)
+
+Perception measured the real boxes: walls ~70 mm. Clearance over a 70 mm rim with the plans as they are (nominal:
+before the 6 mm arm sag and the 10–50° tilt of a held object, which lowers its lowest corner by up to ~10 mm):
+
+| sequence | held object's bottom over the wall, min / p5 | lowest hand point over the wall, min | plans that stay low |
+|---|---|---|---|
+| organiser, walls as in the file | 29 / 40 mm | 46 mm | |
+| low, walls as in the file | 3 / 7 mm | 24 mm | 81 % |
+| organiser, `min_wall_height: 0.07` | 39 / 44 mm | 55 mm | |
+| low, `min_wall_height: 0.07` | 19 / 21 mm | 35 mm | 55 % |
+| low, `min_wall_height: 0.07`, `lift_height: 0.08` | 14 / 17 mm | 33 mm | 74 % |
+
+Verdict: the organiser sequence clears a 70 mm rim as it is; the low sequence would hit it. `motion.min_wall_height`
+(walls count as at least this tall in everything the planner derives from them: release height, joint-carry floor,
+rim checks of both sequences, the organiser's bin check) is in the planner at 0.06 = no change; 0.07 raises the
+release by 10 mm, to be measured in sim (sweep 20) before it becomes the default.
+
+Bench: planning with obstacles can take more than a second, which tripped the env's watchdog stop (sweep 19 died in
+its first episode); the bench now plans in a thread while the arms hold.
