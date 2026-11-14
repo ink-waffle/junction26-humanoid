@@ -861,3 +861,35 @@ nothing and gives tomorrow's real runs the numbers; then `apply: true`. Checks: 
 triggered (the sim arm's error at the cut must be measured first and stay under the tolerance); only the real robot can
 show the effect. Worst case of a wrong correction: the close runs up to `max_lift` higher on a 45 mm object, still
 on it; a lag-only trigger costs `settle_s` per pick.
+
+## Planner: hover pose for the closed-loop grasp correction (offline, `halal.motion.hover`)
+
+Before the descent the hand waits beside and above the grasp point (`motion.hover.offsets`, [forward, outward, up],
+first that passes) with the plan's finger heading and preshape, so the head camera sees hand and object together and
+the hand→object vector corrects the grasp point (servo workstream). From the pregrasp straight above, the hand hides
+0–98 % of the top face (51–99 % half way down, 91–98 % at the grasp: `team/notes/servo/occlusion.py`).
+Checks: IK; lowest hand point ≥ `min_low` (floor gate 6.5 cm + 1 cm); hidden share ≤ `max_hidden` (FK hand surface
+against the nominal camera, top-face points outside the image count as hidden); the move from the start pose keeps
+both hands an object height + `over_object_clearance` above the counter and off the bin rims, directly or through
+the plan's pregrasp; 0 dry-run clips.
+
+12 layouts (seeds 1000–1011), every object × bin × arm that reaches the bin, first candidate planned from home with
+the other objects as obstacles; then the hover and `plan_pick` from the hover pose:
+
+| hand, boxes | plans | hover | arm on the object's side | cross-body arm | (object, bin) pairs, either arm | re-plan from hover |
+|---|---|---|---|---|---|---|
+| soft, nominal | 166 | 134 (81 %) | 88/88 | 46/78 | 113/129 (88 %) | 134/134 |
+| stiff, nominal | 170 | 138 (81 %) | 88/88 | 50/82 | 116/132 (88 %) | 138/138 |
+| soft, boxes +6 cm | 172 | 136 (79 %) | 88/88 | 48/84 | 114/132 (86 %) | 136/136 |
+| stiff, boxes +6 cm | 174 | 138 (79 %) | 88/88 | 50/86 | 116/134 (87 %) | 138/138 |
+
+- Offsets used (soft, nominal): [0, +5, +7] 96, [0, +6, +7] 16, [0, −5, +7] (inward) 14, [3, +4, +7] 8. Hidden mean 1.2 %,
+  max 7.4 %; lowest hand point 8.6–8.9 cm above the counter. The hover keeps the plan's finger heading exactly.
+- Time (nominal): start → hover 1.62 s mean, p95 3.0 s (the long ones stop at the pregrasp: the direct joint move
+  swings the preshaped fingers down to 1.2 cm over the counter); plan from the hover 9.07 s against 9.82 s from home;
+  extra per pick 0.87 s mean, p95 3.4 s, plus the look at the hover. Boxes +6 cm: 0.79 s mean, p95 2.8 s.
+- Planning: `plan_hover` 42 ms mean, 250 ms max; re-plan from the hover 0.1 s mean (0.4 s with far boxes), 1.2 s max.
+- Every miss is a cross-body pick (left arm at y ≤ −0.10, right arm at y ≥ +0.12). Not IK or occlusion (the inward
+  offset hides 0 %): even the joint move from home to the plan's own pregrasp passes 3.6–4.6 cm over the counter,
+  under the 6 cm transit check. Those picks stay open-loop. The open-loop plan's own `to_pregrasp` is only checked
+  at `counter_clearance` (2 cm), so it can pass that low near the robot today.
