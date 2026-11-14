@@ -1,10 +1,12 @@
 #!/bin/bash
-# Isaac sims on the dev instance, one per tag (a|b|c), each with its own DDS domain, ports, log and pid file.
-#   sims.sh start <tag> [--camera_include front_camera ...]   (env: AALTO_DR, default train; CORES="0-9" pins it)
-#   sims.sh stop <tag> | status | env <tag>                    (eval "$(sims.sh env b)" points clients at sim b)
+# Isaac sims on the dev instance, one per tag (a|b|c), each with its own DDS domain, ports, cores, log and pid file.
+#   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set)
+#   sims.sh stop <tag> | status | env <tag>   (eval "$(sims.sh env b)" points clients at sim b)
 set -eo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
 TAGS=(a b c)
+CLIENT_CORES=12-29   # everything that is not a sim (env.sh pins client shells here)
+KIT_THREADS="--/plugins/carb.tasking.plugin/threadCount=4 --/persistent/physics/numThreads=2"
 
 tag_env() {
     case "$1" in
@@ -14,6 +16,7 @@ tag_env() {
     *) echo "unknown sim tag '$1' (a|b|c)" >&2; exit 1 ;;
     esac
 }
+tag_cores() { case "$1" in a) echo 0-3 ;; b) echo 4-7 ;; c) echo 8-11 ;; esac; }
 pidfile() { echo "/tmp/halal_sim_$1.pid"; }
 logfile() { echo "/tmp/halal_sim_$1.log"; }
 alive() { local p; p=$(cat "$(pidfile "$1")" 2>/dev/null) && kill -0 "$p" 2>/dev/null; }
@@ -26,11 +29,12 @@ start)
     if alive "$tag"; then echo "sim $tag already running (pid $(cat "$(pidfile "$tag")"))"; exit 0; fi
     eval "$(tag_env "$tag")"
     export AALTO_DR="${AALTO_DR-train}" TASK="${TASK:-Aalto-Sort-G129-Dex3-Joint}"
-    pin=(); [[ -n "$CORES" ]] && pin=(taskset -c "$CORES")
+    export OMP_NUM_THREADS=1   # torch's per-core OpenMP pool only spin-waits at num_envs=1 (halal/logs/infra.md)
+    cores="${CORES:-$(tag_cores "$tag")}"
     cd "$REPO"
-    nohup "${pin[@]}" bash aaltonomous/sim/run_sim.sh "$@" >"$(logfile "$tag")" 2>&1 &
+    nohup taskset -c "$cores" bash aaltonomous/sim/run_sim.sh --kit_args "$KIT_THREADS" "$@" >"$(logfile "$tag")" 2>&1 &
     echo $! >"$(pidfile "$tag")"
-    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores ${CORES:-all}, log $(logfile "$tag"))"
+    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, log $(logfile "$tag"))"
     for _ in $(seq 400); do
         if ping_scene "$tag" >/dev/null; then echo "sim $tag ready after $SECONDS s"; exit 0; fi
         if ! alive "$tag"; then echo "sim $tag exited:"; tail -30 "$(logfile "$tag")"; exit 1; fi
@@ -50,6 +54,8 @@ status)
     done ;;
 env)
     tag_env "$tag" ;;
+client-cores)
+    echo "$CLIENT_CORES" ;;
 *)
     sed -n '2,4p' "$0" ;;
 esac
