@@ -52,7 +52,9 @@ def for_hand(params: Mapping[str, Any], hand: str) -> Mapping[str, Any]:
 
 
 def strategy_grasps(name: str, params: Mapping[str, Any], shape: str | None, yaw: float | None, side: str) -> list[Grasp]:
-    """One configured strategy on one object: a grasp per reachable finger heading, the most natural first."""
+    """One configured strategy on one object: a grasp per fixed heading, or per reachable heading on the object, the most natural first."""
+    if "inward_headings_deg" in params:
+        return [_grasp(name, params, shape, INWARD[side] * np.radians(turn)) for turn in params["inward_headings_deg"]]
     offsets = (params.get("headings_deg") or {}).get(shape)
     if offsets is None:
         return [_grasp(name, params, shape, None)]
