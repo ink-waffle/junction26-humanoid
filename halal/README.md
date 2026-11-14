@@ -43,8 +43,13 @@ Interface and timing
 Sim
 - `evaluate.py` homes the arms to `ARM_HOME`, calls `randomize(seed)`, resets the layout, runs the episode on the
   sim clock, lets objects settle, scores with the scene service. Seeds 1000+ are our fixed eval seeds.
-- Real-time factor on our instance: ~0.45 with one sim, ~0.27 each with two (CPU bound, 30 vCPU). A 120 s
-  episode is 4–7 min of wall time, so sim time is the scarce resource: do cheap loops offline first.
+- Real-time factor on our instance with the `sims.sh` defaults (`OMP_NUM_THREADS=1`, four pinned cores per sim,
+  Kit task pool 4, PhysX 2 threads; see `halal/logs/infra.md`): ~0.58 idle, ~0.45 under an evaluator, three sims
+  at once. Untuned it was 0.45 for one sim and 0.27 each for two: torch's 30-thread OpenMP pool only spin-waits.
+  A 120 s episode is still 4–5 min of wall time: do cheap loops offline first.
+- The sim is not deterministic run to run (the same seed can lose or keep a grasp): compare versions on several
+  seeds, and repeat a reference run after changing sim settings.
+- Once a client has called `randomize`, the DR camera corruption costs ~5 ms per step until the sim restarts.
 - `evaluate.py --container X` without `--policy ws://...` silently scores the oracle. Always pass `--policy`.
 - Dropping the wrist cameras from the sim (`--camera_include front_camera`) crashes the task. Do not try again.
 - Sim start is ~15 s when warm. Black frames after a start: stop and start again.
