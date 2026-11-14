@@ -119,6 +119,13 @@ motion:
   counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
   squeeze_axis: [0.0, 1.0, -1.15, 0.0, 0.0, 0.0, 0.0]   # LEFT order, per rad of `squeeze`: the thumb tip advances 41 mm at constant height
   hand_limit_margin: 0.03     # squeezed postures stay this far inside the hand joint limits (the filter clamps at 0.02)
+  approach_height: 0.07       # pregrasp above the grasp point: preshaped fingertips pass 3.5 cm over other objects
+  lift_height: 0.07           # straight lift before the carry: the held object passes 2.5 cm over other objects
+  over_object_clearance: 0.015    # hand above the counter by an object height plus this on the way to the pregrasp
+  carry_dip: 0.005            # the rising carry may sink this far below the lift height
+  carry_margin: 0.03          # held object's bottom above a bin rim at carry height
+  rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
+  min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
   drop_inset:                 # release point inside a bin's inner walls (objects land within +-2 cm of it in sim)
     near: [0.05, 0.04, 0.03]  # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.07                # from the side walls
