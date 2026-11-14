@@ -68,6 +68,7 @@ class Measured:
     tracking: np.ndarray            # commanded minus measured grasp point at the hover
     step: np.ndarray | None         # change of the target's top this look asks for
     refused: str                    # why the step is not applied ("" when it is)
+    parts: tuple[np.ndarray | None, ...] = (None, None, None)   # object minus target: the look's arm-fit turn, the top re-fit, the hand shift
 
 
 class GraspServo:
@@ -221,19 +222,22 @@ class GraspServo:
         """Hand and object at the hover in the arm frame: the step that puts the commanded grasp on the object, if it is believable."""
         pick, target = state.pick, state.pick.target.detection
         top = target.top + state.correction
-        look = self.measurer.measure(obs, self._camera(), pick.side, target, self._bins())   # the object stays where the camera saw it
+        camera = self._camera()
+        look = self.measurer.measure(obs, camera, pick.side, target, self._bins())   # the object stays where the camera saw it
+        turned = target.top if look.camera is None else look.camera.deproject(camera.project(target.top[None]))[0]
+        parts = (turned - target.top, None if look.seen_top is None else look.seen_top - turned, look.hand_shift)
         commanded = grasp_point(self.planner, pick.grasp, pick.side, arm_q)
         measured_hand = grasp_point(self.planner, pick.grasp, pick.side, np.asarray(obs["arm_q"], float))
         tracking = (commanded - measured_hand) * bool(self.cfg["track_offset"])
         planned = top - commanded
         if look.object_top is None or look.failed:
-            return Measured(look, None, planned, tracking, None, look.failed or "not measured")
+            return Measured(look, None, planned, tracking, None, look.failed or "not measured", parts)
         vector = look.object_top - measured_hand
         step = (look.object_top + tracking - top) * np.r_[1.0, 1.0, float(self.cfg["correct_z"])]
         total = state.correction + step
         refused = ("too large" if np.linalg.norm(total) > self.cfg["max_correction"] or abs(total[2]) > self.cfg["max_z_correction"]
                    else "measure only" if self.mode == "measure" else "")
-        return Measured(look, vector, planned, tracking, step, refused)
+        return Measured(look, vector, planned, tracking, step, refused, parts)
 
     def _hover_again(self, state: Hovering, arm_q: np.ndarray, hand_q: np.ndarray) -> Hover | None:
         """The hover re-centred on the corrected target, reached from where the hand hovers now."""
@@ -260,13 +264,14 @@ class GraspServo:
         look, mm = measured.look, lambda v: "(n/a)" if v is None else "({:+.1f},{:+.1f},{:+.1f})".format(*(1e3 * np.asarray(v)))
         verdict = "applied" if not measured.refused else f"not applied: {measured.refused}"
         log.info("t=%.1f servo look %d (%s, camera %s, at the hover %s) %s, %s arm: target top %s mm, hand->object measured %s planned %s mm, tracking %s mm, "
-                 "step %s mm %s, total %s mm; fit rms %.1f mm, coverage %.2f, inliers %.2f, %d points, spread %.1f mm, top visible %.2f; "
-                 "look %.2f s, %.2f s since the hover began", t, state.looks, self.mode, state.source,
-                 "the episode's" if look.camera is None else "its own arm fit", state.pick.target, state.pick.side,
-                 mm(state.pick.target.detection.top), mm(measured.vector), mm(measured.planned), mm(measured.tracking), mm(measured.step),
-                 verdict, mm(state.correction), 1e3 * look.rms, look.coverage, look.inliers, look.points, 1e3 * look.spread, look.visible,
-                 seconds, t - state.started)
-        self.tally.update(["looks"] + ([f"refused: {measured.refused}"] if measured.refused else []))
+                 "object - target = turn %s + top re-fit %s + hand shift %s mm, step %s mm %s, total %s mm; fit rms %.1f mm, coverage %.2f, "
+                 "inliers %.2f, %d points, spread %.1f mm, top visible %.2f; look %.2f s, %.2f s since the hover began", t, state.looks, self.mode,
+                 state.source, "the episode's" if look.camera is None else "its own arm fit", state.pick.target, state.pick.side,
+                 mm(state.pick.target.detection.top), mm(measured.vector), mm(measured.planned), mm(measured.tracking), *map(mm, measured.parts),
+                 mm(measured.step), verdict, mm(state.correction), 1e3 * look.rms, look.coverage, look.inliers, look.points, 1e3 * look.spread,
+                 look.visible, seconds, t - state.started)
+        believable = measured.step is not None and measured.refused in ("", "measure only")
+        self.tally.update(["looks", "believable" if believable else f"refused: {measured.refused}"])
         if state.measured is not None and measured.step is not None:
             self.corrections.append(float(np.linalg.norm(state.measured)))
 
