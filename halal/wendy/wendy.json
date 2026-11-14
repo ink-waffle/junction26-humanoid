@@ -1,0 +1,10 @@
+{
+  "$schema": "https://wendy.dev/schemas/wendy.json",
+  "appId": "halal-policy",
+  "version": "14",
+  "platform": "linux",
+  "restartPolicy": "no",
+  "entitlements": [{ "type": "network", "mode": "host" }],
+  "env": { "PORT": "8000" },
+  "readiness": { "tcpSocket": { "port": 8000 }, "timeoutSeconds": 120 }
+}
