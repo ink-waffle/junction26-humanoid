@@ -19,9 +19,10 @@ import json
 import os
 import ssl  # noqa: F401  must load before DDS, as in the organisers' evaluator
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Callable, Iterator, Mapping, TypeVar
 
 import numpy as np
 import yaml
@@ -46,6 +47,7 @@ BIN_COLOR = {bin_name: color for color, bin_name in FIXED_MAPPING.items()}
 MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
 GRIP_JOINTS = [1, 3, 5]
 STUCK_ABOVE = 0.15
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -158,6 +160,7 @@ class Bench:
         overrides = {**config.load()["baseline_overrides"], **variant.get("overrides", {})}
         planner = PickPlanner.create(self.env.filter.cfg, baseline.load_config(profile="sim", overrides=overrides))
         planner.motion.update(variant.get("motion", {}))
+        planner.use_scene(planner.scene)
         return planner
 
     def close(self) -> None:
@@ -175,7 +178,7 @@ class Bench:
         self._hold(self.settings["settle_ticks"])
         truth = {o["name"]: o for o in self.scene_client.state()["objects"]}
         rng = np.random.default_rng(seed)
-        picks = [self._prepare(c, n, truth, rng) for c, n in zip(cases, neighbours)]
+        picks = self._while_holding(lambda: [self._prepare(c, n, truth, rng) for c, n in zip(cases, neighbours)])
         trace = self._execute(picks)
         evaluate.settle(self.scene_client, 8.0, float(self.scene.cfg["success"]["at_rest_speed"]))
         outcomes = {o["name"]: o["outcome"] for o in self.scene_client.evaluate("sort_fixed", dict(FIXED_MAPPING))["outcomes"]}
@@ -209,6 +212,14 @@ class Bench:
         action = {"arm_q_target": self.env.filter.arm_cmd.copy(), "hand_q_target": self.env.filter.hand_cmd.copy()}
         for _ in range(ticks):
             self.env.step(action)
+
+    def _while_holding(self, work: Callable[[], T]) -> T:
+        """Run slow work (planning) in a thread while the arms hold: a silent second trips the env's watchdog stop."""
+        with ThreadPoolExecutor(1) as pool:
+            future = pool.submit(work)
+            while not future.done():
+                self._hold(1)
+            return future.result()
 
     def _prepare(self, case: Case, neighbour: str | None, truth: Mapping[str, Any], rng: np.random.Generator) -> Pick:
         """Detection with the case's perception error, the variant's grasp for it, and the plan."""

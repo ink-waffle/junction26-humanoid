@@ -39,7 +39,9 @@ class PickPlanner(Planner):
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
         """Planner on the organiser config with our overrides (or `cfg`), the scene file and the sim home pose."""
         cfg, spec = cfg or config.baseline_config(), JointSpec()
-        return cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+        planner = cls(cfg, Scene.load(), hand_postures(cfg, spec), home_arm(cfg, spec), ArmKinematics(cfg, spec), safety, spec)
+        planner.use_scene(planner.scene)
+        return planner
 
     @property
     def motion(self) -> dict[str, Any]:
@@ -168,9 +170,11 @@ class PickPlanner(Planner):
         self.use_scene(Scene(cfg))
 
     def use_scene(self, scene: Scene) -> None:
-        """Replace the geometry (counter height, bins) all later plans work against."""
+        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall."""
         self.__dict__.setdefault("file_scene", self.scene)
-        self.scene = scene
+        cfg = copy.deepcopy(scene.cfg)
+        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"])
+        self.scene = Scene(cfg)
         self.__dict__.pop("_reach", None)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
