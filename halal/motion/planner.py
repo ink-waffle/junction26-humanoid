@@ -37,6 +37,7 @@ class PickPlanner(Planner):
     release_rise = 0.0
     low = False
     obstacles: Sequence[Any] = ()
+    rim_z: float | None = None
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -165,7 +166,8 @@ class PickPlanner(Planner):
                        reason="" if clips == 0 else f"{clips} safety clips in dry run")
 
     def set_layout(self, layout: SceneLayout) -> None:
-        """Plan against the counter height and bin positions perception reports for this episode."""
+        """Plan against the counter height, bin positions and highest rim perception reports for this episode."""
+        self.rim_z = layout.rim_z
         file_scene = self.__dict__.setdefault("file_scene", self.scene)
         cfg = copy.deepcopy(file_scene.cfg)
         cfg["counter"]["mat_origin_in_pelvis"][2] = float(layout.counter_z)
@@ -174,11 +176,15 @@ class PickPlanner(Planner):
         self.use_scene(Scene(cfg))
 
     def use_scene(self, scene: Scene) -> None:
-        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall."""
+        """Replace the geometry (counter height, bins) all later plans work against; bin walls count as at least `min_wall_height` tall and up to the measured rim."""
         self.__dict__.setdefault("file_scene", self.scene)
-        cfg = copy.deepcopy(scene.cfg)
-        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"])
-        self.scene = Scene(cfg)
+        self.scene = self._walled(copy.deepcopy(scene.cfg))
+
+    def _walled(self, cfg: dict[str, Any]) -> Scene:
+        """Scene of `cfg` with its bin walls raised to `min_wall_height` and to the measured rim (`rim_z`) above its counter."""
+        seen = 0.0 if self.rim_z is None else self.rim_z - float(cfg["counter"]["mat_origin_in_pelvis"][2])
+        cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"], seen)
+        return Scene(cfg)
 
     def reaches_bin(self, side: str, bin_name: str) -> bool:
         """Whether this arm can hold the grasp point over one of the bin's release points."""
@@ -362,7 +368,7 @@ class PickPlanner(Planner):
         if self.motion["counter_from_detection"]:
             cfg = copy.deepcopy(nominal.cfg)
             cfg["counter"]["mat_origin_in_pelvis"][2] = float(det.top[2]) - self.height
-            self.scene = Scene(cfg)
+            self.scene = self._walled(cfg)
         try:
             yield
         finally:
