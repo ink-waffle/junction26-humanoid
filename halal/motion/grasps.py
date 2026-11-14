@@ -22,6 +22,7 @@ class Grasp:
     postures: Mapping[str, tuple[float, ...]] = field(default_factory=dict)   # LEFT-order preshape / closed / release
     height_frac: float | None = None                           # grasp height as a fraction of the object height
     squeeze_axis: tuple[float, ...] = ()                       # LEFT-order joint weights of a deeper squeeze; () = config default
+    squeeze: float = 0.0                                       # default depth (rad along the squeeze axis past `closed`)
 
 
 def right_hand(left: np.ndarray) -> np.ndarray:
@@ -41,10 +42,10 @@ def strategy_grasps(name: str, params: Mapping[str, Any], shape: str | None, yaw
     """One configured strategy on one object: a grasp per reachable finger heading, the most natural first."""
     offsets = (params.get("headings_deg") or {}).get(shape)
     if offsets is None:
-        return [_grasp(name, params, None)]
+        return [_grasp(name, params, shape, None)]
     if yaw is None:
         return []
-    return [_grasp(name, params, heading) for heading in reachable_headings(yaw + np.radians(offsets), side)]
+    return [_grasp(name, params, shape, heading) for heading in reachable_headings(yaw + np.radians(offsets), side)]
 
 
 def reachable_headings(headings: np.ndarray, side: str) -> list[float]:
@@ -56,11 +57,17 @@ def reachable_headings(headings: np.ndarray, side: str) -> list[float]:
     return [float(natural + offset) for offset in near]
 
 
-def _grasp(name: str, params: Mapping[str, Any], finger_yaw: float | None) -> Grasp:
+def _grasp(name: str, params: Mapping[str, Any], shape: str | None, finger_yaw: float | None) -> Grasp:
     return Grasp(name=name, finger_yaw=finger_yaw, center_shift=_shift(params, finger_yaw),
                  point_in_palm=_optional_tuple(params.get("point_in_palm")),
                  postures={k: tuple(params[k]) for k in POSTURES if k in params},
-                 height_frac=params.get("height_frac"), squeeze_axis=tuple(params.get("squeeze_axis", ())))
+                 height_frac=params.get("height_frac"), squeeze_axis=tuple(params.get("squeeze_axis", ())),
+                 squeeze=_depth(params.get("squeeze", 0.0), shape))
+
+
+def _depth(squeeze: float | Mapping[str, float], shape: str | None) -> float:
+    """A strategy's squeeze depth: one number, or one per shape with `unknown` for unclassified objects."""
+    return float(squeeze[shape or "unknown"] if isinstance(squeeze, Mapping) else squeeze)
 
 
 def _shift(params: Mapping[str, Any], finger_yaw: float | None) -> tuple[float, float]:

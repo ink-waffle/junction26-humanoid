@@ -27,7 +27,7 @@ BIN_PHASES = ("carry", "lower", "retreat")
 class PickPlanner(Planner):
     drop_shift = np.zeros(2)
     near_inset = 0.0
-    low = True
+    low = False
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -37,18 +37,25 @@ class PickPlanner(Planner):
 
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
-                  place_xy: tuple[float, float] | None = None, squeeze: float = 0.0) -> Plan:
-        """Pick (closing `squeeze` rad past the grasp's closed posture) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
+                  place_xy: tuple[float, float] | None = None, squeeze: float | None = None) -> Plan:
+        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
         self.drop_shift = np.asarray(drop_shift, float)
         if place_xy is None and not self._choose_near_inset(side, bin_name):
             return Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
-        with self._grasp_applied(grasp, side, squeeze), self._counter_under(target):
-            for self.low in (True, False) if place_xy is None else (False,):
+        depth = grasp.squeeze if squeeze is None else squeeze
+        with self._grasp_applied(grasp, side, depth), self._counter_under(target):
+            for self.low in self._sequences(place_xy):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
         return self._ending_at(plan, end)
+
+    @staticmethod
+    def _sequences(place_xy: tuple[float, float] | None) -> list[bool]:
+        """Whether to try our low sequence, per configured sequence in order; counter placements only have the organiser's."""
+        names = ["organiser"] if place_xy is not None else config.load()["motion"]["sequences"]
+        return [name == "low" for name in names]
 
     def _plan_with(self, grasp: Grasp, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
                    place_xy: tuple[float, float] | None) -> Plan:

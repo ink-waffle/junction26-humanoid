@@ -134,15 +134,22 @@ motion:
     default: 0.01
     descend: 0.004
     lift: 0.004
+  sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
-    cube: [pinch_face, pinch]
-    cylinder: [pinch]
-    triangle: [pinch]
-    unknown: [pinch]
+    cube: [cage, pinch]
+    cylinder: [cage]
+    triangle: [cage]
+    unknown: [cage]
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
-  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis. Unset keys keep the organiser pinch.
+  # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`).
+  # Unset keys keep the organiser pinch.
   grasps:
-    pinch: {}
+    # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
+    # follows how far each shape nests between the fingertips (40 mm apart): cube not at all, triangle apex 34 mm.
+    cage:
+      point_in_palm: [0.092, -0.084, 0.0]
+      squeeze: {cube: 0.30, cylinder: 0.45, triangle: 0.80, unknown: 0.75}
+    pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}
 
