@@ -43,9 +43,7 @@ def _ranked(mentions: list[Mention], tokens: list[Token]) -> list[tuple[Reading,
 def _issues(reading: Reading, meaning: Interpretation, mentions: list[Mention],
             rivals: list[tuple[Reading, Interpretation]]) -> tuple[Issue, ...]:
     """Every doubt behind the chosen reading: guessed words, awkward pairings, loose ends, a close rival."""
-    used = [mentions[index] for unit in reading.units for index in unit.objects] + \
-           [mention for mention in mentions if mention.soft]
-    issues = [issue for mention in mentions if mention in used or not mention.soft for issue in mention.issues]
+    issues = [issue for mention in mentions for issue in mention.issues]
     issues += [issue for unit in reading.units for issue in unit.issues]
     issues += meaning.issues
     close = [rival for _, rival in rivals
