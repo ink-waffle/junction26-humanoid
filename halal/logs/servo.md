@@ -1,0 +1,42 @@
+# Grasp feedback from a hover look (workstream `servo`, Sat 14.11 night)
+
+Why: on the robot (`robot.md`) the per-episode hand fit was rejected, the nominal head camera was ~3 cm off at the objects and
+every cube grasp closed beside its cube. A pick is open-loop: one look from home, then ~9 s blind. Near the hand the head pose
+error mostly cancels in the hand -> object vector (3 deg + 2 cm head error: object 23.5 mm off, hand -> object vector 7.4 mm at
+10 cm, 3.7 mm at 5 cm; `team/notes/servo/occlusion.py`). The hand hides the top face from above (0-98 % at the 7 cm
+pregrasp, 91-98 % at the grasp), so the look is taken from beside the object.
+
+## What it does (`policy.grasp_feedback`, env `HALAL_GRASP_FEEDBACK`)
+
+- `open`: today's pick. Hooks inert; the action stream is bit-identical to main 126bf20 (deterministic mock, jobs inline,
+  seeds 3 / 5 / 7: equal hashes).
+- `measure`: before the descent the hand goes to a hover pose (grasp point + 7 cm up + 5 cm towards the arm's own side,
+  `motion.hover`), holds 0.3 s (longer while arm_dq > 0.1 rad/s), looks once (`perception.hover`: the look's own arm fit if
+  believed, a translation-only fit of the picking wrist and hand, the top face re-fitted), logs the correction and grasps the
+  open-loop target, planned from the hover.
+- `servo`: the same, then grasps at target + correction (object in the arm frame + commanded minus measured grasp point at the
+  hover, capped 4 cm / 2 cm in z), with a second look from a re-centred hover when the first step is >= 3 mm. Any refusal
+  (guard, cap, no plan onto the corrected target) falls back to the open-loop target from the hover.
+
+## Offline
+
+- Hover (`ws/servo-hover`, `grasp.md`): own-side arm 100 % get a hover, cross-body about 60 % (the move from home dips
+  under the over-object height); hidden share max 7.4 %, lowest hand point 8.6 cm (gate 7.5); re-plan from the hover 100 %.
+- Measurement (`ws/servo-measure`), realsim_looks still frames (hand ~12 cm from the object), xy error mm median / p95 / max:
+  head error 0: open 13.5 / 13.5 / 24.1, hover 2.0 / 4.8 / 5.3; -7.4 deg 4 cm: open 28.3 / 40.0 / 41.4, hover 3.3 / 6.1 / 6.9;
+  59 of 60 believed at every error. Translation-only (no arm fit at the hover): 2.7 mm at 0, 11-16 mm under 3-7.4 deg.
+
+## Stock sim, fixed leg, seeds 1000-1003, DR train (images through the proxy)
+
+| Leg | Image | Objects | Score | Clips | rt_hz min | Gate | Hover |
+|---|---|---|---|---|---|---|---|
+| s2-measure | servo2-measure 9b51270551d6 (d7ec748) | 15/15 | +3.75 | 0 | 140.6 | PASS | 15 hovered, 1 look refused (inliers 0.46), all held |
+| s2-servo | servo2-servo 5cab02c49bc1 (d7ec748) | 15/15 | +3.75 | 0 | 157.7 | PASS | 11 corrected and held, 1 refused -> open loop from the hover, held; 1 cross-body no hover |
+
+- Believable corrections median 12-15 mm, max 21 mm. Of that, the arm hangs under its command at the hover: tracking
+  (commanded minus measured grasp point) about (+3, +1, +7) mm; the object in the arm frame differs from the scene camera by
+  3-5 mm.
+- Two looks misread by 10-18 mm (a cylinder on the left arm): hand-fit rms 3.3-3.6 mm against 1.5-2.1 on every good look;
+  servo2 applied it, the cylinder still held. servo3 (32024af) believes a look only below 3 mm rms.
+- Second look: step under 2 mm when the top face is seen; 3 of 8 second looks saw too little of it (visible 0.10-0.38).
+- Cost per hovered pick: about 2.5 s (measure), 4-5 s (servo with its second look).
