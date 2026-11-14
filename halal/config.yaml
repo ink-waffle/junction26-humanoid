@@ -463,8 +463,9 @@ policy:
     max_hold_s: 1.0           # ... and the hold is extended up to this long for them to stop
     max_iterations: 2         # hover looks per pick (servo): a step at least `converged` long re-centres the hover and looks again
     converged: 0.003
-    max_correction: 0.04      # a total correction longer than this is a failed measurement: the open-loop target
+    max_correction: 0.04      # a total correction longer than this, beyond what the look's own arm fit turns, is a failed measurement: the open-loop target
     max_z_correction: 0.02    # the same for its height
+    max_turn_correction: 0.08 # how far the look's own believed arm fit may move the target (its guards: 10 deg, 7 cm); real-look robot6 with the nominal camera: 37-45 mm
     correct_z: true           # correct the height too (the real palm sat 9-11 mm under its command before the close)
     track_offset: true        # add commanded minus measured grasp point at the hover: the arm's sag is expected again at the grasp
     overhead_s: 1.5           # time the hover's look and replanning add: a pick that would then overrun the episode goes open-loop
