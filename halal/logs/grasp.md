@@ -861,3 +861,76 @@ nothing and gives tomorrow's real runs the numbers; then `apply: true`. Checks: 
 triggered (the sim arm's error at the cut must be measured first and stay under the tolerance); only the real robot can
 show the effect. Worst case of a wrong correction: the close runs up to `max_lift` higher on a 45 mm object, still
 on it; a lag-only trigger costs `settle_s` per pick.
+
+## Sweeps rr1, rr2, rr1b: the lying prism in the cross-body reach hole (right arm at y +0.18 to the right box)
+
+Symptom (real-look sim, `realsim.md` rs21 and rs22, trial 7): a red prism lying at pelvis (+0.27, +0.18), bound for
+the right box, got three empty right-arm `cage_lying` picks in both legs and was left. The right arm's one
+`ridge_opposed` attempt there was refused ("IK grasp right"). Its ridge, recomputed from the trial layout (real_sim's
+crc32 seed), lies at about −60° in the pelvis frame. That fits the log: try 1 does not offer `ridge_opposed`
+(outside ±75°), try 2 (pushed) offers it and the IK fails, try 3 does not offer it.
+
+**Cause: a reach hole, mirror-symmetric, not a sign.** Checked one by one:
+- `thumb_0` (FK, URDF): with `right_hand()` (thumb_0 kept) the right fingertips of `ridge_opposed` preshape and
+  closed are the exact mirror of the left ones (0.0 mm). With the organisers' `mirror_left_to_right` (thumb_0
+  negated) the closed thumb tip lands 57 mm away, under the other finger. Sim physics agrees with ours: the
+  23-series split by arm gives the opposed pinch right 15/20, left 16/21 (soft), right 22/30, left 20/26 (stock),
+  and every right pick loads the thumb (thumb_1 error −0.29 at the close, as on the left).
+- Finger-heading window: plans for both arms at mirrored spots (y ±0.18, ±0.10, 0; 12 ridge yaws) are identical up to
+  the mirror. At (0.27, +0.18) the right arm reaches finger headings +15 to +105° only (`ridge_opposed` with the
+  window bypassed). A ridge at −60 needs −60 or +120: neither plans. 6 of 12 ridge directions (−75 to 0) fall to
+  `cage_lying` there, 4 of 12 at y +0.10 and 0. Widening the window would only add ridge −75 (heading +105).
+- Arm choice (`_arms`): only the right arm reaches the right box. Nothing to choose.
+- Mirror image: the left arm has the same hole at y −0.18, ridge 0 to +75, bound for the left box.
+
+Bench: sim d with `REAL_SIM=lying` (`/data/scratch/realsim/lying_all.yaml`, fraction 1.0). The prism spawns lying,
+and its ridge is set by the layout yaw: the yaws in the specs were searched so that both the right-arm spot and its
+mirror get the target ridge (recorded ridges within ±2.5°). Right arm at (0.27, +0.18) to the right box, left arm at
+(0.27, −0.18) to the left box, one arm per episode, fixed finger headings (`inward_headings_deg`), DR as it comes. All
+picks lying and planned.
+
+| cell (fingers relative to the ridge) | soft left | soft right | soft total | stock left | stock right | stock total |
+|---|---|---|---|---|---|---|
+| `ridge_opposed` 15° off (ridge ±75, heading ±90) | 6/12 | 4/12 | 10/24 | 4/12 | 0/12 | 4/24 |
+| `ridge_opposed` 25° off (ridge ±60, heading ±95) | 1/12 | 2/12 | 3/24 | 0/6 | 0/6 | 0/12 |
+| `cage_lying` (ridge ±60) | 0/6 | 0/6 | 0/12 | 3/3 | 2/3 | 5/6 |
+| control: `ridge_opposed` along the ridge (ridge ±60, heading ±60), rr2 | 3/6 | 6/6 | 9/12 | | | |
+
+- Soft failures: the object stays on the counter at the lift (`not_lifted`, 2 `lost_in_lift`), with contact at the
+  close as firm as in the successes (finger error 0.39, thumb_1 −0.30). Stock failures half `lost_in_lift`. Nothing
+  went off the counter; binned objects at least 26 mm from a wall.
+- The control (rr2) holds 9/12 at the same spot, right arm 6/6: the cross-body pose itself is fine for the right arm
+  in physics, the skew is what costs (15° off 10/24, 25° off 3/24 on the soft hand).
+- Stock is the other way round: across the ridge the stiff cage holds (5/6, as in sweep 23: 12/24), the skewed
+  pinch does not (4/24, right arm 0/12). The soft cage across the ridge holds nothing (0/12 here, 0/10 in 23h).
+
+Verdict: `ridge_skew15` (base `ridge_opposed`, `headings_deg {triangle: [15, -15, 165, 195]}`, `last_resort`) goes
+in the SOFT lying list only, after `ridge_opposed` and before `cage_lying`: `[ridge_opposed, ridge_skew15,
+cage_lying]`. The stiff list stays `[ridge_opposed, ridge_pinch, cage_lying]`. As a last resort it never runs where
+`ridge_opposed` plans, and an arm left with last resorts only still goes after the other arm. Note: last resorts are
+not rotated on retries, so in the hole every soft retry starts with `ridge_skew15` while it plans (`cage_lying` 0/12
+there anyway). 25° off stays out.
+Offline coverage (both arms, the soft list, spots y ±0.18, ±0.10, 0 x 12 ridges, from home): `cage_lying`
+comes first in 10 of 60 cells instead of 20 of 60, for each arm alike. Every cell whose first plan was not `cage_lying`
+keeps a byte-identical plan (sha of the arm and hand rows). Left in the hole for the right arm at y +0.18: ridges −60
+to −15. Planning in a hole cell takes up to 4.3 s instead of 4.0 s (Mac under load, four runs at once).
+
+Real robot `thumb_0`: URDF (both thumb_0 axes +y of their palm) and the operator's commands (resting thumb_0 −0.63
+left, −0.50 right, thumb_1 ±0.92: `realdata.md`) say "same sign as the left", which is what `right_hand()` does
+and what the sim does. `INTERFACE.md` says "thumb_0 mirrored too"; tonight's robot runs never moved thumb_0 (|q| ≤
+0.03), so the hardware sign is still unverified. If the real right thumb_0 were mirrored, every right-hand
+`ridge_opposed` / `ridge_skew15` would close the thumb 57 mm off the object (under the other finger).
+
+Side finding (sim): on the right hand, the finger that presses the object at palm z +28.5 mm (where the URDF has
+`right_hand_index`) is DDS slots 5–6, which `joint_spec.yaml` names `right_hand_middle`. That holds for 31 of 32
+right-arm opposed picks of sweep 23 and for rr1. On the left hand it is slots 5–6 = `left_hand_index`, as in the URDF.
+Our ridge and cage postures command index and middle alike, so nothing changes. But the late finger of
+`release_stagger_s` (`LATE_FINGER`, slots 5–6) differs per hand by name and in the URDF: the index on the left, the
+middle (palm z −28.5) on the right. In the sim it acts as the finger at palm z +28.5 on both hands. Which finger it
+moves on the real right hand is unknown.
+
+Fix on the way (`7a3a729`, realsim v23): a lying target remembered as another shape ("cylinder" after a carry slip) got
+no options (`_depth` KeyError: `cage_lying` had `{triangle: 0.75}` only). Now `cage_lying` and `cage_deep` have every
+shape key, and `_depth` falls back to `unknown`. Over every strategy and candidate list x shape (cube, cylinder,
+triangle, None) x hand x side x yaw x lying, 72 combinations raised before and none after. The other 280 give identical
+Grasp objects.
