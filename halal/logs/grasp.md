@@ -1014,3 +1014,35 @@ Proposal: turn it on. A slip on the way then lands on the counter (0) instead of
 affected pick, about half of the side-box picks. Not measured in physics: the longer sideways leg could change the
 slip rate itself (spikes no worse offline); one realsim soft leg with it on should show no new carry losses. A slip in
 the corridor lands 4-7 cm in front of the box row, still pickable (`policy.bin_clearance` 3 cm).
+
+## Planner: planning time at far boxes (offline; realsim rs24-robot6edgefar-rest, boxes +10 cm)
+
+Symptom (realsim, v24, boxes +10 cm, soft, resting start): every standing object reached its box, but 3 of 4 episodes
+hit the time limit; from a release to the next look 6-20 s (nominal boxes 0.6-4.7 s), with "arm cannot reach" refusals.
+
+Where the time went (offline: the policy's `PickChooser.choose` on the 8 looks of seeds 1000, 1001 and 1003 as the server
+log has them, boxes moved +10 cm and the counter 2 cm in y, 1.5 mm of look-to-look jitter on bins and object heights;
+cProfile): 200 of 217 s in `_reachable_releases` -> `_reaches` -> IK, 786 reach questions, 425 of them computed. 358
+computed answers were "no", each 0.25-0.5 s (all 3 orientation weights × 6 seeds fail); 165 of those points lie beyond
+the stretched arm. Half the questions came from the policy's arm filter (`reaches_bin`), half from `plan_pick`; the
+cache rarely hits across looks or grasps (its key holds the grasp's point in the palm, the release heights from the
+detected object and the bins as seen at that look).
+
+Changes (16a6d3f), none changes an answer:
+- No IK for a point farther from the shoulder than the stretched arm (sum of the joint-to-joint distances + the last
+  joint to the grasp point + `ik.pos_tol`, from the URDF; 0.573 + 0.006 m): IK cannot succeed there.
+- `_reachable_releases` yields (inset, rise) one at a time, so `plan_pick` stops asking once a release plans.
+- `reaches_bin` and the rim gate only need "some inset reaches": asked from the nearest inset and the highest rise
+  first (the same condition `_lowest_rise` uses: the lowest or the highest rise reaches), one IK when it does.
+
+| boxes | 8 looks, before → after (Mac under load) | median look | pick and refusal reasons per look |
+|---|---|---|---|
+| +10 cm | 135.2 → 56.6 s | 16.9 → 7.2 s | identical in all 8 |
+| +0 (nominal) | 46.5 → 36.7 s | 3.3 → 2.9 s | identical in all 8 |
+
+754/754 bench plans byte-identical (arm and hand rows, ok, reason; the corridor bench's layouts, boxes +0/+6/+10/+12,
+stiff and soft). Left at +10: refusals that need every inset to fail inside the arm's length (the centre box's far slot
+for the cross arm: 2-4 s), and whole plans that fail late (a hand over a box rim during the descent for an object just in
+front of a box: 2-4 s each, the same at nominal boxes). Not done: a cache across looks keyed coarser than a millimetre
+(would change answers at the reach boundary), planning the retreat once (it starts from the end of each candidate's own
+lower phase, so it is not shared).
