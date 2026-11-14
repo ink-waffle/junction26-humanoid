@@ -100,6 +100,18 @@ perception:
     wall_guard:               # while the scene has not anchored the camera: bin footprints are guesses, walls reach the candidates
       min_level: 0.7          # |cos| of a fit's top cells against the counter normal: wall faces <= 0.61, 99.5 % of top faces >= 0.8
       min_depth: 0.004        # thickness (std) in plan view a straggler needs: wall slivers 0.001 median, toppled objects 0.0077
+    roof:                     # a prism lying on a rectangular side, looked for in every blob the top-face fits leave (halal.perception.roof)
+      trials: 120             # planes tried, each through three random points of the blob
+      tolerance: 0.002        # a point this close to a plane lies on it
+      tilt_deg: [45, 75]      # tilt of a sloped face against the counter (equilateral prism: 60)
+      min_points: 120         # points a face needs
+      flat_band: 0.006        # of the points this close to a face's plane ...
+      min_flat: 0.7           # ... this share must lie on it: the side of a lying cylinder bends away (0.58)
+      top_percentile: 98      # with one face seen, the ridge is at this percentile of the face's heights
+      ridge_height: [0.030, 0.052]   # sim prism 0.045, real foam about 0.039
+      length: [0.020, 0.065]  # extent of the faces along the ridge (prism 0.045)
+      min_slope: 0.020        # extent of the first face from eaves to ridge (0.052 when all of it is seen)
+      min_support: 0.6        # share of the blob's points that must lie on the faces (lying prisms in sim: 0.67 at least, 0.97 median)
     min_yaw_contrast: 0.08    # score the worst yaw loses (outline-area fraction), below it yaw is None
     seed:
       height_band: 0.006      # top-face pixels: no further than this outside the size range, above the counter

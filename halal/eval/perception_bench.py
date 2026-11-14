@@ -65,6 +65,7 @@ class Truth:
     top: np.ndarray
     yaw: float | None
     view: str
+    toppled: bool = False       # a prism lying on a side: `top` is the middle of its ridge, `yaw` the ridge direction
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,18 @@ def presence(scene: Scene, obj: Mapping[str, Any], cfg: Mapping[str, float]) -> 
     return "lying" if still and abs(lift) < cfg["resting_tolerance"] else "unclear"
 
 
+def toppled_truth(obj: Mapping[str, Any], scene: Scene, spin: Rotation) -> Truth:
+    """Ground truth of a prism lying on a side: the uppermost edge is its ridge."""
+    corners = spin.apply(np.c_[shape_polygon("triangle", scene.object_dims("triangle")["apothem"], 0.0), np.zeros(3)])
+    axis = spin.apply([0.0, 0.0, 1.0])
+    ridge = np.asarray(obj["pos"], float) + corners[np.argmax(corners[:, 2])]
+    return Truth(obj["name"], obj["color"], "triangle", ridge, float(np.arctan2(axis[1], axis[0])), "toppled", toppled=True)
+
+
 def make_truth(obj: Mapping[str, Any], scene: Scene, camera: Pinhole, depth: np.ndarray, cfg: Mapping[str, float]) -> Truth:
+    spin = Rotation.from_quat(obj["quat_xyzw"])
+    if obj["shape"] == "triangle" and abs(spin.apply([0.0, 0.0, 1.0])[2]) < 0.5:
+        return toppled_truth(obj, scene, spin)
     centre = np.asarray(obj["pos"], float)
     top = centre + [0.0, 0.0, scene.object_height() / 2]
     yaw = body_yaw(obj["quat_xyzw"])
@@ -216,7 +228,7 @@ def factors(frame: Frame, truth: Truth, nominal: Pinhole) -> Row:
     """The episode and object conditions the breakdowns group by."""
     shift = reobserve(truth.top, frame.camera, nominal) - truth.top
     tint = frame.dr.get("objects", {}).get(truth.name, {})
-    return {"seed": frame.seed, "color": truth.color, "shape": truth.shape, "view": truth.view,
+    return {"seed": frame.seed, "color": truth.color, "shape": truth.shape, "view": truth.view, "toppled": truth.toppled,
             "nominal_camera_mm": 1e3 * float(np.linalg.norm(shift[:2])),
             "gain": frame.dr.get("camera", {}).get("rgb_gain", 1.0),
             "key_light": frame.dr.get("lighting", {}).get("key_intensity_scale", 1.0),
@@ -230,12 +242,14 @@ def outcome(frame: Frame, truth: Truth, det: ObjectDetection | None, used: Pinho
     error = det.top - truth.top
     own = det.top - reobserve(truth.top, frame.camera, used)
     shape_ok = det.shape == truth.shape
-    has_yaw = shape_ok and det.yaw is not None and truth.yaw is not None
+    has_yaw = shape_ok and det.yaw is not None and truth.yaw is not None and not truth.toppled
+    ridge = truth.toppled and det.lying and det.yaw is not None
     return {"matched": True, "color_ok": det.color == truth.color, "confidence": float(det.confidence),
             "xy_mm": 1e3 * float(np.linalg.norm(error[:2])), "z_mm": 1e3 * float(abs(error[2])),
             "own_xy_mm": 1e3 * float(np.linalg.norm(own[:2])),
             "camera_mm": 1e3 * float(np.linalg.norm((error - own)[:2])), "det_shape": det.shape, "visible": float(det.visible),
-            "size_mm": None if det.size is None else 1e3 * float(det.size),
+            "size_mm": None if det.size is None else 1e3 * float(det.size), "det_lying": bool(det.lying),
+            "ridge_deg": float(np.degrees(abs((det.yaw - truth.yaw + np.pi / 2) % np.pi - np.pi / 2))) if ridge else None,
             "yaw_deg": float(np.degrees(yaw_error(truth.shape, det.yaw, truth.yaw))) if has_yaw else None}
 
 
@@ -303,7 +317,9 @@ def summarise(rows: Sequence[Row]) -> Row:
     shaped = [r for r in hit if r["det_shape"] is not None]
     turned = [r["yaw_deg"] for r in hit if r["yaw_deg"] is not None]
     wanted = [r for r in hit if r["shape"] in SYMMETRY]
-    sized = [r["size_mm"] for r in hit if r["size_mm"] is not None]
+    sized = [r["size_mm"] for r in hit if r["size_mm"] is not None and not r["det_lying"]]
+    down = [r for r in rows if r["toppled"]]
+    lying = [r for r in down if r["matched"] and r["det_lying"]]
     return {"objects": len(rows), "recall": ratio(len(hit), len(rows)),
             "color_acc": ratio(sum(r["color_ok"] for r in hit), len(hit)),
             "xy_mm": spread([r["xy_mm"] for r in hit]), "z_mm": spread([r["z_mm"] for r in hit]),
@@ -311,7 +327,10 @@ def summarise(rows: Sequence[Row]) -> Row:
             "shape_decided": ratio(len(shaped), len(hit)),
             "shape_acc": ratio(sum(r["det_shape"] == r["shape"] for r in shaped), len(shaped)),
             "yaw_decided": ratio(len(turned), len(wanted)), "yaw_deg": spread(turned),
-            "size_decided": ratio(len(sized), len(hit)), "size_mm": spread(sized)}
+            "size_decided": ratio(len(sized), len(hit)), "size_mm": spread(sized),
+            "toppled": len(down), "toppled_lying": ratio(len(lying), len(down)), "ridge_deg": spread([r["ridge_deg"] for r in lying]),
+            "ridge_xy_mm": spread([r["xy_mm"] for r in lying]), "ridge_z_mm": spread([r["z_mm"] for r in lying]),
+            "false_lying": sum(r["det_lying"] for r in hit if not r["toppled"])}
 
 
 def confusion(rows: Sequence[Row]) -> dict[str, dict[str, int]]:
@@ -393,6 +412,10 @@ def render(title: str, result: Row) -> str:
         out.append(f"{unit:<30} mean {s['mean']:6.1f}  median {s['median']:6.1f}  p95 {s['p95']:6.1f}  max {s['max']:6.1f}")
     out.append(f"shape decided {o['shape_decided']:.3f}  correct of decided {o['shape_acc']:.3f}  yaw decided {o['yaw_decided']:.3f}")
     out.append(f"size reported {o['size_decided']:.3f}  median {o['size_mm']['median']:.2f} mm  max {o['size_mm']['max']:.2f} mm")
+    out.append(f"prisms lying on a side {o['toppled']}  seen as such {o['toppled_lying']:.3f}  ridge direction, deg: median "
+               f"{o['ridge_deg']['median']:.1f} p95 {o['ridge_deg']['p95']:.1f} max {o['ridge_deg']['max']:.1f}  ridge centre xy, mm: median "
+               f"{o['ridge_xy_mm']['median']:.1f} max {o['ridge_xy_mm']['max']:.1f}  z median {o['ridge_z_mm']['median']:.1f}  "
+               f"called lying without being one {o['false_lying']}")
     out.append("shape confusion (true -> detected): " + "; ".join(
         f"{t}: " + " ".join(f"{d} {n}" for d, n in row.items() if n) for t, row in result["confusion"].items()))
     out.append("layout source per frame: " + ", ".join(f"{s} {n}" for s, n in o["sources"].items())

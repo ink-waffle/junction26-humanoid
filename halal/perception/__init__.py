@@ -22,6 +22,7 @@ class ObjectDetection:
     pixels: int = 0
     visible: float = 1.0        # fraction of the top face the camera saw; low = centre and yaw rest on little evidence
     size: float | None = None   # height = edge length (m) the depth image shows; None = not measured, take the scene file's
+    lying: bool = False         # a prism on a rectangular side: `top` = middle of its ridge, `yaw` = ridge direction (mod pi), `size` = ridge height
 
 
 @dataclass(frozen=True, eq=False)
