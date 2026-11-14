@@ -15,7 +15,8 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 - **Hand-in images on the instance:** `halal/policy:v2` (the version of this table, 1.48 GB, starts in 0.5 s,
   passes the synthetic pre-check) and `halal/policy:v3` (v2 + cage grasps + perception fix), which is running the
   three legs through the container right now.
-- Not pushed to a registry yet: needs `write:packages` on the GitHub token or a Docker Hub login.
+- **Hand-in path proven (10:35):** `ghcr.io/ink-waffle/halal-policy@sha256:ee26f64beef67349d06cd046a9aee0602ca9360bfd79bf6d7b0194f50fb9ee94`
+  is v2, public, and pulls anonymously by digest. Later versions: `halal/ops/publish.sh <version>`.
 - Organisers (Discord 10:06): still no deadlines, no hand-in form, no new data drop.
 
 ### Sat 14.11, 10:00
