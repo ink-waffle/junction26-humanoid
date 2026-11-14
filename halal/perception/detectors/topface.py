@@ -52,8 +52,7 @@ class TopFaceDetector:
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
-        seeds = self._seeds(cloud, height, counter)
-        faces = self._distinct([self.fitter.fit(depth, camera, seed, counter) for seed in seeds])
+        faces = self._faces(depth, camera, cloud, height, counter)
         gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
         found = [self._describe(face, *self._body(face, camera, rgb, cloud, height), gains) for face in faces]
         return [d for d in found if d.confidence >= self.cfg["min_confidence"]]
@@ -86,13 +85,27 @@ class TopFaceDetector:
             ok &= ~np.all(np.abs(cloud[..., :2] - centre) < half, axis=-1)
         return ok
 
-    def _seeds(self, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
-        """Rough top-plane centres of blobs at object-top height on the counter."""
-        c, tall = self.cfg["seed"], self.scene.object_height()
-        top = (np.abs(height - tall) < c["height_band"]) & self._on_counter(cloud)
+    def _faces(self, depth: np.ndarray, camera: Camera, cloud: np.ndarray, height: np.ndarray, counter: PlaneFit) -> list[TopFace]:
+        """Top faces of all objects: fit around every blob at top height, then again around what no fit has claimed."""
+        c = self.cfg["seed"]
+        top = (np.abs(height - self.scene.object_height()) < c["height_band"]) & self._on_counter(cloud)
         mask = cv2.morphologyEx(top.astype(np.uint8), cv2.MORPH_OPEN, np.ones((c["open_px"], c["open_px"]), np.uint8))
+        faces: list[TopFace] = []
+        for _ in range(c["rounds"]):
+            seeds = self._seeds(mask, cloud, counter)
+            if not seeds:
+                break
+            faces = self._distinct(faces + [face for seed in seeds for face in self.fitter.fit(depth, camera, seed, counter)])
+            for face in faces:
+                mask[np.linalg.norm(cloud[..., :2] - face.best.centre[:2], axis=-1) < c["claim_radius"]] = 0
+        return faces
+
+    def _seeds(self, mask: np.ndarray, cloud: np.ndarray, counter: PlaneFit) -> list[np.ndarray]:
+        """Rough top-plane centres of the blobs left in the top-height mask."""
+        tall = self.scene.object_height()
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count) if stats[i, cv2.CC_STAT_AREA] >= c["min_px"]]
+        blobs = [np.nanmean(cloud[labels == i], axis=0) for i in range(1, count)
+                 if stats[i, cv2.CC_STAT_AREA] >= self.cfg["seed"]["min_px"]]
         return [blob - (counter.height(blob) - tall) * counter.normal for blob in blobs]
 
     def _distinct(self, faces: list[TopFace]) -> list[TopFace]:

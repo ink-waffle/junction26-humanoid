@@ -73,12 +73,16 @@ perception:
       height_band: 0.006      # top-face pixels: this close to the object height above the counter
       open_px: 3
       min_px: 60
+      rounds: 2               # fit, remove what the fits claim, fit the rest (objects touching in a row)
+      claim_radius: 0.034     # top-height pixels this close to a fitted centre belong to that object
     outline:
       cell: 0.001             # top-plane grid pitch
       view_cells: 112         # evidence grid side (even)
       outline_cells: 70       # outline mask side (even): covers the cube diagonal
       depth_tolerance: 0.004  # along the ray: nearer than this to the top plane counts as top face
       coarse_yaw_deg: 6       # yaw step of the half-resolution search, refined to 1 deg
+      max_per_view: 3         # objects extracted from one view (touching objects share a blob)
+      min_score: 0.05         # outline score (share of its area) below which nothing more is extracted from a view
       refine_cells: 3
       support_coverage: 0.99  # outline mask value above which a seen top-face cell counts as support
     color:

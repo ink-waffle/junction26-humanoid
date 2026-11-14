@@ -29,6 +29,7 @@ class OutlineFit:
     seen: float             # outline area the depth image shows as top face
     worst_yaw_score: float  # score of the least fitting yaw: equal to `score` when the view does not fix the yaw
     cells: np.ndarray       # view cells (flat indices) that are top face and inside the outline
+    footprint: np.ndarray   # view cells (flat indices) the outline covers
 
     @property
     def visible(self) -> float:
@@ -97,15 +98,21 @@ class OutlineFitter:
         labels = camera.surface_labels(depth, origin + self.offsets @ axes, self.cfg["depth_tolerance"])
         return labels.reshape(self.grid, self.grid).astype(np.float32)
 
-    def fit(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, counter: PlaneFit) -> TopFace:
-        """Fit all shapes to the top-face view around a rough centre on the top plane."""
+    def fit(self, depth: np.ndarray, camera: Camera, origin: np.ndarray, counter: PlaneFit) -> list[TopFace]:
+        """Every top face in the view around a rough centre on the top plane: fit, claim its cells, fit what is left."""
         axes = counter.axes()
         view = self.view(depth, camera, origin, axes)
-        small = cv2.resize(view, (self.grid // COARSE, self.grid // COARSE), interpolation=cv2.INTER_AREA)
         start = origin - self._silhouette_shift(camera, origin, counter.normal)
-        fits = sorted((self._fit_shape(s, view, small, start, axes) for s in SHAPES), key=lambda f: -f.score)
-        pixels = camera.project(origin + self.offsets[fits[0].cells] @ axes)[:, :2]
-        return TopFace(tuple(fits), np.round(pixels).astype(int))
+        faces: list[TopFace] = []
+        while len(faces) < self.cfg["max_per_view"]:
+            small = cv2.resize(view, (self.grid // COARSE, self.grid // COARSE), interpolation=cv2.INTER_AREA)
+            fits = sorted((self._fit_shape(s, view, small, start, axes) for s in SHAPES), key=lambda f: -f.score)
+            if fits[0].score < self.cfg["min_score"] * fits[0].area:
+                break
+            pixels = camera.project(origin + self.offsets[fits[0].cells] @ axes)[:, :2]
+            faces.append(TopFace(tuple(fits), np.round(pixels).astype(int)))
+            view.ravel()[fits[0].footprint] = -1.0
+        return faces
 
     def _silhouette_shift(self, camera: Camera, origin: np.ndarray, normal: np.ndarray) -> np.ndarray:
         """How far the seen top face sits towards the camera: front-face rays within tolerance, far fillet seen past."""
@@ -130,7 +137,7 @@ class OutlineFitter:
         worst = COARSE ** 2 * min(score for score, _ in coarse)
         shift = (np.array([row, col]) - (self.grid - self.size) / 2) * self.cell
         return OutlineFit(shape, start + shift @ axes, wrap_yaw(shape, angles[j]), self.area[shape], score, float(top.sum()),
-                          worst, np.flatnonzero(top > self.cfg["support_coverage"]))
+                          worst, np.flatnonzero(top > self.cfg["support_coverage"]), np.flatnonzero(placed > 0.5))
 
     @staticmethod
     def _peak(view: np.ndarray, mask: np.ndarray) -> tuple[float, tuple[int, int]]:
