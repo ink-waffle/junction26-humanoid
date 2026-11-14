@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import itertools
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any, Iterator
@@ -46,12 +47,12 @@ class PickPlanner(Planner):
                   place_xy: tuple[float, float] | None = None, squeeze: float | None = None) -> Plan:
         """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
         self.drop_shift = np.asarray(drop_shift, float)
-        if place_xy is None and not self._choose_near_inset(side, bin_name):
-            return Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
+        insets = [0.0] if place_xy is not None else self._reachable_insets(side, bin_name)
+        plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
         with self._grasp_applied(grasp, side, depth), self._counter_under(target):
-            for self.low in self._sequences(place_xy):
+            for self.near_inset, self.low in itertools.product(insets, self._sequences(place_xy)):
                 plan = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)
                 if plan.ok:
                     break
@@ -63,8 +64,8 @@ class PickPlanner(Planner):
         return [name == "low" for name in names]
 
     def _staggered_release(self, plan: Plan, side: str) -> Plan:
-        """The plan with its release rebuilt from our settings (stagger, speed); unchanged when they are the organiser sequence's."""
-        if not plan.ok or not (self.motion["release_stagger_s"] or self.motion["release_vel"] != self.cfg["motion"]["hand_max_vel"]):
+        """The plan with its release rebuilt so that one finger starts opening after the rest of the hand; unchanged when the stagger is 0."""
+        if not plan.ok or not self.motion["release_stagger_s"]:
             return plan
         cols = ArmKinematics.sl(side)
         first, stop = next((a, b) for name, a, b in plan.phases if name == "open")
@@ -76,7 +77,7 @@ class PickPlanner(Planner):
     def _opening(self, closed: np.ndarray, release: np.ndarray) -> np.ndarray:
         """One hand's rows (7 joints) from closed to release and the hold after; with a stagger one finger starts that much later."""
         motion, delay = self.cfg["motion"], int(round(self.motion["release_stagger_s"] / self.dt))
-        together = ramp(closed, release, self.motion["release_vel"], self.dt)
+        together = ramp(closed, release, motion["hand_max_vel"], self.dt)
         rows = np.vstack([together, np.repeat(release[None], delay + int(round(motion["open_hold_s"] / self.dt)), 0)])
         rows[:delay + len(together), LATE_FINGER] = np.vstack([np.repeat(closed[None], delay, 0), together])[:, LATE_FINGER]
         return rows
@@ -163,12 +164,13 @@ class PickPlanner(Planner):
             cache[key] = all(self.kin.solve(side, np.r_[xy, z], self.home)[1] for z in heights)
         return cache[key]
 
-    def _choose_near_inset(self, side: str, bin_name: str) -> bool:
-        """Set the largest configured distance from the bin's near wall this arm reaches; False when none."""
+    def _reachable_insets(self, side: str, bin_name: str) -> list[float]:
+        """The configured distances from the bin's near wall that pass the reach check for this arm, largest first."""
+        reachable = []
         for self.near_inset in self.motion["drop_inset"]["near"]:
             if self.reaches_bin(side, bin_name):
-                return True
-        return False
+                reachable.append(self.near_inset)
+        return reachable
 
     def drop_xy(self, name: str) -> np.ndarray:
         """Release point (pelvis xy): the point inside the bin's inset inner walls nearest the pelvis, plus the drop shift."""

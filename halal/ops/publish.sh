@@ -17,5 +17,5 @@ docker load -i "$MAIN/runs/images/$ARCHIVE"
 docker tag "halal/policy:$VERSION" "$TARGET"
 gh auth token | docker login ghcr.io -u "$OWNER" --password-stdin >/dev/null
 trap 'docker logout ghcr.io >/dev/null' EXIT   # the token never stays in the Docker config
-docker push "$TARGET"
+for attempt in 1 2 3; do docker push "$TARGET" && break; [[ $attempt == 3 ]] && exit 1; sleep 10; done   # venue network drops
 echo "hand in: ghcr.io/$OWNER/halal-policy@$(docker image inspect "$TARGET" --format '{{.Id}}')"
