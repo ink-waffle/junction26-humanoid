@@ -25,6 +25,20 @@ class BinFinder:
         offset = np.mean([seen[n] - self.expected[n] for n in seen], axis=0) if seen else np.zeros(2)
         return {name: seen.get(name, self.expected[name] + offset) for name in self.expected}
 
+    def rim_z(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, bins: Mapping[str, np.ndarray]) -> float | None:
+        """Pelvis z of the highest bin rim: where the walls over the bin footprints stop, lifted to the row's highest corner."""
+        c = self.cfg["rim"]
+        points = camera.cloud(depth, c["pixel_step"]).reshape(-1, 3)
+        half = self.size[::-1] / 2 + c["margin"]
+        over = np.any([np.all(np.abs(points[:, :2] - centre) < half, axis=1) for centre in bins.values()], axis=0)
+        counts = np.histogram(counter.height(points[over]), np.arange(c["band"][0], c["band"][1] + c["step"], c["step"]))[0]
+        base = np.median(counts[:int(round((c["surely_wall"] - c["band"][0]) / c["step"]))])
+        if base < c["min_points"]:
+            return None
+        top = c["band"][0] + c["step"] * (np.flatnonzero(counts >= c["wall_share"] * base)[-1] + 1)
+        corners = np.concatenate([centre + half * signs for centre in bins.values() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))])
+        return float(max(counter.z_at(corner) for corner in corners.reshape(-1, 2)) + top * counter.normal[2])
+
     def _wall_labels(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, x: float, y: np.ndarray) -> np.ndarray:
         """Per y: +1 a vertical surface stands at this x, -1 the camera sees past it, 0 hidden; averaged over the heights."""
         rows = []

@@ -73,6 +73,14 @@ perception:
     span_reach: 0.20          # how far to either side of the lane centre the wall ends are looked for
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
+    rim:                      # how tall the walls are: the heights of the points over the bin footprints stop at the rim
+      pixel_step: 2
+      margin: 0.010           # around a footprint
+      band: [0.030, 0.120]    # above the counter: where a rim may be (sim 0.060, real boxes about 0.070)
+      step: 0.002             # height bins
+      surely_wall: 0.045      # up to this height every bin wall stands: the median count there is what "wall" looks like
+      wall_share: 0.5         # the rim is the highest height bin with this share of that count (a finger over a bin has far less)
+      min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit

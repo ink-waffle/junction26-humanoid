@@ -460,9 +460,98 @@ rectangular side: a ridge, no top face, so the detector can only report it throu
 - The orange / yellow boundary under the finals' light: 5 deg of margin each way, measured in one room; the repainted
   sim shows what a +5 deg shift does (orange named `yellow` at full confidence).
 
+## Real depth and a real table, emulated (14.11 afternoon)
+
+No real depth has been published, so two bench conditions stand in for it. They are models, not measurements.
+
+**`--depth mild|typical|bad`** (`halal/eval/depth_sensor.py`, `bench.d435`, seeded by `--depth-seed`, frame seed and tick): the
+sim depth as a RealSense D435i would deliver it, worked out in the aligned 640x480 image.
+
+| effect | source | mild / typical / bad |
+|---|---|---|
+| range noise, `Z^2 * subpixel / (f * B)`, B = 50 mm, f = 425 px (848x480, HFOV about 90 deg) | Intel, "BKMs for tuning D4xx cameras": subpixel rms 0.08 well tuned, below 0.1 expected, above 0.2 recalibrate | 0.05 / 0.08 / 0.2 px: 0.8 / 1.4 / 3.4 mm at 0.6 m, 70 % of it smooth over the matching window |
+| disparity steps of 1/32 px | D400 depth format | 0.5 mm at 0.6 m |
+| disparity bias (calibration) | datasheet: within 2 % at 2 m, which is 0.2 px | 0 / 0.05 / 0.2 px, sign drawn per frame |
+| no depth left of every nearer surface | stereo occlusion; left imager is the reference, colour sits 15 mm beyond it, so 65 mm to the right imager | 40 px beside an arm 0.35 m away over the counter, 3 px beside an object |
+| edges moved, foreground fattened at edges, thin parts smoothed | block matching window | jitter 0.5 / 1 / 2 px, fattening 0 / 1 / 2 px, median 3 / 5 / 5 px |
+| flying and dropped pixels at depth steps | Intel support threads on object outlines | 5 + 10 / 15 + 30 / 40 + 50 % of edge pixels |
+| glossy black Dex3 links (by FK through the true camera) | assumption: IR absorbed or mirrored | fingers return 80 % / palm and fingers 40 % / palm and fingers nothing, and every other dark pixel 30 % |
+| holes on reflecting surfaces | assumption (bare glossy table) | 0.5 / 2 / 6 % of the image in 10 px blobs |
+
+Not modelled: the wrist camera mount and cable the URDF lacks, FK error of the real arm, motion blur, exposure.
+The sim frames already carry the organisers' DR depth noise (1 mm + 0.2 %, 1 % holes); the model comes on top.
+
+**`--shift near|real|far`** (`halal/eval/scene_shift.py`, `bench.shifts`): the frame re-rendered with the table where the
+recordings have it: bins 5 / 7 / 14 cm further, counter 20 / 15 / 0 mm higher, table pitched 1.5 / 7 / 9 deg (far edge up, about
+the middle of the object band). Arms and background stay, table points are moved and splatted, uncovered counter is drawn as
+a bare plane, ground truth moves along. A raised table brings the objects up under the thumbs of `ARM_HOME`, so the `hidden`
+objects are harder than in the recorded frames (recall with clean depth: 0.92 to 0.98).
+
+**`python -m halal.eval.calibration_bench`** (same options) runs every calibration stage on each frame as a first look would.
+
+### Stages, `dr_train` dev (90 frames), table as recorded | `--shift real`; error at the object band, mm, median / p95 / max
+
+| stage | clean | mild | typical | bad |
+|---|---|---|---|---|
+| counter plane, height error | 0.6 max 0.7, 1.0 max 1.1 | 0.5, 1.0 | 1.2 max 1.4, 1.7 max 1.9 | 3.2 max 3.8, 3.6 max 4.1 |
+| scene anchor accepted | 90, 0 | 90, 0 | 90, 0 | 90, 0 |
+| scene anchor, band | 1.5 / 1.6 / 1.7 | 1.5 / 2.0 / 2.2 | 1.7 / 2.3 / 2.7 | 3.9 / 5.0 / 5.8 |
+| hand fit believed (before) | 90, 90 | 90, 90 | 90, 90 | 74, 76 |
+| hand fit, band, all fits | 3.9 / 4.3 / 4.4, 3.7 / 4.0 / 4.2 | 4.2 / 4.6 / 4.8, 3.9 / 4.2 / 4.4 | 4.0 / 5.1 / 5.5, 3.7 / 4.7 / 5.1 | 4.4 / 8.5 / 17.5, 4.2 / 8.1 / 17.3 |
+| bins through the hand camera (before) | 3.0 / 5.0 / 7.0, 2.9 / 5.8 / 7.6 | 1.0 / 5.0 / 8.1, 2.9 / 4.4 / 6.5 | 2.2 / 5.1 / 10.6, 2.2 / 5.3 / 13.4 | 5.0 / 12.6 / 43.1, 2.9 / 67.9 / 212.1 |
+| counter height under the band, hand camera | 3.6, 3.6 | 3.8, 3.8 | 3.8 max 4.5, 3.8 max 4.5 | 3.5 max 10.5, 3.3 max 8.9 |
+
+3.6 mm of every hand-camera height is the sim's principal point (see "Facts"), not the method. Every check of the hand fit but
+coverage passed on every frame at every level. Guards of the scene anchor do their job: 0 of 90 accepted on a displaced table.
+
+Detector end to end (two looks, before any change), recall / precision, xy median / p95 / max, z median / p95, shape decided / right:
+
+| | clean | mild | typical | bad |
+|---|---|---|---|---|
+| table as recorded | 1.000 / 1.000, 1.7 / 2.4 / 2.7, 0.0 / 0.3, 0.91 / 1.000 | 1.000 / 1.000, 1.5 / 2.4 / 21.5, 0.0 / 0.3, 0.84 / 1.000 | 1.000 / 1.000, 1.3 / 3.0 / 22.5, 0.0 / 0.3, 0.80 / 0.996 | 0.994 / 0.997, 2.2 / 8.2 / 26.1, 0.1 / 0.3, 0.61 / 0.991 |
+| `--shift real` | 0.978 / 1.000, 1.7 / 2.7 / 26.0, 3.8 / 4.2, 0.89 / 0.997 | 0.950 / 1.000, 2.1 / 3.2 / 18.3, 4.1 / 4.7, 0.87 / 0.997 | 0.958 / 1.000, 2.3 / 4.5 / 17.1, 4.0 / 4.9, 0.82 / 1.000 | 0.950 / 0.977, 4.3 / 18.3 / 23.5, 3.5 / 11.4, 0.57 / 1.000 |
+
+Camera part under `--shift real`: 2.1 / 2.6 / 3.2, 2.1 / 2.7 / 3.1, 2.3 / 3.3 / 3.7, 4.0 / 17.3 / 24.4 (bad: 14 frames on the nominal
+pose). Everything beyond 8 mm up to typical is an object partly under a thumb. Upright prisms there are called `lying` under
+noise: 4 / 5 / 7 of 358 objects at mild / typical / bad on the table as recorded, none with clean depth. Colour: 1.000 throughout.
+
+Reading: with the black links returning 40 % in patches, the hand fit holds (5 mm p95 at the band) and the displaced table costs
+nothing beyond the hand fit's own error. The stages that broke were at `bad`: the coverage check of the hand fit, and the bin finder.
+
+### Hardening
+
+**H1. Coverage of the hand fit counts only surface that returned depth.** A model point with no depth at its pixel is no
+evidence that the arm is elsewhere; it used to count against the fit, so hands that return nothing meant "nominal".
+`coverage` = covered / (covered or depth at its pixel), `known` reports the share with any evidence, restarts still go by the
+whole-model share. `min_coverage` 0.5 -> 0.7 on the new basis (dev: true fits 0.77 at least at typical, 30 mm fits of `lowhands`
+at bad 0.55 to 0.60). bad, `--shift real`, dev: believed 76 -> 90 of 90, camera part p95 17.3 -> 7.1, max 24.4 -> 18.8, object xy
+p95 18.3 -> 9.5. Held-out, bad: believed 27 -> 30 of 30, camera part p95 10.9 -> 6.8, max 21.6 -> 14.9. Clean, mild and typical:
+the same numbers on every set; `--armless 10` believed 0 of 40, also with typical and bad depth. Left over: at bad, 3 of 90 dev
+fits are 12 to 17 mm off and pass every check (coverage 0.69 to 0.77, one rejected by the new threshold).
+
+**H2. Bin row found jointly.** Each lane used to need 6 seen cells for its own front wall; with arms and holes over the side
+lanes the far wall (21 cm on) was the first that qualified, and the row's median followed two wrong lanes. Now the row's front
+wall is the nearest x that fills the seen cells of all three lanes together, and each bin's own wall is looked for within
+`row_window` (3 cm) of it with 3 seen cells. Bins through the hand camera, bad, `--shift real`: 2.9 / 67.9 / 212.1 -> 2.9 / 9.6 /
+65.1, frames with a bin more than 2 cm off 8 -> 3 (wrong y from a wall end); table as recorded: 5.0 / 12.6 / 43.1 -> 5.0 / 10.9 /
+43.1. Clean, mild, typical: unchanged within 1 mm (typical, real: 2.9 / 4.0 / 13.4).
+
+**H3. `SceneLayout.rim_z`.** Heights (above the counter plane) of the points over the found bin footprints are counted in 2 mm
+bins; the rim is the highest bin with half the count the walls show below 45 mm, lifted to the highest footprint corner. Signed
+error against the true highest rim, dev, median / p95 / max (lowest): clean +9.3 / +10.1 / +10.2 (+7.5), typical +9.9 / +12.5 /
++15.4 (+7.5), bad +11.8 / +18.5 / +25.8 (+6.8); `--shift real`: +9.4 / +10.4 / +10.7 (+8.3), +10.3 / +13.9 / +16.4 (+7.4), +11.6 /
++18.8 / +27.7 (+5.5). Never low. Through the true camera the same frame reads +2.5 mm (the upper edge of the height bin): the
+other 7 mm are the sim principal point again (hand camera 3.6 mm high and pitched 0.6 deg, which lifts the far corners).
+
+### Clean depth after H1 to H3
+
+Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-out, `lookpose`, `lowhands`, `closedhands`,
+`movinghands`, `armless`, `--stale`, `--looks 2`); `motion` not rerun yet.
+
 ## Next
 
-1. First real depth drop: hand fit on real data, then `agree_within` (10–12 mm instead of 25) and the blend decision.
+1. First real depth drop: hand fit on real data, then `agree_within` (10–12 mm instead of 25) and the blend decision. Check
+   first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
 2. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
    actuator lag showing in the render but not in `hand_q`): not investigated beyond the measurement above.
 3. Not done: the red < yellow < blue cluster-order check. In sim every object has its own ±7° hue shift, so two reds
