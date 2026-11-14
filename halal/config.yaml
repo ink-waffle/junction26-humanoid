@@ -235,6 +235,7 @@ policy:
     soft: 0.15                # the real hand: half of the 0.3 that separates the teleop data over all seven joints (these three carry half the signal)
     unknown: 0.02             # no calibration close: the value that never calls a full hand empty
   release_checks: 3           # closes of the hand above the bin after letting go; one more back home decides whether the arm is retired
+  release_check_patience: 2   # positive reads above the bin that the read back home (calibration posture) did not confirm before the check is dropped for the episode
   reopen_pause_s: 0.3         # a hand found full reopens thumb and one finger first, rests this long, then the last finger
   grip_check_patience: 3      # picks read as empty, with none read as held yet, before the check is distrusted for the episode
   calibration_clearance: 0.08 # closed hands must be this far above the counter where the calibration close is done

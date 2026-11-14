@@ -16,7 +16,7 @@ from halal.motion import PickPlanner
 from halal.perception import Detector
 from halal.policy.background import Background
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
-from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, opening_in_turn, phase
+from halal.policy.grip import SIDES, GripWindow, ReleaseCheck, catching_up, hand_slice, opening_in_turn, phase
 from halal.policy.hands import HandCalibrator
 from halal.policy.looking import BinFor, Look, Looker, Situation
 from halal.policy.memory import Attempts, Shapes
@@ -87,6 +87,7 @@ class SortPolicy:
         self.blocked: set[str] = set()
         self.active: ActivePick | None = None
         self.grip_trusted, self.grip_proven, self.empty_verdicts = bool(s["grip_check"]), False, 0
+        self.release_checked, self.unconfirmed_releases = True, 0
         self.stage = Stage.MOVING
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
@@ -266,7 +267,7 @@ class SortPolicy:
         self.tally.update(picks=1)
         window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if self.grip_trusted else None
         self.active = ActivePick(pick, window)
-        if window is None:
+        if window is None or not self.release_checked:
             self.stream.load(pick.plan.arm, pick.plan.hand)
         else:
             self._load_with_release_check(pick.plan, window)
@@ -309,8 +310,18 @@ class SortPolicy:
         elif active.stuck:
             self.tally.update(freed=1)
             log.info("t=%.1f the %s hand is empty after opening finger by finger (grip score %.3f)", t, side, score)
+            if active.checks_left < 0:
+                self._doubt_release_check(t)
         else:
             log.info("t=%.1f the %s hand is empty after letting go (grip score %.3f)", t, side, score)
+
+    def _doubt_release_check(self, t: float) -> None:
+        """Reads above the bin that the read back home did not confirm may be the grasp posture, not an object: stop after a few."""
+        self.unconfirmed_releases += 1
+        if self.unconfirmed_releases >= self.settings["release_check_patience"]:
+            log.warning("t=%.1f %d release checks not confirmed back home: no more of them in this episode", t,
+                        self.unconfirmed_releases)
+            self.release_checked = False
 
     def _open_again(self, t: float, score: float) -> None:
         """Something is still in the hand: open it finger by finger and close once more, above the bin, the last time back home."""
@@ -334,6 +345,8 @@ class SortPolicy:
         opened = np.repeat(opening[-1][None], round(self.planner.cfg["motion"]["open_hold_s"] * HZ), 0)
         end = phase(plan, "retreat")[1] if home else len(plan.arm)
         hand = np.vstack([opening, opened, plan.hand[end:]])
+        if home:
+            active.window = window = window.closing_to(*(self.planner.post[name][hand_slice(window.side)] for name in ("closed", "open")))
         arm = np.vstack([np.repeat(stream.arm_cmd[None], len(opening) + len(opened), 0), plan.arm[end:]])
         check = self._release_check(hand[-1], window)
         after = self._opening_at_rest(check.hand[-1]) if home else active.tail

@@ -1,7 +1,7 @@
 """Hand calibration and grasp verification: fingers that stop short of their commanded closure hold something."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Sequence
 
 import numpy as np
@@ -97,6 +97,10 @@ class GripWindow:
         first_tick = max(still_from + settle_ticks, phase(plan, "lift")[1] - 1)
         return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS,
                    plan.hand[phase(plan, "retreat")[1] - 1, joints])
+
+    def closing_to(self, closed: np.ndarray, opened: np.ndarray) -> GripWindow:
+        """The same hand watched at another closed posture (7,), e.g. the one its empty-hand error was measured in."""
+        return replace(self, closed=closed, direction=np.sign(closed - opened))
 
     def both_hands(self, hand_q: np.ndarray, posture: np.ndarray) -> np.ndarray:
         """`hand_q` (14,) with this window's hand at `posture` (7,)."""
