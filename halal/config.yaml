@@ -181,7 +181,8 @@ motion:
     unknown: [cage]
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
-  # soft (overrides of these keys for a soft hand). Unset keys keep the organiser pinch.
+  # carry_acc, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
+  # Unset keys keep the organiser pinch.
   grasps:
     # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
     # follows how far each shape nests between the fingertips (40 mm apart): cube not at all, triangle apex 34 mm.
@@ -190,6 +191,7 @@ motion:
       squeeze: {cube: 0.30, cylinder: 0.45, triangle: 0.80, unknown: 0.75}
       soft:                   # hand="soft" (kp ~1.5): the fingers close too (tips 47 mm/rad), ~7.5 N on every shape by the static model
         squeeze_axis: [0.0, 1.0, -1.15, -0.5, 0.0, -0.5, 0.0]
+        carry_acc: 4.0        # rad/s^2 while the object is held (lift, carry); the planner's default is 8
     pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}

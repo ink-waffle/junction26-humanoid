@@ -37,7 +37,7 @@ from aaltonomous.sim.scene_client import SceneClient
 
 from halal import config
 from halal.motion import Grasp, PickPlanner, candidate_grasps
-from halal.motion.grasps import for_hand, right_hand, strategy_grasps
+from halal.motion.grasps import for_hand, right_hand, strategy_grasps, strategy_params
 from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
@@ -216,7 +216,8 @@ class Bench:
         if variant.get("candidates"):
             grasps = candidate_grasps(detection.shape, detection.yaw, case.side, hand)
         else:
-            params = {**for_hand(config.load()["motion"]["grasps"].get(variant.get("base"), {}), hand), **variant}
+            base = strategy_params(variant["base"]) if "base" in variant else {}
+            params = {**for_hand(base, hand), **variant}
             grasps = strategy_grasps(case.variant, params, detection.shape, detection.yaw, case.side)
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
