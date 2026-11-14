@@ -206,3 +206,26 @@ shape, code as for r1–r6 (no landing rule). Columns as r3/r4; "landing" is ove
   triangle 4/4.
 - One cube was not lifted (grasp matter; not in the 11). The forward drift at the reach limit is there on the soft hand
   too (median +49 mm). EV stays an upper bound for the real robot (no backlash / stiction in the soft sim).
+
+## Sweep r8: soft hand, side bins, +12 cm (inset 0: the release over the wall's inner face)
+
+Same settings as r7, side bins, both arms, 4 picks per shape and cell.
+
+| bins, bin, hand | config | planned | carried | binned | on the counter / off / other bin | EV | inset, rise | landing minus release point, x | by shape (binned / carried, EV) |
+|---|---|---|---|---|---|---|---|---|---|
+| +12, side, soft | `rim` [0.02, 0.01, 0.0] | 24/24 | 21 | 10/21 | 11 / 0 / 0 | +0.48 | 0 cm, +6 cm | −138…+78 mm (median −27) | cube 0/5 (0.00), cylinder 3/8 (+0.38), triangle 7/8 (+0.88) |
+
+- Stock hand at the same point (r4): cube 0/8, cylinder 6/8, triangle 8/8. The soft hand loses the cylinders: on the soft
+  hand the objects fall short at inset 0 (median −27 mm; cube −46, cylinder −36, triangle +41), where the stock hand's
+  drift was forward (+31). At +10 cm with a 2 cm inset the soft drift was forward (+40, r6), so the drift is not reliable.
+- Misses rest 27–66 mm in front of the near wall (centre x 0.457–0.496), except one cylinder that rolled back 138 mm
+  (to x 0.385, into the object area). Nothing left the counter, nothing reached another box: 0 / 0 over every rim release
+  so far (r3, r4, r6, r7, r8: 118 carried, stock and soft).
+- Three objects lost before the release (2 cubes not lifted, 1 lost in the carry). Sim d back on stock.
+
+Shape gate, every rim release by inset (binned / carried; stock + soft):
+
+| inset | cube | cylinder | triangle |
+|---|---|---|---|
+| 1 cm (centre +10: r3 stock, r7 soft) | 2/4 + 3/3 = 5/7 | 4/4 + 4/4 | 4/4 + 4/4 |
+| 0 cm (side +12: r4 stock, r8 soft) | 0/8 + 0/5 = 0/13 | 6/8 + 3/8 = 9/16 | 8/8 + 7/8 = 15/16 |
