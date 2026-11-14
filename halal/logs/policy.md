@@ -80,7 +80,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v20 | b7468d515c78 | a3498c7 | +3.88 ± 0.78, 31/31 | stopped | – | – | PASS on the fixed leg | v19 + main 9a0dc50 (perception H10 / H11: bins as seen without a measured camera; soft lists; early obstacle rejection); stopped after its fixed leg for v21 |
 | v21 | 0f7ca3635d25 | main 2f3e948 (the orchestrator's build; harness tree `trees/v20`) | 5 episodes: 20/20, stopped | – | – | – | PASS on the 5 episodes (116 of 116 looks from the scene anchor) | v20 + perception H12 / H13 (hand-fit guards: turn 10°, shift 7 cm) |
 | v22 | cb81d93c1969 | e318a23 (= main cae48ed) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 119; soft sim 31/31) | v21 + the start on the table (leave the counter, clear-view detour, relative transit floor), frozen-image error line, `grip_threshold.unknown` 0.05 + perception H14–H16 + motion's far-box landing rule and rim inset for cylinders and triangles; fixed + known on sim `a`, unseen + soft on sim `b` |
-| v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | see below | | | | | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
+| v23 | 6da97a3e9847 | 464b1b8 (= main b4ddc8d + bdddb09 + 464b1b8) | +3.88 ± 0.78, 31/31 | skipped (v24 contains v23) | +7.00 ± 1.41, 28/28 | – | PASS on the 16 episodes run (0 clips, ≥ 29.98 Hz, rt ≥ 165) | v22 + frozen-stream fail-safe + `bins_from` in the look line + `hand_lead_cap` contingency (off) + perception's kept box row, turned starts, warm-split guard |
 | v24 | e4869cbc1500 | 3d413a3 | not run | | | | pre-check only | v23 + no first pick on the nominal camera while the hands can still fix it (detector-only look from home after leaving the counter; up to `nominal_camera_looks` waits) |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
@@ -780,3 +780,16 @@ the counter is detector-only again; and a look that has a pick while the camera 
 up to ~3 s more once if the camera stays nominal; nothing where the camera is `scene` or `hands`. Mock: file-layout
 world unchanged; far-box world (the mock renders no arms, the camera stays nominal): three waits, then 3/3 and 5/5 from
 both recorded start poses. That the fit arrives before the first pick can only be shown in the real-look sim (asked).
+
+### v23 per leg (through the image, 14.11, 19:38–19:58 UTC; seeds 1000–1007; rtf 0.47–0.50)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Grasps |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 172 | PASS | 0 | scene, bins scene 177 / 177 | cage 28, cage_apex 6 |
+| unseen | b | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 29.98 | 165 | PASS | 0 | scene, bins scene 174 / 174 | cage 19, cage_apex 18, pinch 1 |
+
+Known and soft legs skipped by order (v24 contains v23). Hands stiff 16/16 on both legs, 16/16 instructions parsed right
+(one at 0.95), no ERROR line (no frozen-frame line), no "going home before" line. Same-bin pairs: 11, all scored (smallest
+gap 47 mm; unseen seed 1007's pair rests tilted, top z 0.043). Imperfect but sorted: three "no target is clear" picks as
+if alone, fingers 5 mm from the neighbour (fixed 1004, unseen 1001 and 1003: two triangles blocking each other); unseen
+seed 1007's red cube took `pinch` (left arm), held at the first try.
