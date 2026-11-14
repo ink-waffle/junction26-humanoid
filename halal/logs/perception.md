@@ -700,6 +700,17 @@ right, 1 -> 0 wrong), everything else of every clean set identical. Cost: at bad
 (held-out, real, bad: decided 0.552 -> 0.524), none up to typical. A lying cylinder is thus an object of unknown shape with a
 good centre; it is not named as lying.
 
+**H11. On the nominal pose the layout is what that camera sees, not the scene file's.** When neither the scene anchor nor the
+hands fix the camera (every first look on a displaced table, and every look if the hand fit fails), bins used to be taken from
+the scene file. On a displaced table that left the far part of the real boxes outside the excluded footprints, and their
+cardboard insides (the yellow family) came back as `yellow` blobs at full colour confidence: `realsim_looks`, first looks,
+typical depth: 2 per look at x 0.68. Bins, counter height and rim are now found by geometry whenever the source is not
+"scene"; objects and bins then share the nominal camera's error instead of differing by the table's displacement.
+First looks, `dr_train` dev, `--shift real`: precision clean 0.989 -> 1.000, typical 0.887 -> 1.000 (44 phantoms -> 0; `left7`
+typical 0.958 -> 1.000); bins 67.9 mm (98 to 119 with the lateral offset) -> 11.7 / 21.4 / 30.1 (the nominal camera's own 11 mm
+included), counter 15.0 -> 6.6 (max 18); `rim_z` reported there too: +12.7 median, -4.0 to +33 (so on the nominal pose it can
+be a few mm low). Recall, xy and every clean set: unchanged. A look anchored to the scene file still gets the file's layout.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
