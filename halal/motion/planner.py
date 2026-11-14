@@ -39,6 +39,7 @@ class PickPlanner(Planner):
     release_rise = 0.0
     low = False
     obstacles: Sequence[Any] = ()
+    blocked: dict[tuple[float, ...], Plan | None] = {}
     rim_z: float | None = None
 
     @classmethod
@@ -61,6 +62,7 @@ class PickPlanner(Planner):
         """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline)."""
         self.drop_shift = np.asarray(drop_shift, float)
         self.obstacles = [o for o in obstacles if np.linalg.norm(top_of(o)[:2] - det.top[:2]) > self.motion["obstacles"]["radius"]]
+        self.blocked = {}
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
@@ -310,32 +312,62 @@ class PickPlanner(Planner):
     def _plan_side(self, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray,
                    place_xy: tuple[float, float] | None = None) -> Plan:
         """Our low sequence, or the organiser's high one (the fallback, and the only one that places on the counter)."""
+        blocked = self._blocked_at_grasp(det, side, bin_name, arm_q, hand_q)
+        if blocked is not None:
+            return blocked
         if self.low:
             return self._clear_of_obstacles(sequence.plan_low(self, det, side, bin_name, arm_q, hand_q), side)
         return self._clear_of_obstacles(super()._plan_side(det, side, bin_name, arm_q, hand_q, place_xy=place_xy), side)
+
+    def _blocked_at_grasp(self, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray) -> Plan | None:
+        """A refused plan when the preshaped or closed hand at the grasp pose already touches an obstacle (one IK per finger heading and pick instead of the whole chain); None otherwise."""
+        if not self.obstacles:
+            return None
+        heading = tuple(np.round(self.kin.hint, 6))
+        if heading not in self.blocked:
+            self.blocked[heading] = self._touch_at_grasp(det, side, bin_name, arm_q, hand_q)
+        return self.blocked[heading]
+
+    def _touch_at_grasp(self, det: Any, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray) -> Plan | None:
+        """The refusal for the current finger heading, None when the hand at the grasp pose is clear of every obstacle or has no solution."""
+        plan = Plan(False, side=side, color=det.color, target_bin=bin_name)
+        solution = sequence.grasp_solution(self, det, side, arm_q, plan)
+        if solution is None:
+            return None
+        cols, limits = ArmKinematics.sl(side), self.motion["obstacles"]
+        for obstacle, posture in itertools.product(self.obstacles, ("preshape", "closed")):
+            hand = np.r_[hand_q[:cols.start], self.post[posture][cols], hand_q[cols.stop:]]
+            if self._gap_at(side, solution[0], hand, obstacle) < limits["finger_radius"] + limits["margin"]:
+                plan.reason = self._touch_reason(obstacle)
+                return plan
+        return None
+
+    @staticmethod
+    def _touch_reason(obstacle: Any) -> str:
+        return TOUCHING + " the object at ({:+.3f},{:+.3f})".format(*top_of(obstacle)[:2])
 
     def _clear_of_obstacles(self, plan: Plan, side: str) -> Plan:
         """Fail a plan whose fingers or thumb, while down among the objects, come too close to another object."""
         limits = self.motion["obstacles"]
         for obstacle in self.obstacles if plan.ok else ():
             if self.digit_gap(plan, side, obstacle) < limits["finger_radius"] + limits["margin"]:
-                plan.ok = False
-                plan.reason = TOUCHING + " the object at ({:+.3f},{:+.3f})".format(*top_of(obstacle)[:2])
+                plan.ok, plan.reason = False, self._touch_reason(obstacle)
                 break
         return plan
 
     def digit_gap(self, plan: Plan, side: str, obstacle: Any) -> float:
         """Smallest horizontal distance (m) from a digit's centre line, while below an obstacle's top during descend and close, to its outline; inf if none comes down."""
+        ticks = [tick for name, first, stop in plan.phases if name in NEAR_OBJECTS_PHASES
+                 for tick in range(first, stop, OBSTACLE_CHECK_EVERY)]
+        return min((self._gap_at(side, plan.arm[tick], plan.hand[tick], obstacle) for tick in ticks), default=np.inf)
+
+    def _gap_at(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray, obstacle: Any) -> float:
+        """Horizontal distance (m) from the digit points below an obstacle's top to its outline in one arm and hand pose; inf if none is that low."""
         limits = self.motion["obstacles"]
         corners, radius = outline(obstacle, self.height, limits["radius"])
-        ceiling, gap = top_of(obstacle)[2] + limits["margin"], np.inf
-        for name, first, stop in plan.phases:
-            for tick in range(first, stop, OBSTACLE_CHECK_EVERY) if name in NEAR_OBJECTS_PHASES else ():
-                points = self._digit_points(side, plan.arm[tick], plan.hand[tick])
-                low = points[points[:, 2] < ceiling]
-                if len(low):
-                    gap = min(gap, float(distance(low[:, :2], corners).min()) - radius)
-        return gap
+        points = self._digit_points(side, arm_q, hand_q)
+        low = points[points[:, 2] < top_of(obstacle)[2] + limits["margin"]]
+        return float(distance(low[:, :2], corners).min()) - radius if len(low) else np.inf
 
     def _digit_points(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray) -> np.ndarray:
         """Points along each distal finger link (index, middle, thumb) from its joint to its tip in the pelvis frame, (15, 3)."""

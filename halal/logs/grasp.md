@@ -713,3 +713,23 @@ Every target was binned. Verdict: the fingertip taper makes the real contact dis
 line, not the 13 mm half-width of the link: the outline check's 17 mm (`finger_radius` + `margin`) is safe with
 room to spare, for neighbours AHEAD of the fingers. Not measured: neighbours beside the fingers or under the thumb,
 so the numbers stay. Sweep 21 (touching cubes, soft) crashed at its first episode ("episode is over") and has no data.
+
+## Planner: early refusal of a grasp whose hand touches a neighbour (offline)
+
+Why: in crowded scenes a plan refused for a neighbour cost 0.45–1.1 s in the policy, because the whole IK chain ran
+for every finger heading and release point before the outline check. Now the preshaped and the closed hand at the
+grasp pose are checked first (one grasp IK per finger heading and pick, cached over the release points); the full
+check over descend and close still runs on what passes.
+
+Crowded offline set: 5 layouts of 8 objects at least 6.5 cm apart, every target with all its candidates, the other
+seven as obstacles; same process, early check off / on.
+
+| obstacles given as | plans | accepted off / on | decisions that differ | refusal for a neighbour, mean / p95 off | on | accepted plan, mean off / on |
+|---|---|---|---|---|---|---|
+| detections (outlines) | 125 | 16 / 16 | 0 | 0.39 / 0.66 s | 0.10 / 0.34 s | 0.098 / 0.093 s |
+| bare tops (47 mm circles) | 125 | 6 / 6 | 0 | 0.40 / 0.66 s | 0.06 / 0.23 s | 0.099 / 0.083 s |
+
+No plan the full check accepts is refused early, none it refuses gets through. In a fifth of the refusals the reason
+names a different neighbour (the first one in the hand's way at the grasp pose rather than on the way down); the
+text still starts with `TOUCHING`. Refusals the early check does not catch (a neighbour touched only during the
+descent) take as long as before: 21 of 108 with outlines, 11 of 118 with tops.
