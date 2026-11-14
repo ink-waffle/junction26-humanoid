@@ -1,7 +1,8 @@
 #!/bin/bash
 # Isaac sims on the dev instance, one per tag (a|b|c), each with its own DDS domain, ports, cores, log and pid file.
 #   sims.sh start <tag> [sim_main args ...]   (env: AALTO_DR, default train; CORES="0-5" replaces the tag's core set;
-#                                              HAND_GAINS="kp,kd[,armature]" = dev-only sim with those Dex3 actuator gains)
+#                                              HAND_GAINS="kp,kd[,armature]" = dev-only sim with those Dex3 actuator gains;
+#                                              REAL_SIM="lying,colours,boxes,table,offsets" | all = dev-only real-look sim)
 #   sims.sh stop <tag> | status | env <tag>   (eval "$(sims.sh env b)" points clients at sim b)
 set -eo pipefail
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
@@ -34,9 +35,10 @@ start)
     cores="${CORES:-$(tag_cores "$tag")}"
     cd "$REPO"
     runner="${HAND_GAINS:+halal/ops/soft_hand_sim.sh}"
+    [ -n "$REAL_SIM" ] && { runner=halal/ops/soft_hand_sim.sh; export DEV_SIM_MAIN=real_sim.py; }
     nohup taskset -c "$cores" bash "${runner:-aaltonomous/sim/run_sim.sh}" --kit_args "$KIT_THREADS" "$@" >"$(logfile "$tag")" 2>&1 &
     echo $! >"$(pidfile "$tag")"
-    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, hand gains ${HAND_GAINS:-stock}, log $(logfile "$tag"))"
+    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, hand gains ${HAND_GAINS:-stock}, real look ${REAL_SIM:-off}, log $(logfile "$tag"))"
     for _ in $(seq 400); do
         if ping_scene "$tag" >/dev/null; then echo "sim $tag ready after $SECONDS s"; exit 0; fi
         if ! alive "$tag"; then echo "sim $tag exited:"; tail -30 "$(logfile "$tag")"; exit 1; fi
