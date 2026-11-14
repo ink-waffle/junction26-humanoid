@@ -52,6 +52,25 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
   rtf 0.44 give 128. It would fail at rtf < 0.09 with 10-tick replies; replies are 15 ticks (10 while planning)
   from v2 on. The true round trip is ~5 ms (replay through the container: p50 5.0 ms).
 
+## Results, three legs (8 seeds each, DR train, 120 s)
+
+| Version | Fixed | Known | Unseen | Proxy | Gate | Notes |
+|---|---|---|---|---|---|---|
+| v2 (78b1e61) | +3.38 ± 0.70, 27/31 | +6.75 ± 1.71, 27/28 | +6.25 ± 1.85, 25/28 | **+19.50** | PASS (0 clips, 30.0 Hz, rt ≥ 167) | sims a / b / c in parallel; pinch grasps; camera fixed by the hands on a and b (+1 cm in x) |
+
+v2 in detail:
+- Language: 16/16 instructions parsed to the true mapping (15 at confidence 1.00, one at 0.95); no object in a
+  wrong bin and none knocked off in any leg. Every lost object stayed on the counter after failed grasps.
+- By shape over the three legs: cubes 29/29, cylinders 32/35, triangles 18/23.
+- Per pick (155 picks with a grip verdict): cubes 90 % held, cylinders 64 %, triangles 27 %; first attempt 70 %,
+  second 28 %, third 23 %: a pinch that failed once mostly fails again, and each failure shoves the object
+  towards the robot (held 78 % at x ≥ 0.31, 27 % at x < 0.28; seed 1002: a red cylinder pushed from x 0.274 to
+  0.208 in four tries, then out of the camera's view). Cylinders picked across the body (object on the other side
+  of the arm): 4/15 held, on the arm's own side 16/17.
+- Retries (v2 vs v1/C on the fixed leg): 27/31 both. More attempts alone do not pay with this grasp.
+- The verification called 76 of 155 picks empty; no "held" pick was lost on the way and no "empty" one was found
+  in a bin.
+
 ## What the policy is (v2, committed 78b1e61)
 
 `SortPolicy` (own state machine): calibration close of both hands where the arms start → look → targets
@@ -109,4 +128,10 @@ where the arms start in any case (the camera fit wants them in view).
 Why: C lost 4 objects to the cap of 2 picks per spot with half the episode unused.
 What: up to 5 picks per spot, least-tried target first, the next candidate grasp (and the other arm where both
 reach the bin) on a retry; a look without a plan for a target no longer writes it off.
-Verdict: pending the v2 proxy.
+Verdict: no gain on the fixed leg (27/31 as before) with pinch grasps: second and third attempts hold 28 % and
+23 %. Kept (it costs nothing and the cage grasps change the per-attempt odds), but retries are not where the
+objects are.
+
+### First frame of an episode (found in v3, fixed in v4)
+The observation of the first `act()` still shows the counter before the reset: a look at it sees 0 objects. v3
+loses one look (~1.5 s) per episode to it; v4 holds for the settle time before the first look.
