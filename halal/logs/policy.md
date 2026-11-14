@@ -514,3 +514,51 @@ Scratch check (real detector, one object's detections rewritten): "Put the orang
 right box." → {red/triangle: right}; reported lying: picked with `cage`, grasp asked for (None, None), release
 check run, right bin, nothing else touched; reported upright: `cage_apex` for ('triangle', yaw); reported as a
 cube: not touched. Under the three-colour sentence the lying prism goes last, to its colour's bin.
+
+### What the finals may vary, in the mock (14.11 afternoon, v16 tree unless stated)
+Organisers (15:07): colours, count and placement vary at random; cubes, prisms and cylinders; prisms stand or lie; 120 s;
+real `sort_fixed` is yellow → left, purple → center, orange → right. Scratch script `crowd.py`: objects placed at random
+in the object band (cubes and cylinders, the mock draws prisms as boxes), 6.5 cm apart at least, real colours, the real
+sentence unless stated. The fast mock runs ~10× real time and charges planning at wall time, which made a 5-object
+episode look 98 s long; every number below is from runs paced at real time (planning as fast as the Mac plans).
+
+| Case | Result | Clips |
+|---|---|---|
+| 6 objects, 4 layouts | 24/24, last release 73–99 s, done | 0 |
+| 7 objects, 4 layouts | 28/28, last release 81–118 s (two only just) | 0 |
+| 8 objects, 4 layouts, 4 runs at a time | 31/32, last release 109–114 s, time limit | 0 |
+| one colour only, 5 and 8 objects, each colour | 15/15 and 24/24 (8: last release 107–116 s) | 0 |
+| sentence names one colour / two colours, 6 / 7 objects | 4/4 and 5/5 sorted, the other 2 + 2 untouched | 0 |
+| "Put all (the) cylinders in / to the left box." | every cylinder left, cubes untouched | 0 |
+| "cylinders left, cubes right", "cubes left, cylinders center, prisms right" | 6/6, 6/6 | 0 |
+| "yellow cylinders left, purple cubes right", "the orange cube into the center box" | 4/4 + 2 untouched, 2/2 + 4 untouched | 0 |
+| an object in a colour nobody names: green, cyan, teal, pink, magenta, white, grey, black | not detected, untouched | 0 |
+| the same, brown (orange hue, dark) and lime (85°) | sorted as orange / as yellow: wrong bin (perception's hue basins; told the orchestrator) | 0 |
+
+Nothing went to a wrong bin or was moved without being asked for, except the two foreign colours.
+Time: sim v16 needs 11–12 s per object (5 objects: done at ~70 s including the 10 s `done` span); 8 objects is the
+ceiling at 120 s, and only with objects that hold at the first pick. In a crowd (neighbours closer than 8.5 cm) nearly
+every look finds every target blocked: each is planned with the obstacles, refused, then the least tried are planned as
+if alone. A refused plan costs 0.45–1.1 s on the Mac (the planner runs the whole IK chain for each heading before it
+gives up; a clear plan is 0.14–0.3 s): 6–8 s per look with 7 targets, 19–24 refusals per 8-object episode.
+Tried and not adopted: a memory of refusals (a target refused for a neighbour is not planned with obstacles again while
+no object within 15 cm of it came, went or moved, same number of tries, same hands): refusals 22–24 → 15–20 per episode,
+32/32 instead of 31/32, last release 108–118 s: inside the noise of four runs. With planning twice as slow both sort 5–6
+of 8. The lever is a cheaper refusal in the planner (reported). Patch kept outside the repo.
+Not measurable in the mock: a third object in one bin takes the first object's release slot again (two slots per bin);
+the mock has no stacking and the sim never spawns more than five objects.
+
+### `cage_side` and the retry order (v17)
+Main a8d0b63 (motion ec8dcf9): `motion.min_wall_height` 0.07 (release 10 mm higher; the policy's transit checks go
+through the planner and see the same wall, nothing in the policy assumed 60 mm) and `cage_side` as the last candidate
+for cube, cylinder and unknown shape. The policy starts a retry with the NEXT candidate (`_rotated`), so the plain merge
+would have retried a cylinder, an unknown shape or a soft-hand cube missed once in the open with `cage_side` first
+(motion's verdict: only when nothing else plans; soft hand not measured). v17: a strategy can be flagged
+`last_resort: true` in `motion.grasps` (`Grasp.last_resort`); the policy rotates the others and keeps those at the end.
+Order tried, stiff cylinder, tries 1–4: before `cage | side side cage | side cage side | cage side side`, now always
+`cage side side`; stiff cube: `cage pinch side side`, `pinch cage side side`, alternating.
+Mock, real planner, a cube and two cylinders 3.5–4 cm before the bins' near walls and one free cylinder: v16 tree 1/4
+(the three never get a plan, time limit), v17 tree 4/4, the three with `cage_side`, 0 clips. All suites on the v17
+tree: 36 cases as before, neighbours_e2e (same orders; "hand would touch" reaches the chooser; the logged finger room
+is now measured to the neighbour's outline, 30 mm less than before), behind_pair, lying_prism, harden, real colours,
+blind_spell: unchanged, 0 clips.
