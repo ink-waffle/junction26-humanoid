@@ -10,7 +10,7 @@ import numpy as np
 
 from aaltonomous.baselines.classical.config import hand_postures, home_arm
 from aaltonomous.baselines.classical.kinematics import ArmKinematics
-from aaltonomous.baselines.classical.planner import Plan, Planner
+from aaltonomous.baselines.classical.planner import Plan, Planner, ramp
 from aaltonomous.interface.safety import JointSpec, SafetyConfig
 from aaltonomous.scene.scene import Scene
 
@@ -47,6 +47,44 @@ class PickPlanner(Planner):
                 plan = self._plan_side(target, side, bin_name, arm_q, hand_q, place_xy=place_xy)
                 plan = self._check_finger_yaw(plan, side, grasp.finger_yaw)
         return self._ending_at(plan, end)
+
+    def resqueezed(self, plan: Plan, grasp: Grasp, side: str, squeeze: float) -> Plan:
+        """The plan with a deeper closure inserted after its last close / squeeze phase: ramp, hold, then carry and release from the new posture."""
+        cols, motion = ArmKinematics.sl(side), self.cfg["motion"]
+        with self._grasp_applied(grasp, side, squeeze):
+            closed, release = self.post["closed"][cols], self.post[self.cfg["grasp"]["release_posture"]][cols]
+        cut = max(stop for name, _, stop in plan.phases if name in ("close", "squeeze"))
+        hold = np.repeat(closed[None], int(round(motion["close_hold_s"] / self.dt)), 0)
+        deeper = np.vstack([ramp(plan.hand[cut - 1, cols], closed, motion["hand_max_vel"], self.dt), hold])
+        opening = np.vstack([ramp(closed, release, motion["hand_max_vel"], self.dt),
+                             np.repeat(release[None], int(round(motion["open_hold_s"] / self.dt)), 0)])
+        parts = [(name, plan.arm[first:stop], plan.hand[first:stop]) for name, first, stop in plan.phases if stop <= cut]
+        parts.append(("squeeze", *self._held(plan, cut - 1, cols, deeper)))
+        for name, first, stop in plan.phases:
+            if first >= cut and name == "open":
+                parts.append((name, *self._held(plan, first, cols, opening)))
+            elif first >= cut:
+                hand = plan.hand[first:stop].copy()
+                if not any(part[0] == "open" for part in parts):
+                    hand[:, cols] = closed
+                parts.append((name, plan.arm[first:stop], hand))
+        return self._assembled(plan, parts)
+
+    @staticmethod
+    def _held(plan: Plan, tick: int, cols: slice, fingers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Arm and hand rows that keep everything as at `tick` while one hand runs through `fingers`."""
+        arm, hand = np.repeat(plan.arm[tick][None], len(fingers), 0), np.repeat(plan.hand[tick][None], len(fingers), 0)
+        hand[:, cols] = fingers
+        return arm, hand
+
+    def _assembled(self, plan: Plan, parts: list[tuple[str, np.ndarray, np.ndarray]]) -> Plan:
+        """A copy of `plan` with the trajectory rebuilt from named parts and dry-run through the safety filter again."""
+        arm, hand = np.vstack([a for _, a, _ in parts]), np.vstack([h for _, _, h in parts])
+        stops = np.cumsum([len(a) for _, a, _ in parts])
+        phases = [(name, int(stop - len(a)), int(stop)) for (name, a, _), stop in zip(parts, stops)]
+        clips = self.dry_run_safety(arm[0], hand[0], arm, hand)
+        return replace(plan, arm=arm, hand=hand, phases=phases, safety_clips=clips, ok=clips == 0,
+                       reason="" if clips == 0 else f"{clips} safety clips in dry run")
 
     def use_scene(self, scene: Scene) -> None:
         """Replace the geometry (counter height, bins) all later plans work against."""
