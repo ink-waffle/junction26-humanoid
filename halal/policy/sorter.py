@@ -66,7 +66,6 @@ class SortPolicy:
         self.episode_s = time_limit
         self.calibrator = HandCalibrator(planner, settings)
         self.looker = Looker(detector, planner, self.calibrator, settings)
-        self.file_layout = self.looker.file_layout
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.reset(leave_everything)
@@ -82,7 +81,6 @@ class SortPolicy:
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
         self.attempts = Attempts(s["same_object_radius"])
         self.shapes = Shapes(s["same_object_radius"])
-        self.layout_source, self.use_file_layout = self.file_layout.source, False
         self.released: Counter[str] = Counter()
         self.blocked: set[str] = set()
         self.active: ActivePick | None = None
@@ -158,11 +156,6 @@ class SortPolicy:
         """Queue the move of both arms to the next view's pose with open hands, then a settle; hands only if it is not safe."""
         stream, planner = self.stream, self.planner
         move = self._move_to(self.next_view)
-        if move is None and self.layout_source != self.file_layout.source:
-            log.warning("no safe move in the perceived layout: scene-file layout from now on")
-            self.use_file_layout, self.layout_source = True, self.file_layout.source
-            planner.set_layout(self.file_layout)
-            move = self._move_to(self.next_view)
         if move is None:
             log.warning("no safe move to the %s view: looking from here", self.next_view.name.lower())
             move = planner.go_to(stream.arm_cmd, stream.hand_cmd, stream.arm_cmd, planner.post["open"])
@@ -185,7 +178,7 @@ class SortPolicy:
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
                               self.shapes, dict(self.released), tuple(side for side in SIDES if side not in self.blocked),
-                              self.use_file_layout, calibrate, primer, self.missed)
+                              calibrate, primer, self.missed)
         self.jobs.submit(lambda cancelled: self.looker.look(obs, situation, cancelled))
         if calibrate:
             self.calibrator.start(stream)
@@ -236,7 +229,6 @@ class SortPolicy:
         self.missed = None
         for target in look.unplannable:
             self.attempts.record_plan_failure(target.xy)
-        self.layout_source, self.use_file_layout = look.layout_source, self.use_file_layout or look.layout_rejected
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
         seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f};c{d.confidence:.2f};v{d.visible:.2f})"
