@@ -6,7 +6,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
-### Sat 14.11, 02:45
+### Sat 14.11, 02:40
 - **Best version:** none of ours yet. Floor = organiser baseline (rung 1 only), numbers below.
 - **Now:** five workstreams in parallel, each in its own git worktree (`ws/*` branches) and on its own sim:
   policy core (state machine, verification, retries, hand-in image), motion (grasp research per shape, faster
@@ -32,7 +32,7 @@ mapping differs from the fixed one.
 
 ## Ideas
 
-### 1. Read the instruction (rule-based parser), 03:10
+### 1. Read the instruction (rule-based parser), 02:55
 - **What:** `halal.language`: tagger + chunker + pairing search over a closed vocabulary, deterministic, 0.4 ms,
   returns a mapping (colour, shape or colour/shape keys, "everything else") with a confidence.
 - **Why:** rung 2 pays +2 per object and the finals weigh the unseen instruction ×1.5; the baseline ignores the text.
@@ -44,12 +44,12 @@ mapping differs from the fixed one.
 | dev (2781 cases), v1 → v2 | 99.1 → 100 % exact | 95.0 → 98.7 % | 3.0 → 1.3 % |
 | test (2853 cases), v1 → v2 | 100 → 100 % | 93.5 → 93.5 % | 4.0 → 1.5 % |
 
-- v2 (03:55): a stated counting side governs ordinals, rules are resolved over the nine object types by
+- v2 (03:10): a stated counting side governs ordinals, rules are resolved over the nine object types by
   specificity, explicit pairs beat enumerations. Remaining test misses: ad-hoc bin labels ("call the bins A, B,
   C"), a list ordered by direction of travel, self-corrections, one colour+shape form, elimination puzzles.
   Still being improved. Sim effect: measured with the first proxy run of our policy.
 
-### 2. Perception that survives randomisation (`topface` detector), 03:35
+### 2. Perception that survives randomisation (`topface` detector), 03:05
 - **What:** depth-only self-calibration of the head camera per episode (counter plane → roll, pitch, height; front
   wall of the bin row → yaw, x, y), objects found as blobs at object-top height, the three known outlines fitted
   to a metric top view (gives centre, shape, yaw; hidden cells cost evidence, not accuracy), colour from the most
@@ -71,16 +71,16 @@ mapping differs from the fixed one.
 - Open: the counter height is anchored to the scene file (exact in sim, unknown on the robot); a reference from
   the robot's own hands is being built. Sim effect on sorting: to be measured against the organiser detector.
 
-### 3. Sim throughput, 03:05
+### 3. Sim throughput, 02:50
 - **What:** start every sim with `OMP_NUM_THREADS=1`.
 - **Why:** `perf` showed 81 % of a sim's CPU in OpenMP spin-waits: torch on CPU opens a 30-thread pool for
   single-environment tensors.
 - **Effect:** real-time factor of a third sim under load 0.29 → 0.44, CPU per sim 5.5 → 2.4 cores; an oracle
-  episode on the tuned sim behaves normally (3/3, gate pass). All three sims restarted with it at 04:05 and
+  episode on the tuned sim behaves normally (3/3, gate pass). All three sims restarted with it by 03:10 and
   running jobs: 0.40 + 0.36 + 0.49 = 1.25 sim-seconds per second, against 0.54 with two untuned sims.
 - **Failed:** dropping the wrist cameras from the sim crashes the task.
 
-### 4. Motion planning, 03:25
+### 4. Motion planning, 03:00
 - **What:** joint-space carries first, Cartesian segments shortcut to one joint move when the grasp point stays
   on the line, cached reach check, bin margin 0; options on `plan_pick` for a release offset inside the bin,
   ending above the bin instead of at home, and placing on the counter; counter height from the detection.
@@ -91,7 +91,7 @@ mapping differs from the fixed one.
 - **Grasp sweep, first numbers** (single object, hard DR corner, exact pose, organiser pinch): cube 12/12,
   cylinder 9/12. Triangles and face-aligned grasps running.
 
-### 5. What the real robot data says (organisers' first drop), 03:20
+### 5. What the real robot data says (organisers' first drop), 02:55
 - 20 teleop episodes, left hand only, foam objects on bare wood: not the final scene, but the hands are real.
 - The finger contact signal exists but free fingers carry a 0.02–0.04 rad bias and lag 300–380 ms; it needs a
   closure commanded ≥ 0.2 rad past contact and a per-episode empty-hand reference. A sum over all finger joints
