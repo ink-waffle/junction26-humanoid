@@ -167,6 +167,7 @@ perception:
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
+      grey_chroma: 0.15       # a bare counter whose median colour has more chroma is not grey and not balanced on: wood 0.20 to 0.32, sim mat 0.09 at most, drop 2 0.10
   replay:                     # halal.eval.real_replay: a runner export through the perception chain
     still_s: 0.1              # a look: every joint where it stood this long ago ...
     still_tolerance: 0.02     # ... within this (rad) ...
