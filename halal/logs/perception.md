@@ -650,6 +650,29 @@ frames: unchanged. All unpainted sets including `motion`: identical line by line
 colourless object in 1401 sim frames. Not found: a black prism lying on its side (the fallback blob starts from coloured pixels).
 Not verified: black foam in real depth (if it returns as little as the black hand, it has no top face and stays unseen).
 
+**H8. A fourth colour, black** (orchestrator's order after the venue photo; detector and parser together, neither alone).
+Detector (`color.black`): a geometry-accepted object is black when most of its body pixels are dark against the bare counter
+(value below 0.5 x the counter's median brightness); confidence 0 at half of the pixels, 1 at 80 %. A dark object is black
+whatever its hue: the black hand has a blue cast that would otherwise name it blue. Stragglers (no top face) are never black.
+- `--blacken blue`, black objects found / named black of those found / at confidence >= 0.5: `dr_train` clean 158 of 158 / all / all;
+  typical 152 of 158 / all / all; bad 89 of 158 / all / all but one. `lookpose` 65, 65, 46 of 65, all named black. At bad the depth model takes
+  70 % of every dark pixel's depth, so black objects lose their top face: that is the real risk for black foam, not the colour.
+- Nothing else turns black: every unpainted sim set including `motion` is identical line by line; with `--repaint` (real
+  palette) on `dr_train`, `lowhands`, `closedhands`, `lookpose`: 0 black among 815 detections; real drop 2, 187 foam objects of
+  48 first frames (purple 44, orange 81, yellow 62): dark share 0.000 at most (the table reads 152, the limit is 76; the
+  objects' darkest pixels are above it), while the hand's dark pixels have share 1.00. So the rule separates by a wide margin,
+  and what keeps the hand from being a black object is geometry alone, as before.
+Parser (`halal/language/grammar`): `EXTRA_COLOURS = ("black",)`. The grammar's object types are the nine of the scene unless
+the instruction names black; then black joins them for that instruction ("everything else", negation and key rebuilding
+include it). Words: black, blacks ("dark" is not taken). All 10 846 rendered cases of the three existing sets parse to the
+same mapping and confidence as before, compared one by one; scores unchanged (dev 2781 cases 1.000 exact, 1.934 points; test
+2853, 1.000, 1.909; fresh 4087, 1.000, 1.935; real 1125, 1.000, 1.655). New `halal/eval/paraphrases_black.yaml`, 12 entries, 249
+cases: 1.000 exact, all confident (`language_bench --split test --file halal/eval/paraphrases_black.yaml`; the bench scores the
+black object types whenever a text names black).
+What follows for the policy: a black object is a target only if the mapping reaches it: through a `black` key, or through a
+shape key or `default` ("all cubes left", "everything else right"), exactly like any colour. Under a colours-only
+instruction that does not name black it has no bin and stays an obstacle.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

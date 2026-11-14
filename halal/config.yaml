@@ -158,6 +158,9 @@ perception:
       warm_split:             # red against yellow by the scene: two groups of object hues with a clear gap fix the boundary for the episode
         min_gap: 8            # deg between the groups (real orange to yellow >= 10, sim red to yellow >= 34)
         max_shift: 9          # deg all hues may be turned for the groups to fit the basins (two sim yellows would pass as orange and yellow from 12.2)
+      black:                  # a black object: most of its pixels dark against the bare counter (venue photo; not a scene colour)
+        value_share: 0.5      # a pixel is dark below this share of the counter's brightness (drop 2: black hand 0.28, shaded purple 0.65)
+        share_range: [0.5, 0.8]   # share of dark pixels on the object mapped to confidence 0..1
       min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane

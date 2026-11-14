@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     import numpy
 
 COLORS = ("red", "yellow", "blue")
+EXTRA_COLORS = ("black",)           # named literally in a text and as a literal mapping key, never a slot
 SHAPES = ("cube", "cylinder", "triangle")
 BINS = ("left", "center", "right")
 SPLITS = ("dev", "test")
@@ -117,9 +118,10 @@ def resolve(mapping: dict[str, str], color: str, shape: str) -> str | None:
     return next((mapping[k] for k in (f"{color}/{shape}", color, shape, "default") if k in mapping), None)
 
 
-def assignment(mapping: dict[str, str]) -> dict[tuple[str, str], str | None]:
-    """Target bin of each of the nine object types: compare parsers on this, not on the raw dict."""
-    return {(c, s): resolve(mapping, c, s) for c in COLORS for s in SHAPES}
+def assignment(mapping: dict[str, str], text: str = "") -> dict[tuple[str, str], str | None]:
+    """Target bin of each object type (the nine, and those of an extra colour `text` names): compare parsers on this."""
+    colors = COLORS + tuple(c for c in EXTRA_COLORS if c in text.lower())
+    return {(c, s): resolve(mapping, c, s) for c in colors for s in SHAPES}
 
 
 def _text_slots(p: Paraphrase) -> set[str]:
@@ -138,7 +140,8 @@ def _valid_key(key: object) -> bool:
     if not isinstance(key, str):
         return False
     head, sep, shape = key.partition("/")
-    return (head in COLOR_SLOTS and shape in SHAPES) if sep else key in COLOR_SLOTS + SHAPES + ("default",)
+    colours = COLOR_SLOTS + EXTRA_COLORS
+    return (head in colours and shape in SHAPES) if sep else key in colours + SHAPES + ("default",)
 
 
 def _check_fields(p: Paraphrase) -> list[str]:
