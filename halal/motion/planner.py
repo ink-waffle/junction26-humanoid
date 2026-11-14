@@ -114,6 +114,18 @@ class PickPlanner(Planner):
                 parts.append((name, plan.arm[first:stop], hand))
         return self._assembled(plan, parts)
 
+    def aborted(self, plan: Plan, side: str) -> Plan:
+        """The plan cut after its last close / squeeze phase: the hand reopens to the preshape and the arm goes back up to the pregrasp."""
+        cols = ArmKinematics.sl(side)
+        cut = max(stop for name, _, stop in plan.phases if name in ("close", "squeeze"))
+        first, stop = next((a, b) for name, a, b in plan.phases if name == "descend")
+        reopen = ramp(plan.hand[cut - 1, cols], plan.hand[stop - 1, cols], self.cfg["motion"]["hand_max_vel"], self.dt)
+        parts = [(name, plan.arm[a:b], plan.hand[a:b]) for name, a, b in plan.phases if b <= cut]
+        parts.append(("reopen", *self._held(plan, cut - 1, cols, reopen)))
+        ascent = plan.arm[first - 1:stop - 1][::-1]
+        parts.append(("ascend", ascent, np.repeat(parts[-1][2][-1][None], len(ascent), 0)))
+        return self._assembled(plan, parts)
+
     @staticmethod
     def _held(plan: Plan, tick: int, cols: slice, fingers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Arm and hand rows that keep everything as at `tick` while one hand runs through `fingers`."""
