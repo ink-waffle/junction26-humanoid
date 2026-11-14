@@ -5,7 +5,7 @@ host networking, no GPU, restart policy `no`; the server listens on `$PORT` (800
 
 ## Publish a tag with both architectures (Mac, once per version)
 ```bash
-bash halal/docker/build.sh v14-arm64 linux/arm64    # this build.sh, in the tree of the handed-in commit; done for v14
+bash halal/docker/build.sh v14-arm64 linux/arm64    # this build.sh, in the tree of the handed-in commit; done for v14 and v16
 R=ghcr.io/ink-waffle/halal-policy
 AMD64=$R@sha256:e061f54d6437c359f9b35851f2ae571caf2316e9ceb3b87d12b8229ecfd8b39a    # the hand-in, left as it is
 gh auth token | docker login ghcr.io -u ink-waffle --password-stdin
