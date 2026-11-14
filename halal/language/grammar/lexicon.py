@@ -4,6 +4,7 @@ from __future__ import annotations
 from enum import Enum, auto
 
 COLOURS = ("red", "yellow", "blue")
+EXTRA_COLOURS = ("black",)       # no scene colour: part of an instruction's object types only when the instruction names it
 SHAPES = ("cube", "cylinder", "triangle")
 BINS = ("left", "center", "right")
 DEFAULT_KEY = "default"
@@ -15,6 +16,7 @@ COLOUR_FAMILIES: dict[str, dict[str, str]] = {
     "yellow": {"yellow": "yellow yellows yellowish golden gold lemon"},
     "blue": {"blue": "blue blu blues bluish navy azure cobalt indigo",
              "purple": "purple purples purplish violet lilac lavender mauve"},
+    "black": {"black": "black blacks"},
 }
 HUES = {word: hue for hues in COLOUR_FAMILIES.values() for hue, words in hues.items() for word in words.split()}
 
@@ -97,7 +99,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
         "location area zone pile")}),
     **_entries(Tag.COLOUR, {
         **{family: " ".join(hues.values()) for family, hues in COLOUR_FAMILIES.items()},
-        "": ("green pink black white grey gray brown magenta fuchsia amber peach coral salmon cyan turquoise teal "
+        "": ("green pink white grey gray brown magenta fuchsia amber peach coral salmon cyan turquoise teal "
              "silver beige")}),
     **_entries(Tag.SHAPE, {
         "cube": "cube cubes cubic cubical cuboid cuboids square squares squared",

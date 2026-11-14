@@ -25,9 +25,10 @@ LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Draft:
-    """A detection whose colour is not named yet, and the colour sampled on it (None: geometry has rejected it)."""
+    """A detection whose colour is not named yet, the colour sampled on it (None: geometry has rejected it) and its dark share."""
     detection: ObjectDetection
     colour: np.ndarray | None = None
+    dark: float = 0.0
 
 
 class TopFaceDetector:
@@ -50,7 +51,7 @@ class TopFaceDetector:
     def _forget(self) -> None:
         """Drop what earlier looks established: a new episode has its own camera pose and scene."""
         self.anchor: Camera | None = None
-        self.arms: Camera | None = None
+        self.arm_fits: list[Camera] = []
         self.arm_attempts = 0
         self.split: float | None = None
         self.last_t = -np.inf
@@ -68,8 +69,8 @@ class TopFaceDetector:
         depth, rgb = obs["head_depth"], obs["head_rgb"]
         if not depth.any():
             return []
-        anchor, arms = self._references(obs)
-        pose = self.calibration.decide(self.nominal, anchor or self.anchor, arms)
+        anchor, arm_fits = self._references(obs)
+        pose = self.calibration.decide(self.nominal, anchor or self.anchor, self.calibration.consensus(arm_fits))
         if pose.source != self.pose.source:
             LOG.info("head camera now fixed by %s (was %s)", pose.source, self.pose.source)
         self.pose, camera = pose, pose.camera
@@ -79,28 +80,31 @@ class TopFaceDetector:
         cloud = camera.cloud(depth)
         height = counter.height(cloud)
         free = self._on_counter(cloud)
-        gains = self.colors.white_balance(rgb[self._bare_counter(cloud, height)])
+        bare = rgb[self._bare_counter(cloud, height)]
+        gains = self.colors.white_balance(bare)
         faces = [face for face in self._faces(depth, camera, cloud, height, free, counter, rgb, gains) if self._level(face, cloud, counter)]
-        drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains) for face in faces]
-        drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
+        drafts = [self._describe(face, counter, *self._body(face, camera, rgb, cloud, height, counter), gains, bare) for face in faces]
+        solid = [face for face, draft in zip(faces, drafts) if not self._yields(draft)]
+        drafts = self._settled(drafts, self._stragglers(solid, camera, cloud, height, free, rgb, gains, counter))
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
-        found = [d for d in map(self._named, drafts) if d.confidence >= self.cfg["min_confidence"]]
+        found = [self._named(draft) for draft in drafts if draft.colour is not None]
         if found:
-            self.anchor, self.arms = anchor or self.anchor, arms
+            self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
         return found
 
-    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, Camera | None]:
-        """This look's scene anchor, and the arm pose: the episode's once a look with objects kept one, else a new attempt."""
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[Camera]]:
+        """This look's scene anchor, and the episode's believed arm poses: those kept by looks with objects, plus this look's."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
             self._forget()
         still = self._still(obs, t)
         anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
-        if self.arms is not None or not still or self.arm_attempts >= self.cfg["arm_attempts"]:
-            return anchor, self.arms
+        if not still or len(self.arm_fits) >= self.cfg["arm_fits"] or self.arm_attempts >= self.cfg["arm_attempts"]:
+            return anchor, self.arm_fits
         self.arm_attempts += 1
-        return anchor, self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+        fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+        return anchor, self.arm_fits + ([] if fit is None else [fit])
 
     def _still(self, obs: Mapping[str, Any], t: float) -> bool:
         """True when arms and fingers stand where an earlier look of this episode saw them: their image shows the joints."""
@@ -112,11 +116,11 @@ class TopFaceDetector:
         return bool(waited and same and np.abs(obs.get("arm_dq", 0.0)).max() < self.cfg["still_speed"])
 
     def _layout(self, depth: np.ndarray, camera: Camera, counter: PlaneFit) -> SceneLayout:
-        """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
-        if self.pose.source != "hands":
-            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source)
+        """Counter height and bins: the scene file's when the camera is anchored to it, else as this camera sees them."""
+        if self.pose.source == "scene":
+            return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, "scene")
         bins = self.bins.find(depth, camera, counter)
-        return SceneLayout(counter.z_at(self.band_centre), bins, "hands", self.bins.rim_z(depth, camera, counter, bins))
+        return SceneLayout(counter.z_at(self.band_centre), bins, self.pose.source, self.bins.rim_z(depth, camera, counter, bins))
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
@@ -148,6 +152,19 @@ class TopFaceDetector:
         rest = [face for seed in self._seeds(mask, cloud, counter) for face in self.fitter.fit(depth, camera, seed, counter)]
         return self._distinct(faces + rest)
 
+    def _yields(self, draft: Draft) -> bool:
+        """True for an accepted top face seen so little that a lying prism found in its place is the better reading."""
+        return draft.colour is not None and draft.detection.visible < self.cfg["straggler"]["yield_visible"]
+
+    def _settled(self, faces: list[Draft], blobs: list[Draft]) -> list[Draft]:
+        """Top-face fits and blobs together: a barely seen top face gives way to a lying prism found there, and keeps any other blob out."""
+        radius = self.cfg["straggler"]["claim_radius"]
+        near = lambda draft, others: any(np.linalg.norm(draft.detection.top[:2] - o.detection.top[:2]) < radius for o in others)
+        lying = [blob for blob in blobs if blob.detection.lying]
+        weak = [face for face in faces if self._yields(face) and not near(face, lying)]
+        return ([face for face in faces if not self._yields(face)] + weak + lying
+                + [blob for blob in blobs if not blob.detection.lying and not near(blob, weak)])
+
     def _unanchored(self) -> bool:
         """True when the scene did not fix the camera: bin footprints are then guesses and walls can reach the candidates."""
         return self.pose.source != "scene"
@@ -168,11 +185,10 @@ class TopFaceDetector:
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
 
     def _named(self, draft: Draft) -> ObjectDetection:
-        """The draft with its colour family and confidence, by the episode's red / yellow boundary where one was seen."""
-        if draft.colour is None:
-            return draft.detection
-        color, confidence = self.colors.name(draft.colour, self.split)
-        return replace(draft.detection, color=color, confidence=confidence)
+        """The draft as black when mostly dark, else with its colour family by the episode's boundary; None where the colour says none."""
+        black = self.colors.black(draft.dark)
+        color, confidence = ("black", black) if black > 0.0 else self.colors.name(draft.colour, self.split)
+        return replace(draft.detection, color=color if confidence >= self.cfg["min_confidence"] else None, confidence=confidence)
 
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
                     rgb: np.ndarray, gains: np.ndarray, counter: PlaneFit) -> list[Draft]:
@@ -240,16 +256,17 @@ class TopFaceDetector:
         overhang = over & (tall > own + low) & (tall < own + top)
         return rgb[window][over & (tall > c["body_heights"][0]) & (tall < c["body_heights"][1])], int(overhang.sum())
 
-    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray) -> Draft:
+    def _describe(self, face: TopFace, counter: PlaneFit, body_rgb: np.ndarray, overhang: int, gains: np.ndarray,
+                  bare: np.ndarray) -> Draft:
         """Turn one top-face fit into a detection still to be coloured: `visible` is about the pose and the size."""
         c, best = self.cfg, face.best
         tall, measured = float(counter.height(best.centre)), best.visible >= c["min_size_visible"]
         odd = abs(tall - self.scene.object_height()) >= c["size_snap"] and not measured   # an unexpected size needs a well seen top
         if len(body_rgb) < c["min_support_px"] or overhang > c["max_overhang"] * len(body_rgb) or odd:
             return Draft(ObjectDetection(color="red", top=best.centre, confidence=0.0))
-        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"]
+        shaped = face.margin >= c["min_shape_margin"] and best.visible >= c["min_shape_visible"] and best.seen_empty <= c["max_seen_empty"]
         turned = shaped and best.yaw is not None and best.yaw_contrast >= c["min_yaw_contrast"]
         size = tall if measured else None
         seen = ObjectDetection(color="red", top=best.centre, shape=best.shape if shaped else None, yaw=best.yaw if turned else None,
                                confidence=0.0, pixels=len(face.pixels), visible=best.visible, size=size)
-        return Draft(seen, self.colors.sample(body_rgb, gains))
+        return Draft(seen, self.colors.sample(body_rgb, gains), self.colors.dark_share(body_rgb, bare))

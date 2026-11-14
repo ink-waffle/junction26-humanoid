@@ -6,13 +6,12 @@ from itertools import permutations
 
 from halal.language.grammar import tuning
 from halal.language.grammar.association import BIN_OF, REMAINING, Reading, Unit, is_quantifier
-from halal.language.grammar.lexicon import BINS, COLOURS, DEFAULT_KEY, SHAPES
+from halal.language.grammar.lexicon import BINS, COLOURS, DEFAULT_KEY, EXTRA_COLOURS, SHAPES
 from halal.language.grammar.mentions import BinMention, Mention, Negation, ObjectMention, Scope
 from halal.language.grammar.tokens import Issue
 
-Atom = tuple[str, str]                      # (colour, shape): one of the nine object types
+Atom = tuple[str, str]                      # (colour, shape): one of the object types (nine, more when an extra colour is named)
 Table = dict[Atom, "str | None"]
-ATOMS: tuple[Atom, ...] = tuple((colour, shape) for colour in COLOURS for shape in SHAPES)
 
 
 @dataclass(frozen=True)
@@ -43,18 +42,25 @@ class _Ledger:
     bans: list[tuple[frozenset[Atom], frozenset[str]]] = field(default_factory=list)
     issues: list[Issue] = field(default_factory=list)
     penalty: float = 0.0
+    colours: tuple[str, ...] = COLOURS      # the colours the instruction is about: the scene's, plus extra ones it names
+
+    @property
+    def atoms(self) -> tuple[Atom, ...]:
+        """Every object type the instruction can be about."""
+        return tuple((colour, shape) for colour in self.colours for shape in SHAPES)
 
 
 def interpret(reading: Reading, mentions: list[Mention], exclusive: bool = False) -> Interpretation:
     """Mapping stated by `reading`; `exclusive` = the text says every colour has a bin of its own."""
-    ledger = _Ledger()
+    named = {mention.colour for mention in mentions if isinstance(mention, ObjectMention)}
+    ledger = _Ledger(colours=COLOURS + tuple(colour for colour in EXTRA_COLOURS if colour in named))
     _collect(ledger, _with_remaining_bin(_with_companion_bins(reading, mentions, ledger), ledger), mentions)
     _drop_correct_bin_opening(ledger, reading, mentions)
     if exclusive and ledger.bans:
         _solve_exclusive(ledger)
     _apply_bans(ledger)
-    table = {atom: _winner(ledger, atom) for atom in ATOMS}
-    ruled = {atom for atom in ATOMS if any(atom in rule.atoms for rule in ledger.rules)}
+    table = {atom: _winner(ledger, atom) for atom in ledger.atoms}
+    ruled = {atom for atom in ledger.atoms if any(atom in rule.atoms for rule in ledger.rules)}
     _check_bans(ledger, table)
     _charge_unpaired(ledger, ruled, [mentions[index] for index in reading.unpaired])
     issues = tuple(dict.fromkeys(ledger.issues))
@@ -117,17 +123,17 @@ def _collect(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None
             opened.add(mention.topic)
             rules = _unit_rules(ledger, unit, mentions, residual)
             group = _add_rules(ledger, _within(topics.get(mention.topic), rules))
-            pending = _cut(ledger, group, pending | _excepted(unit, mentions))
+            pending = _cut(ledger, group, pending | _excepted(ledger, unit, mentions))
         elif not isinstance(mention, ObjectMention) or not mention.known:
             continue
         elif mention.negated is Negation.WHOLE:
-            pending = _cut(ledger, group, _selector(mention)) if group else pending | _selector(mention)
+            pending = _cut(ledger, group, _selector(ledger, mention)) if group else pending | _selector(ledger, mention)
         elif mention.leave:
-            group = _add_rules(ledger, _within(topics.get(mention.topic), [_rule(mention, None, 0.0, residual)]))
+            group = _add_rules(ledger, _within(topics.get(mention.topic), [_rule(ledger, mention, None, 0.0, residual)]))
         elif mention.scope is Scope.REST:
             residual = True
         elif mention.topic not in opened and (not mention.soft or mention.negated is not Negation.NONE):
-            topics[mention.topic] = topics.get(mention.topic, frozenset()) | _selector(mention)
+            topics[mention.topic] = topics.get(mention.topic, frozenset()) | _selector(ledger, mention)
 
 
 def _unit_rules(ledger: _Ledger, unit: Unit, mentions: list[Mention], residual: bool) -> list[Rule]:
@@ -135,22 +141,22 @@ def _unit_rules(ledger: _Ledger, unit: Unit, mentions: list[Mention], residual: 
     objects = [mentions[index] for index in unit.objects]
     known = [mention for mention in objects if isinstance(mention, ObjectMention) and mention.known]
     targets = unit.bins if len(unit.bins) > 1 else (unit.bins or (None,)) * len(objects)
-    excepted = _excepted(unit, mentions)
+    excepted = _excepted(ledger, unit, mentions)
     if unit.forbidden:
-        ledger.bans += [(_selector(mention), frozenset(unit.forbidden)) for mention in known]
+        ledger.bans += [(_selector(ledger, mention), frozenset(unit.forbidden)) for mention in known]
     if not unit.bins and unit.forbidden:
         return []
-    return [_rule(mention, bin_name, unit.cost, residual, unit.corrects)
+    return [_rule(ledger, mention, bin_name, unit.cost, residual, unit.corrects)
             for mention, bin_name in zip(objects, targets)
             if mention in known and not (excepted and mention.negated is Negation.WHOLE)]
 
 
-def _excepted(unit: Unit, mentions: list[Mention]) -> frozenset[Atom]:
+def _excepted(ledger: _Ledger, unit: Unit, mentions: list[Mention]) -> frozenset[Atom]:
     """Object types a unit takes out of its own 'everything': 'everything except the red ones goes left'."""
     objects = [mentions[index] for index in unit.objects]
     if not any(is_quantifier(mention) for mention in objects):
         return frozenset()
-    return frozenset().union(*(_selector(m) for m in objects if m.known and m.negated is Negation.WHOLE))
+    return frozenset().union(*(_selector(ledger, m) for m in objects if m.known and m.negated is Negation.WHOLE))
 
 
 def _within(topic: frozenset[Atom] | None, rules: list[Rule]) -> list[Rule]:
@@ -173,24 +179,25 @@ def _cut(ledger: _Ledger, group: list[int], excepted: frozenset[Atom]) -> frozen
     return frozenset()
 
 
-def _selector(mention: ObjectMention) -> frozenset[Atom]:
+def _selector(ledger: _Ledger, mention: ObjectMention) -> frozenset[Atom]:
     """Object types a mention denotes; a negated colour or shape selects its complement."""
-    colours = {mention.colour} if mention.colour else set(COLOURS)
+    colours = {mention.colour} if mention.colour else set(ledger.colours)
     shapes = {mention.shape} if mention.shape else set(SHAPES)
     if mention.negated is Negation.COLOUR:
-        colours = set(COLOURS) - colours
+        colours = set(ledger.colours) - colours
     if mention.negated is Negation.SHAPE:
         shapes = set(SHAPES) - shapes
     return frozenset((colour, shape) for colour in colours for shape in shapes)
 
 
-def _rule(mention: ObjectMention, bin_name: str | None, cost: float, residual: bool, corrects: bool = False) -> Rule:
+def _rule(ledger: _Ledger, mention: ObjectMention, bin_name: str | None, cost: float, residual: bool,
+          corrects: bool = False) -> Rule:
     """The rule a mention states; its written key is the group the negated part is taken from."""
     key = {Negation.COLOUR: mention.shape or DEFAULT_KEY, Negation.SHAPE: mention.colour or DEFAULT_KEY}.get(
         mention.negated, mention.key)
     weight = (tuning.W_UNIVERSAL * mention.universal + tuning.W_QUANTIFIED * (mention.scope is Scope.ALL)
               - tuning.W_RESIDUAL * (residual or mention.scope is Scope.REST))
-    return Rule(_selector(mention), bin_name, key if bin_name else None, weight, cost, corrects, mention.hue)
+    return Rule(_selector(ledger, mention), bin_name, key if bin_name else None, weight, cost, corrects, mention.hue)
 
 
 def _drop_correct_bin_opening(ledger: _Ledger, reading: Reading, mentions: list[Mention]) -> None:
@@ -201,10 +208,10 @@ def _drop_correct_bin_opening(ledger: _Ledger, reading: Reading, mentions: list[
     if not all(isinstance(m, ObjectMention) and m.scope is Scope.ALL and is_quantifier(m) for m in opening):
         return
     generic = next((rule for rule in ledger.rules if rule.key == DEFAULT_KEY and rule.bin == "right"), None)
-    if generic is None or generic.atoms != frozenset(ATOMS):
+    if generic is None or generic.atoms != frozenset(ledger.atoms):
         return
     others = [rule for rule in ledger.rules if rule is not generic and rule.bin]
-    if all(any(atom in rule.atoms for rule in others) for atom in ATOMS):
+    if all(any(atom in rule.atoms for rule in others) for atom in ledger.atoms):
         ledger.rules.remove(generic)
         ledger.issues.append(Issue("read 'the right bin' for everything as 'the correct bin'", 1.0))
     else:
@@ -230,11 +237,11 @@ def _apply_bans(ledger: _Ledger) -> None:
     """'not left, not center' leaves right; a single excluded bin leaves the group where it is."""
     for atoms, banned in _merged_bans(ledger.bans).items():
         allowed = [bin_name for bin_name in BINS if bin_name not in banned]
-        if any(rule.atoms == atoms and rule.bin for rule in ledger.rules) or atoms == frozenset(ATOMS):
+        if any(rule.atoms == atoms and rule.bin for rule in ledger.rules) or atoms == frozenset(ledger.atoms):
             continue
-        name = _name(atoms)
+        name = _name(ledger, atoms)
         if len(allowed) == 1:
-            ledger.rules.append(Rule(atoms, allowed[0], _key(atoms)))
+            ledger.rules.append(Rule(atoms, allowed[0], _key(ledger, atoms)))
             ledger.issues.append(Issue(f"'{name}' -> {allowed[0]} by elimination", tuning.F_ELIMINATION))
         else:
             ledger.rules.append(Rule(atoms, None))
@@ -252,24 +259,24 @@ def _merged_bans(bans: list[tuple[frozenset[Atom], frozenset[str]]]) -> dict[fro
 def _check_bans(ledger: _Ledger, table: Table) -> None:
     for atoms, banned in _merged_bans(ledger.bans).items():
         if any(table[atom] in banned for atom in atoms):
-            ledger.issues.append(Issue(f"'{_name(atoms)}' is sent to a bin it is told to avoid", tuning.F_CONFLICT))
+            ledger.issues.append(Issue(f"'{_name(ledger, atoms)}' is sent to a bin it is told to avoid", tuning.F_CONFLICT))
 
 
-def _key(atoms: frozenset[Atom]) -> str | None:
+def _key(ledger: _Ledger, atoms: frozenset[Atom]) -> str | None:
     """Mapping key that selects exactly these object types, if one exists."""
     colours, shapes = {colour for colour, _ in atoms}, {shape for _, shape in atoms}
-    if len(atoms) == len(ATOMS):
+    if len(atoms) == len(ledger.atoms):
         return DEFAULT_KEY
     if len(atoms) != len(colours) * len(shapes) or (len(colours) > 1 and len(shapes) > 1):
         return None
     if len(colours) == 1 and len(shapes) == 1:
         return f"{min(colours)}/{min(shapes)}"
-    whole_row = len(shapes) == len(SHAPES) or len(colours) == len(COLOURS)
+    whole_row = len(shapes) == len(SHAPES) or len(colours) == len(ledger.colours)
     return (min(colours) if len(colours) == 1 else min(shapes)) if whole_row else None
 
 
-def _name(atoms: frozenset[Atom]) -> str:
-    return _key(atoms) or " + ".join(sorted(f"{colour}/{shape}" for colour, shape in atoms))
+def _name(ledger: _Ledger, atoms: frozenset[Atom]) -> str:
+    return _key(ledger, atoms) or " + ".join(sorted(f"{colour}/{shape}" for colour, shape in atoms))
 
 
 # ---------------------------------------------------------------- precedence
@@ -291,7 +298,7 @@ def _strongest(ledger: _Ledger, groups: list[list[Rule]]) -> list[Rule]:
     ranked = sorted(groups, key=lambda group: (max(rule.weight for rule in group), _by_colour(group[0])), reverse=True)
     if len(ranked) > 1 and {rule.bin for rule in ranked[0]} != {rule.bin for rule in ranked[1]}:
         lead = max(rule.weight for rule in ranked[0]) - max(rule.weight for rule in ranked[1])
-        first, second = (_name(group[0].atoms) for group in ranked[:2])
+        first, second = (_name(ledger, group[0].atoms) for group in ranked[:2])
         if lead < tuning.W_DECISIVE:
             ledger.issues.append(Issue(f"rules for '{first}' and '{second}' overlap; '{first}' wins",
                                        tuning.F_OVERLAP_CUED if lead else tuning.F_OVERLAP))
@@ -308,11 +315,11 @@ def _settle(ledger: _Ledger, rules: list[Rule]) -> str | None:
     corrections = [rule.bin for rule in rules if rule.corrects and rule.bin]
     if corrections:
         if len(bins) > 1:
-            ledger.issues.append(Issue(f"'{_name(rules[0].atoms)}' -> {corrections[-1]} after a self-correction",
+            ledger.issues.append(Issue(f"'{_name(ledger, rules[0].atoms)}' -> {corrections[-1]} after a self-correction",
                                        tuning.F_CORRECTED))
         return corrections[-1]
     if len(bins) > 1:
-        best, issue = _family_clash(rules) or _conflict(rules, bins)
+        best, issue = _family_clash(rules) or _conflict(ledger, rules, bins)
         if issue not in ledger.issues:
             ledger.issues.append(issue)
             ledger.penalty += tuning.CONFLICT
@@ -320,10 +327,10 @@ def _settle(ledger: _Ledger, rules: list[Rule]) -> str | None:
     return bins[0] if bins else None
 
 
-def _conflict(rules: list[Rule], bins: list[str]) -> tuple[str, Issue]:
+def _conflict(ledger: _Ledger, rules: list[Rule], bins: list[str]) -> tuple[str, Issue]:
     """Two bins stated for the same objects: the cheaper statement is kept."""
     best = min((rule for rule in rules if rule.bin), key=lambda rule: rule.cost).bin
-    return best, Issue(f"conflicting bins for '{_name(rules[0].atoms)}': {' vs '.join(bins)}; kept {best}",
+    return best, Issue(f"conflicting bins for '{_name(ledger, rules[0].atoms)}': {' vs '.join(bins)}; kept {best}",
                        tuning.F_CONFLICT)
 
 
@@ -344,7 +351,7 @@ def _charge_unpaired(ledger: _Ledger, ruled: set[Atom], unpaired: list[Mention])
     for mention in unpaired:
         if mention.soft:
             continue
-        settled = mention.position in used if isinstance(mention, BinMention) else _selector(mention) <= ruled
+        settled = mention.position in used if isinstance(mention, BinMention) else _selector(ledger, mention) <= ruled
         if settled:
             ledger.penalty += tuning.REDUNDANT
             continue
@@ -392,11 +399,12 @@ def _mapping(rules: list[Rule], table: Table) -> dict[str, str]:
 def _rebuilt(table: Table, default: str | None) -> dict[str, str]:
     """Smallest explicit mapping for a table: default (if every type has a bin), colours, shapes, single types."""
     mapping = {DEFAULT_KEY: default} if default and None not in table.values() else {}
-    for colour in COLOURS:
+    colours = list(dict.fromkeys(colour for colour, _ in table))
+    for colour in colours:
         bins = {table[colour, shape] for shape in SHAPES}
         if len(bins) == 1 and None not in bins:
             mapping[colour] = bins.pop()
-    open_colours = [colour for colour in COLOURS if colour not in mapping]
+    open_colours = [colour for colour in colours if colour not in mapping]
     for shape in SHAPES:
         bins = {table[colour, shape] for colour in open_colours}
         if len(bins) == 1 and None not in bins:

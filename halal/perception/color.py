@@ -57,6 +57,18 @@ class ColorClassifier:
         grey = np.median(counter_rgb, axis=0).astype(float) + 1e-6
         return grey.mean() / grey
 
+    def dark_share(self, samples: np.ndarray, counter_rgb: np.ndarray) -> float:
+        """Share of an object's RGB samples (N, 3) that are dark against the bare counter's brightness: 1 for a black object."""
+        if not len(samples) or not len(counter_rgb):
+            return 0.0
+        limit = self.cfg["black"]["value_share"] * float(np.median(counter_rgb.max(axis=-1)))
+        return float(np.mean(samples.max(axis=-1) < limit))
+
+    def black(self, share: float) -> float:
+        """Confidence in [0, 1] that an object with this share of dark pixels is black."""
+        low, full = self.cfg["black"]["share_range"]
+        return float(np.clip((share - low) / (full - low), 0.0, 1.0))
+
     def pixel_classes(self, samples: np.ndarray, gains: np.ndarray) -> np.ndarray:
         """Per RGB sample (N, 3): index of the basin its hue is in, -1 when it is in none or too pale or dark to say."""
         balanced = samples * gains

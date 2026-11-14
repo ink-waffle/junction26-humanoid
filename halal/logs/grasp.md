@@ -600,3 +600,136 @@ default-hint triangles), 2.1 s faster per pick. It is NOT switched on here: nomi
 70 mm rim is 14–17 mm before arm sag and tilt, fine in sim (0 touches in 36) but thinner than the head calibration
 error on the real robot, and it has never run on the soft-hand sim (queued: s20c). To use it:
 `sequences: [low, organiser]`, `lift_height: 0.08`.
+
+## Sweeps 23d, 23f, 23g: lying prisms, the decision (stock 23d + 23f, soft-hand sim 23g; DR as it comes)
+
+Counted: picks where the prism was lying after the push AND the grasp planned (the push leaves a third of them within
+6 cm of a bin wall or under the shoulder, where nothing plans). Both arms mixed; 23f / 23g: 6 grasps x 2 push
+directions x 8.
+
+| grasp (fingers along the ridge unless noted, grasp point at 0.4 of the ridge height) | stock | soft |
+|---|---|---|
+| thumb swung opposite one finger (`thumb_0` −0.63), squeeze 0.30 | 18/23 (23b 4/5, 23d 4/5, 23f 10/12) | 9/14 |
+| the same, squeeze 0.45 | 6/9 | 11/15 |
+| the same at mid height, 0.30 | 6/10 | |
+| thumb at half swing (−0.315), object midway between thumb and finger (palm z 22 mm), 0.20 / 0.40 | 9/12, 4/10 | 4/14, 6/15 |
+| thumb at half swing, object under the finger (a thumb that stalls halfway), 0.30 | 4/7 | |
+| organiser pinch (`thumb_0` 0), no squeeze | 15/21 (23d 4/7, 23f 11/14) | 0/14 |
+| organiser pinch, squeeze 0.30 | 5/14 | 4/16 |
+| cage ACROSS the ridge, 0.60–0.80 | 12/24 | 0/2 (23a) |
+| unknown-shape cage, default hints (the old fallback) | 5/19 | |
+
+- Along the ridge the grip is two contacts on the vertical end faces; it holds by geometry like a cube pinch but the
+  faces are triangles, so the contacts must be low and opposite each other. Deeper squeezes push the prism out
+  sideways on the stiff hand; the soft hand needs the depth for force (grip signal 0.2–0.45 held).
+- Across the ridge every success is the prism re-seating in the hand (spin 40–170° between close and lift): the
+  sloped faces only hold by friction. The fallback cage succeeds only when its default heading happens to be across
+  the ridge (4/6 there, 0/9 along it: the fingertips straddle the end face, grip signal 0).
+- A thumb that only gets halfway loses about half on the stiff hand and two thirds on the soft one; without
+  `thumb_0` nothing holds on the soft hand. The real hand's `thumb_0` tracking at −0.63 is unverified (one organiser
+  recording stalled at −0.26 when commanded below −0.9): the policy should watch `thumb_0` when it preshapes.
+- Coverage (offline): an arm turns its fingers along the ridge for ridges within ±45° of its natural heading
+  (25° inward), about half at ±60°, almost never beyond: a third of the ridge directions per arm, a sixth with the
+  better arm of the two (ridge roughly along pelvis y), fall through to the cage. `height_frac` 0.4 also plans for
+  the real 39 mm ridge.
+
+Verdict: `candidates.stiff.lying: [ridge_opposed, ridge_pinch, cage_lying]` (18/23 and 15/21 against 5/19 for the old
+fallback); `cage_lying` is marked `last_resort`. The soft list: sweep 23h below.
+
+## Sweep 27b: the sideways cage on the soft-hand sim
+
+`cage_side` with the soft closure, DR as it comes: 3.5–4 cm before a bin wall 14/16 (cube 7/8, one not lifted;
+cylinder 7/8, one lost in the lift), middle of the table 8/8; all 22 carried objects out of the hand within the open
+phase; grip signal 0.16–0.24 held, ≤ 0.014 empty. Verdict: `cage_side` stays the last soft candidate (stock: 24/24).
+
+## Sweep 23h: lying prisms on the soft-hand sim with a thumb that stalls at `thumb_0` −0.26
+
+Question: the soft list runs on the real hand, whose `thumb_0` stalled at about −0.26 in one organiser recording.
+What is left of the opposed pinch then, and does anything without the swing hold? Lying and planned picks, 2 push
+directions x 8 per grasp, DR as it comes.
+
+| grasp (soft closure: the finger closes too, lift and carry at 4 rad/s²) | held |
+|---|---|
+| opposed pinch, full swing (−0.63), squeeze 0.60 | 11/12 |
+| the same grasp with the thumb held at −0.26 in preshape and closure (the stall), 0.45 | 9/16 |
+| thumb at −0.26 and the object midway between thumb and finger (palm z 20.5 mm), 0.45 / 0.65 | 8/12, 7/14 |
+| cage across the ridge, 0.90 (`thumb_0` 0) | 0/10 |
+
+With 23g the full swing reads 9/14, 11/15, 11/12 at 0.30, 0.45, 0.60: the soft hand gains with depth. A stalled thumb
+costs a third of the picks (9/16) and moving the grasp point to suit it does not help (15/26 over both depths);
+nothing without the swing holds on the soft hand (0/10 here, 0/14 and 4/16 for the pinches in 23g).
+
+Verdict: `candidates.soft.lying: [ridge_opposed, cage_lying]` with the soft squeeze at 0.60. One grasp serves both
+cases: 11/12 when the thumb follows, 9/16 when it stalls at −0.26.
+
+## Sweeps 25, 22, 20c (soft-hand sim): cube depth, a level thumb, position tolerance, the low sequence
+
+| cell | cube | cylinder | triangle |
+|---|---|---|---|
+| s25 (grippy-light corner): cube at 0.45 | 24/24, slip 8 mm | | |
+| s25: cube at 0.30 (the candidate) | 11/12, slip 11 mm | | |
+| s25: level thumb (closed thumb_1 −0.18, thumb_2 1.49; cube 0.26 / cylinder 0.40 / triangle 0.80) | 8/12 + 11/12 | 12/12 | 12/12 |
+| s22: soft candidates with x or y error ±10 mm or 15 mm in a random direction | 17/20 | 18/20 | 20/20 |
+| s22: cube at 0.45, exact | 12/12, slip 8 mm | | |
+| s20c (hard DR): soft candidates, organiser sequence | 9/12 | 12/12 | 12/12 |
+| s20c: the same under the low sequence (lift 0.08) | 12/12 | 11/12 | 11/12 |
+
+- Cube on the soft hand over all soft sweeps: 0.30 holds 65/75, 0.45 holds 55/56 (sweep 17 19/20, here 36/36) with
+  a third less slip. All 0.30 losses are the slide out of the hand at lift start or in the carry.
+- The level thumb does not help the cube (19/24) and is dropped.
+- Position errors of 10–15 mm cost the soft candidates nothing visible (55/60 against 59/66 exact in sweeps 12–20c).
+- The low sequence is no worse on the soft hand (34/36 against 33/36); it stays off (rim clearance on the real robot).
+
+Verdict: `cage_deep` (cube 0.45) is the FIRST soft cube candidate, `cage` (0.30) the second. Not measured: 0.45 with a
+position error, and the soft 0.45 closure on a stiff hand (the soft 0.30 closure held 12/12 there, sweep 14).
+
+## Sweeps 28 and 20b (stock sim): soft closures on the stiff hand
+
+A stiff hand classified as soft gets the soft closure (fingers closing too, 4 rad/s²). DR as it comes (28), hard DR (20b).
+
+| soft closure on the stiff hand | binned |
+|---|---|
+| cube 0.45 (`cage_deep`) / cube 0.30 | 12/12 / 12/12 |
+| triangle, vertex-aligned, 0.40 / 0.50 / 0.60 | 12/12 each |
+| triangle 0.80 (today's soft depth; sweep 14, default hints) | 6/12 |
+
+Verdict: `cage_deep` is safe when the class is wrong. The soft triangle at 0.60 would suit both hands (stiff 12/12
+here, soft-hand sim 12/12 in sweep 17 with the policy's contact sum at 0.31, twice its threshold) where 0.80 loses
+half on a stiff hand; 0.80 has the larger soft sample (34/36). Not changed here: proposed to the coordinator.
+
+## Sweep 26 (stock sim): blind picks with a neighbour 80–95 mm ahead, planned clearance against what happened
+
+Cube, cylinder and triangle neighbours straight ahead of the target; `neighbour_clear_mm` = smallest planned distance
+from a digit centre line (below the neighbour's top, descend and close) to the neighbour's true outline. 27 picks had
+a finger come down beside the neighbour (the rest passed above it or the neighbour was not placed).
+
+| planned clearance | picks | neighbour moved (> 5 mm) or toppled |
+|---|---|---|
+| under 3.5 mm | 3 | 2 (36.7 mm and toppled at 1.4 mm; 6.8 mm at 3.2 mm; none at 1.1 mm beside a triangle's flat side) |
+| 3.9–13 mm | 13 | 0 (0.0–0.8 mm) |
+| over 13 mm | 11 | 0 |
+
+Every target was binned. Verdict: the fingertip taper makes the real contact distance about 4 mm from the centre
+line, not the 13 mm half-width of the link: the outline check's 17 mm (`finger_radius` + `margin`) is safe with
+room to spare, for neighbours AHEAD of the fingers. Not measured: neighbours beside the fingers or under the thumb,
+so the numbers stay. Sweep 21 (touching cubes, soft) crashed at its first episode ("episode is over") and has no data.
+
+## Planner: early refusal of a grasp whose hand touches a neighbour (offline)
+
+Why: in crowded scenes a plan refused for a neighbour cost 0.45–1.1 s in the policy, because the whole IK chain ran
+for every finger heading and release point before the outline check. Now the preshaped and the closed hand at the
+grasp pose are checked first (one grasp IK per finger heading and pick, cached over the release points); the full
+check over descend and close still runs on what passes.
+
+Crowded offline set: 5 layouts of 8 objects at least 6.5 cm apart, every target with all its candidates, the other
+seven as obstacles; same process, early check off / on.
+
+| obstacles given as | plans | accepted off / on | decisions that differ | refusal for a neighbour, mean / p95 off | on | accepted plan, mean off / on |
+|---|---|---|---|---|---|---|
+| detections (outlines) | 125 | 16 / 16 | 0 | 0.39 / 0.66 s | 0.10 / 0.34 s | 0.098 / 0.093 s |
+| bare tops (47 mm circles) | 125 | 6 / 6 | 0 | 0.40 / 0.66 s | 0.06 / 0.23 s | 0.099 / 0.083 s |
+
+No plan the full check accepts is refused early, none it refuses gets through. In a fifth of the refusals the reason
+names a different neighbour (the first one in the hand's way at the grasp pose rather than on the way down); the
+text still starts with `TOUCHING`. Refusals the early check does not catch (a neighbour touched only during the
+descent) take as long as before: 21 of 108 with outlines, 11 of 118 with tops.

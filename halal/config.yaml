@@ -6,7 +6,7 @@ baseline_overrides:           # dotted keys on top of aaltonomous/baselines/clas
 perception:
   detector: topface           # key of halal.perception.DETECTORS
   calibration:                # head camera pose per episode (halal.perception.calibration)
-    agree_within: 0.025       # hands and scene anchor this close at the object band: the scene file is believed (see log)
+    agree_within: 0.012       # hands and scene anchor this close at the object band: the scene file is believed (see log: H9)
     max_turn_deg: 3.0         # a scene anchoring that needs more than this (per stage) is not believed
     max_shift: 0.03
     plane:                    # counter plane in front of the bins -> roll, pitch, height
@@ -58,8 +58,8 @@ perception:
       max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band,
       min_coverage: 0.7       # nor one with depth on less than this share of the visible model that returned any (it matched something else),
       min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
-      max_turn_deg: 6.0       # nor one that moves the camera further than a head calibration can be wrong
-      max_shift: 0.05
+      max_turn_deg: 10.0      # nor one that moves the camera further than a head calibration can be wrong (recordings: 7.4 deg, 4 cm)
+      max_shift: 0.07
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
@@ -89,6 +89,7 @@ perception:
       min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
+    arm_fits: 5               # believed arm fits gathered per episode; the one nearest to all others fixes the camera
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
     still_time: 0.1           # s: the hand fit needs an earlier look at least this long ago ...
     still_tolerance: 0.02     # ... with every arm and hand joint within this (rad): opening fingers bias it by 6..15 mm
@@ -101,8 +102,9 @@ perception:
     min_support_px: 40        # object pixels needed to name a colour
     overhang_band: [0.008, 0.035]   # above the object top: where a bin rim or a wall would stand, a hovering thumb does not
     max_overhang: 0.1         # pixels in that band over the footprint, as a share of the object's own, before it is no object
-    min_confidence: 0.05      # detections below this are dropped
+    min_confidence: 0.05      # below this the colour is not named: the detection has `color` None
     min_shape_margin: 0.06    # lead (outline-area fraction) of the best shape, below it shape is None
+    max_seen_empty: 0.15      # outline fraction seen as not top face, above it shape is None (flat tops <= 0.08, a lying cylinder 0.22 to 0.34)
     min_shape_visible: 0.3    # top-face fraction that must be seen before a shape is named (25 of 26 shape errors lay below)
     size_range: [0.045, 0.055]   # object heights (= edge lengths) looked for; real foam cubes measure 0.046 in drop 2
     size_snap: 0.0025         # a top this close to the scene file's object height IS that height (sim reads 0.0439 for 0.045)
@@ -110,6 +112,7 @@ perception:
     straggler:                # coloured blobs on the counter that no top-face fit explains: toppled objects
       heights: [0.010, 0.060] # above the counter
       claim_radius: 0.040     # pixels this close to a fitted object's centre are that object
+      yield_visible: 0.2      # a top face seen less than this does not claim them: noisy depth turns a prism's ridge into such a "top"
       min_px: 300
       max_extent: 0.09        # a longer blob is no single object (a wall, an arm)
     wall_guard:               # while the scene has not anchored the camera: bin footprints are guesses, walls reach the candidates
@@ -157,10 +160,34 @@ perception:
       warm_split:             # red against yellow by the scene: two groups of object hues with a clear gap fix the boundary for the episode
         min_gap: 8            # deg between the groups (real orange to yellow >= 10, sim red to yellow >= 34)
         max_shift: 9          # deg all hues may be turned for the groups to fit the basins (two sim yellows would pass as orange and yellow from 12.2)
+      black:                  # a black object: most of its pixels dark against the bare counter (venue photo; not a scene colour)
+        value_share: 0.5      # a pixel is dark below this share of the counter's brightness (drop 2: black hand 0.28, shaded purple 0.65)
+        share_range: [0.5, 0.8]   # share of dark pixels on the object mapped to confidence 0..1
       min_value: 60           # darker pixels (0..255) have no colour: a black hand with a blue cast is not blue
       chroma_range: [0.15, 0.30]   # (max - min) / max of the white-balanced colour mapped to confidence 0..1
       mat_band: 0.004         # mat pixels: this close to the counter plane
       mat_x_range: [0.18, 0.38]
+  replay:                     # halal.eval.real_replay: a runner export through the perception chain
+    still_s: 0.1              # a look: every joint where it stood this long ago ...
+    still_tolerance: 0.02     # ... within this (rad) ...
+    look_interval_s: 1.0      # ... and no sooner after the previous look than this
+    dark_value: 60            # image value (0..255) below which a pixel is dark: the black Dex3 links
+    box_pad_px: 15            # around the arm model's image box, where dark pixels are counted
+    on_model: 0.008           # depth this close to a model point is depth on the model
+    parts:                    # arm parts by link name ending, for the share of each that returned depth
+      fingers: [thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
+      palm: [hand_palm_link, thumb_0_link]
+      wrist: [wrist_roll_link, wrist_pitch_link, wrist_yaw_link]
+      forearm: [elbow_link]
+    black_parts: [hand_palm_link, thumb_0_link, thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
+    levels: {mild: 0.6, typical: 0.2, bad: 0.0}   # least share of dark arm pixels with depth for each level of bench.d435, best first
+    outline_clip_px: 40       # RGB only: a model point further than this from any dark pixel counts as this far
+    shift_reach_px: 60        # image shifts tried for the outline, either way ...
+    shift_step_px: 4          # ... in steps of this
+    min_outline_points: 60    # visible model points of the black links needed to judge the outline
+    table_chroma: 0.15        # RGB only: pixels paler than this ...
+    table_value: 110          # ... and brighter than this are the table: the white reference
+    blob_px: [400, 14000]     # RGB only: size of a colour blob that may be an object
   bench:                      # halal.eval.perception_bench
     still_tolerance: 0.02     # --still: joints this close (rad) to the previous recorded frame's make a frame a look
     match_radius: 0.03        # a detection belongs to the nearest ground-truth top centre within this xy distance
@@ -169,6 +196,7 @@ perception:
     held_height: 0.03         # lifted further than this it is clearly not on the counter: detecting it there is a phantom
     confidence_edges: [0.2, 0.34, 0.5, 0.8]
     repaint_deg: {red: 25, yellow: 4, blue: -7}   # --repaint: hue turns that take sim red, yellow, blue (0, 51, 227) to real orange, yellow, purple (25, 55, 220)
+    black_gain: 0.15          # --blacken: grey value of the painted objects as a share of their own (sim tops 200 -> 30, sides darker)
     decision_thresholds: [0.34, 0.5, 0.8]   # break-even of acting on a colour: 1/3 language task, 1/2 fixed task
     armless_seed: 7
     armless_depth_noise_mm: 1.0
@@ -183,6 +211,10 @@ perception:
     sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
     shifts:                   # --shift: where the table stands against the scene file (real: drops 1 and 2, realdata.md B7)
       # bins further and to the left (m), gap between boxes (m; scene 0.05, recordings about 0.022), counter higher (m), far edge up (deg)
+      slight: {bins_x: 0.02, bins_y: 0.01, gap: 0.05, counter_z: 0.010, pitch_deg: 1.0}   # inside the scene anchor's guards
+      inch: {bins_x: 0.025, bins_y: -0.02, gap: 0.04, counter_z: -0.005, pitch_deg: 2.0}
+      nudge: {bins_x: 0.01, bins_y: 0.005, gap: 0.05, counter_z: 0.005, pitch_deg: 0.5}
+      push: {bins_x: 0.015, bins_y: 0.0, gap: 0.05, counter_z: 0.0, pitch_deg: 0.0}
       near: {bins_x: 0.05, bins_y: 0.0, gap: 0.05, counter_z: 0.020, pitch_deg: 1.5}
       real: {bins_x: 0.07, bins_y: 0.0, gap: 0.05, counter_z: 0.015, pitch_deg: 7.0}
       far: {bins_x: 0.14, bins_y: 0.0, gap: 0.05, counter_z: 0.0, pitch_deg: 9.0}
@@ -249,8 +281,12 @@ motion:
   drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
     near: [0.06, 0.05, 0.04, 0.03]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.085               # from the side walls
-  release_rise: [0.0]         # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
+  release_rise: [0.0, 0.03, 0.06, 0.09, 0.12]   # release this far above the nominal height, the first that reaches the release point (the arm reaches ~1 cm further per 4-5 cm of height, up to 0.12)
   min_retreat_up: 0.02        # a raised release shortens the retreat after it by the rise, down to this
+  landing:                    # where released objects come to rest around the release point (sweeps 5, 20: n = 232); a release whose box crosses an inner wall is refused
+    forward: [-0.032, 0.077]
+    outward: [-0.048, 0.048]
+    margin: 0.0               # the box stays this far inside the inner walls
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
     default: 0.01
@@ -259,12 +295,12 @@ motion:
   sequences: [organiser]      # pick sequences tried in order: low (ours, ~1.4 s shorter) | organiser
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
   candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified, `lying` = prism on a side
-    stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}
-    soft: {cube: [cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [cage_lying]}   # the pinch has no soft closure
+    stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, ridge_pinch, cage_lying]}
+    soft: {cube: [cage_deep, cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, cage_lying]}   # the pinches have no soft closure
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), inward_headings_deg (fixed finger headings
   # in the pelvis frame, positive = turned inward, tried in this order), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
-  # carry_acc, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
+  # carry_acc, last_resort, base (another strategy whose keys this one starts from), soft (overrides of these keys for a soft hand).
   # Unset keys keep the organiser pinch.
   grasps:
     # Object centred between index and middle, thumb behind: three contacts, any finger heading. The thumb depth
@@ -275,16 +311,33 @@ motion:
       soft:                   # hand="soft" (kp ~1.5): the fingers close too (tips 47 mm/rad), ~7.5 N on every shape by the static model
         squeeze_axis: [0.0, 1.0, -1.15, -0.5, 0.0, -0.5, 0.0]
         carry_acc: 4.0        # rad/s^2 while the object is held (lift, carry); the planner's default is 8
+    cage_deep:                # cube on a soft hand: 0.45 holds 55/56 where 0.30 holds 65/75 (it slides down out of the hand at lift start)
+      base: cage
+      squeeze: {cube: 0.45}
     cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
       base: cage
       headings_deg: {triangle: [0, 120, 240]}
     cage_side:                # fingers 90 deg sideways (inward, then outward): the only plan for an object 3-5 cm before a bin's near wall
       base: cage
       inward_headings_deg: [90, -90]
+      last_resort: true       # never the grasp a retry starts with: it runs only when no other candidate has a plan
       height_frac: 0.6        # the hand is tilted 22-36 deg there: 4.5 mm higher keeps the closed fingertips off the counter
-    cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold
+    cage_lying:               # a prism on a side (`lying`, yaw = its ridge): the unknown-shape hold, for ridges the arm cannot turn the fingers along
       base: cage
       squeeze: {triangle: 0.75}
+      last_resort: true       # holds 1 in 4, and only with the fingers across the ridge
+    ridge_opposed:            # lying prism, fingers along its ridge: one finger on an end face, the thumb swung opposite it (thumb_0)
+      point_in_palm: [0.092, -0.084, 0.0285]
+      preshape: [-0.63, -0.5, 1.5, -0.4, -0.4, -0.4, -0.4]
+      closed: [-0.63, 0.1, 1.01, -1.0, -0.6, -1.0, -0.6]   # thumb tip at palm x 65 mm, z 28.5 mm: under the finger
+      squeeze_axis: [0.46, 1.0, -1.23, 0.0, 0.0, 0.0, 0.0]   # 46 mm per rad at constant height and z
+      squeeze: 0.30           # deeper loses more on the stiff hand (0.45: 6/9 against 18/23)
+      headings_deg: {triangle: [0, 180]}
+      height_frac: 0.4        # the end face is a triangle: wide enough for a fingertip only in its lower half
+      soft: {squeeze_axis: [0.46, 1.0, -1.23, -0.5, 0.0, -0.5, 0.0], squeeze: 0.60, carry_acc: 4.0}   # the soft hand gains with depth: 0.30 9/14, 0.45 11/15, 0.60 11/12
+    ridge_pinch:              # the same without the thumb swing (thumb_0 = 0): organiser pinch along the ridge; too weak for a soft hand
+      headings_deg: {triangle: [0, 180]}
+      height_frac: 0.4
     pinch: {}                 # organiser pinch: thumb against the index finger, object 15 mm off the palm centre
     pinch_face:
       headings_deg: {cube: [0, 90, 180, 270]}

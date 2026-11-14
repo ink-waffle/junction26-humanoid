@@ -6,6 +6,58 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 20:10
+- **Hand-in candidate: v19** (`sha256:ede4203e…`, `:v19-multi`): stock 87/87, gate 24/24, soft 31/31, equal to v18 on every leg, with the centre-box fix, `release_rise`, black objects, 12 mm anchor agreement. Built and published since: **v20** (amd64 `sha256:b7468d51…`, `:v20-multi`) = v19 +
+  layout by geometry on an unanchored camera (H11), lying-prism grasps for both hands, soft cube `cage_deep`, early
+  obstacle rejection; **v21** (amd64 `sha256:0f7ca363…`, arm64 `sha256:e46cefed…`, `:v21-multi` `sha256:d397e09b…`) =
+  v20 + hand-fit guard 6° / 5 cm -> 10° / 7 cm (H13) + lying prisms under noisy depth (H12). Pre-checks pass; sim legs
+  of both are running.
+- **Real robot, first runs (organisers' laptop, v18, `--container`, sim instruction text):** run 1 refused every
+  grasp (hand 0.7–1.6 cm above the counter on the way to the pregrasp, need 2.0); later runs missed a cube and
+  released in front of a box; the last ended `safe_stop` at 53 s. Our log: the hand fit on REAL depth returned depth
+  on 79–92 % of the arm model but covered only 0.39–0.53 of it and was rejected (coverage, inliers; `turn` once), so
+  the camera stayed nominal and everything was centimetres off. H13 alone does not cover that; the analyst is on it
+  (`halal/logs/robot.md`).
+- **Real-look sim with the recordings' head-calibration error** reproduces the miss on v20 (fit 1.8 mm rms but
+  rejected on `turn` only, objects seen 4–6 cm too far); v21 runs on it next.
+- **Rule learnt:** teams deploy only to the organisers' device for that, never to the robot's own computer; our app
+  was found on the robot's PC2 and stopped by them. Not repeated.
+
+### Sat 14.11, 19:10
+- **Hand-in candidate: v18** (`ghcr.io/ink-waffle/halal-policy@sha256:b99fd5dd4a9fcc5af25322c2a551a9b2ef9ea55c9742f71d77bbf0fce10947be`,
+  arm64 + amd64 as `:v18-multi`): stock proxy +21.38 of 21.38 (87/87), gate PASS 24/24, soft-hand sim 31/31; equal to
+  v16 on every leg and carries the real-robot fixes (measured layout never replaced by the scene file, bin row for
+  sideways boxes and narrow gaps, rim height, 70 mm walls, sideways grasp near a wall).
+- **Real-look sim, v18 with soft hands and real words:** boxes at the scene-file place 28/31 (only lying prisms lost);
+  boxes 6 cm farther 23/31: 5 centre-box objects never planned. Cause: `reaches_bin` tested the inset left by the
+  previous plan (fixed on main; v19).
+- **On the robot (18:50):** v18 deployed through Wendy onto the robot's Jetson (arm64, agent not enrolled,
+  `--skip-cloud-registration`, 0.9 GB in 8 s over the cable); the organisers' pre-check against it over the network:
+  100 calls, 0 errors, p50 37 ms. No episode yet: the runner (DDS to the robot, camera server) has to run on a
+  machine of the organisers.
+- **Organisers, 17:20:** final submission on the Junction platform (demo, source, video ≤ 2 min, team info,
+  description); deadline Sunday 10:00. Draft materials in `team/submission/` (private).
+- v19 (= v18 + reach fix, `release_rise`, `agree_within` 12 mm, black objects, lying-prism lists, arm by ridge):
+  fixed leg 31/31, every look anchored to the scene; other legs running. Reach physics: risen releases 84/84 binned
+  with boxes +6 / +8 cm.
+
+### Sat 14.11, 17:50
+- **Hand-in candidate unchanged: v16** (`sha256:ae811fa2…`). v16 on fresh seeds 1008–1015: 91/91, gate PASS 24/24
+  (178/178 over both seed sets). **Robot slot offered by the organisers** (videos sent, Wendy deployment
+  rehearsed); the team is going to the robot with **v18** (`:v18-multi`, amd64 `sha256:b99fd5dd…` + arm64, pre-check
+  pass, deployed through Wendy to a WendyOS arm64 VM and driven by the organisers' runner: 30 Hz, 0 clips).
+- **Real-look sim** (dev-only `REAL_SIM=...`: lying prisms, real colours, 70 mm taped cardboard boxes, bare table,
+  boxes moved; real words and the real fixed mapping), v16, fixed leg: real colours 31/31; lying prisms 27/31 (1 of
+  5 lying prisms sorted, nothing else harmed). With boxes 6 cm farther it found a defect: the policy replaced the
+  measured box positions by the scene file's once a pick had no plan, and released in front of a box. Fixed in v18.
+- **Perception on emulated D435i depth and a real-like table**: camera within 4 mm p95 under typical depth; bin
+  finder rebuilt for sideways rows and narrow gaps (was 4–10 cm off at ±7 cm, now ≤ 1.2 cm); rim height measured;
+  false `lying` calls were a refit bug (fixed).
+- **Reach**: a top-down release reaches boxes up to ~+6 cm beyond the scene file; the straight arm caps the object
+  centre at ~0.53 m. A higher release (`motion.release_rise`, off until measured) reaches +8 cm; +10 cm only onto the
+  rim. Real recordings put the boxes +5..+15 cm away: venue measurement requested.
+- v17 (= v16 + 70 mm walls + sideways grasp near a wall): fixed 31/31, known 25/25, then stopped for v18.
+
 ### Sat 14.11, 16:25
 - **Hand-in candidate: v16, proxy +21.38 of a possible 21.38 (87 of 87 objects), sim gate PASS on all 24 episodes
   through its container; soft-hand sim 31/31, gate PASS; no empty pick in any of the 32 episodes.**

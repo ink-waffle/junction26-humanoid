@@ -196,7 +196,7 @@ object pushed to x < ~0.20 is gone for the head camera; the head cannot tilt.
 - Object mostly under a hand: centre up to 2.5 cm off, flagged by `visible` < 0.3 or 0 (blob). `lowhands` seed 2407
   (yellow triangle, blob, 22.7 mm); `dr_train` seeds 2017, 2005, 2009 (8–16 % visible, within 5 mm there).
 - Toppled object: colour and a rough centre only (`motion` seed 2206, yellow triangle; ~1 cm).
-- Cylinder cut by the lower image border: shape None; one case in 1891 decided shapes still wrong (`motion` seed 2202).
+- Cylinder cut by the lower image border: shape None (the one wrong case of `motion` seed 2202 went with H10).
 - Hue rotated by ±30° or more: wrong colours at high confidence (stress test only).
 - Object pushed towards the robot beyond x ≈ 0.20: outside the head image, not detected.
 - A hand fit taken while fingers move would be biased by up to 15 mm; prevented by the stillness rule, which needs two looks.
@@ -627,6 +627,182 @@ the 8 episodes have a still first frame); once the arm pose is kept it holds to 
 more than 3 cm off, and the camera part stays 2.0 / 2.7 (typical). The "phantoms" under the shift (8 looks of seed 2201) are a
 yellow cube that leaned on a bin wall in the recording and stands on the counter in the re-rendered scene: a bench artefact.
 
+**H6. The arm pose accumulates over looks** (`topface.arm_fits`, `SelfCalibration.consensus`). The first believed hand fit used
+to fix the camera for the episode. Now believed fits are gathered at up to 5 still looks and the one nearest to all others at
+the object band is used (with one or two fits: the first). Why: at bad depth 3 % of single fits are over 10 mm and pass every
+check. The same frame under six depth seeds (45 dev frames, `--shift real`), band error median / p95 / max mm: single look
+typical 3.7 / 4.6 / 6.4, bad 4.3 / 8.1 / 16.8 (8 of 270 over 10 mm); nearest-to-all of three looks 3.7 / 4.4 / 4.4, 4.2 / 8.2 / 12.5;
+of five 3.7 / 4.1 / 4.4, 4.2 / 8.5 / 11.0. Two of 45 frames stay over 10 mm at bad: there most seeds are off (seeds 2010, 2074),
+so it is the frame, not the noise. `motion --still --shift real`: clean and typical unchanged within 0.1 mm, bad camera part
+5.5 / 6.6 -> 5.0 / 6.4. All clean sets including `motion`: identical. Cost: up to four more hand fits per episode (30 ms each,
+200 ms when every restart is tried).
+Tried and dropped: left arm and right arm fitted separately as a cross-check. At `ARM_HOME` the right arm shows 211 model
+points (300 are needed for a fit), so there is nothing to compare.
+
+**H7. Objects of no colour family are reported, with `color` None.** A photo of the venue table shows black cubes, cylinders
+and prisms next to the foam. `perception_bench --blacken blue` paints one colour's objects black (grey value x 0.15). Before:
+0 of 158 (`dr_train`) and 0 of 65 (`lookpose`) black objects detected, clean or typical depth: the top-face fit found them
+and the colour confidence of 0 dropped them, so the policy could not even avoid them. Now every geometry-accepted object
+comes back; its `color` is None and its `confidence` below `min_confidence` when no family fits (black, grey, a hue between
+families). Black objects: `dr_train` recall 1.000 clean, 0.962 typical (the misses are under a thumb), xy 1.7 / 2.5 and 1.3 / 2.9,
+shape right 1.000 of 0.87 and 0.79 decided; `lookpose` 1.000 / 1.000, clean and typical. The red and yellow objects of the same
+frames: unchanged. All unpainted sets including `motion`: identical line by line, so no hand, wall or shadow has become a
+colourless object in 1401 sim frames. Not found: a black prism lying on its side (the fallback blob starts from coloured pixels).
+Not verified: black foam in real depth (if it returns as little as the black hand, it has no top face and stays unseen).
+
+**H8. A fourth colour, black** (orchestrator's order after the venue photo; detector and parser together, neither alone).
+Detector (`color.black`): a geometry-accepted object is black when most of its body pixels are dark against the bare counter
+(value below 0.5 x the counter's median brightness); confidence 0 at half of the pixels, 1 at 80 %. A dark object is black
+whatever its hue: the black hand has a blue cast that would otherwise name it blue. Stragglers (no top face) are never black.
+- `--blacken blue`, black objects found / named black of those found / at confidence >= 0.5: `dr_train` clean 158 of 158 / all / all;
+  typical 152 of 158 / all / all; bad 89 of 158 / all. `lookpose` 65, 65, 46 of 65, all named black. At bad 1 of 403 (`dr_train`)
+  and 3 of 169 (`lookpose`) rightly named detections of any colour fall below 0.5. At bad the depth model takes
+  70 % of every dark pixel's depth, so black objects lose their top face: that is the real risk for black foam, not the colour.
+- Nothing else turns black: every unpainted sim set including `motion` is identical line by line; with `--repaint` (real
+  palette) on `dr_train`, `lowhands`, `closedhands`, `lookpose`: 0 black among 815 detections; real drop 2, 187 foam objects of
+  48 first frames (purple 44, orange 81, yellow 62): dark share 0.000 at most (the table reads 152, the limit is 76; the
+  objects' darkest pixels are above it), while the hand's dark pixels have share 1.00. So the rule separates by a wide margin,
+  and what keeps the hand from being a black object is geometry alone, as before.
+Parser (`halal/language/grammar`): `EXTRA_COLOURS = ("black",)`. The grammar's object types are the nine of the scene unless
+the instruction names black; then black joins them for that instruction ("everything else", negation and key rebuilding
+include it). Words: black, blacks ("dark" is not taken). All 10 846 rendered cases of the three existing sets parse to the
+same mapping and confidence as before, compared one by one; scores unchanged (dev 2781 cases 1.000 exact, 1.934 points; test
+2853, 1.000, 1.909; fresh 4087, 1.000, 1.935; real 1125, 1.000, 1.655). New `halal/eval/paraphrases_black.yaml`, 12 entries, 249
+cases: 1.000 exact, all confident (`language_bench --split test --file halal/eval/paraphrases_black.yaml`; the bench scores the
+black object types whenever a text names black).
+What follows for the policy: a black object is a target only if the mapping reaches it: through a `black` key, or through a
+shape key or `default` ("all cubes left", "everything else right"), exactly like any colour. Under a colours-only
+instruction that does not name black it has no bin and stays an obstacle.
+
+**H9. `agree_within` 25 -> 12 mm** (the change "Next 1" was waiting for). A table displaced by 1 to 1.5 cm passes every guard of
+the scene anchor (3 deg, 3 cm), and with hands and anchor "agreeing" within 25 mm the scene file was believed: the camera was
+moved to put the row where the file has it, and with it every object. `--shift nudge` (bins +1 cm, counter +5 mm, 0.5 deg) and
+`push` (bins +1.5 cm only), dev: anchor accepted 90 of 90, pose by scene, band error 13.5 / 13.6 / 13.6 and 16.0 / 16.0 / 16.0 mm,
+while the hand fit of the same frames is 3.9 / 4.2 / 4.4. How far anchor and hand fit are apart at the band, median / p95 / max:
+table as recorded: clean 5.8 / 6.1 / 6.3 (`lowhands` 7.2), mild 6.1 / 6.7 / 7.2, typical 6.0 / 7.3 / 9.7, bad 6.8 / 11.9 / 26.1;
+`nudge` 17.8 / 18.2 / 18.5 (typical 19.8 max), `push` 19.0 / 19.4 / 19.7, `slight` (2 cm) 30. So 12 mm lies between everything
+measured on the true table up to typical depth and the smallest displacement tried. After: `nudge` / `push` use the hands in
+90 of 90, camera part 2.4 / 2.9 / 3.5 and 2.4 / 3.0 / 3.5 clean, 2.5 / 3.5 / 4.1 and 2.5 / 3.6 / 4.2 typical. All clean sets including
+`motion` and the table as recorded under typical depth: identical. Cost: at bad depth on the true table 4 of 90 looks now go by
+the hands (camera part p95 4.1 -> 5.4, max 6.2 -> 16.9). In sim 6 mm of the disagreement is the principal point; on the real
+robot a displacement under about 1 cm in the direction the hands cannot tell still goes by the scene file.
+
+**H10. No shape for an outline that is partly seen as not top face** (`topface.max_seen_empty`). First finding of the real-look
+sim frames (`realsim_looks`, seed 1001): a yellow cylinder knocked onto its side lay against a cube for 38 recorded frames and
+came back as an upright `triangle`, `visible` 0.7, centre within 5 mm. The strip of its back that lies within the depth
+tolerance of the top plane is 26 x 45 mm, and the triangle outline is what fits a strip best. What tells it from a flat top:
+the outline cells not seen as top face are SEEN (the back curving away), not hidden. Share of the outline seen as not top,
+detections with a right shape: at most 0.076 over `dr_train`, `motion`, `lowhands`, `lookpose`, `realsim_looks`, clean to
+typical depth (1900 shapes; bad depth: p95 0.19, max 0.26); the 38 lying-cylinder frames: 0.22 to 0.34; the one wrong shape
+left in `motion` (a cylinder cut by the image border, called a triangle): 0.38. Above 0.15 the shape (and yaw) is now None.
+`realsim_looks` (3 seeds so far): shape right of decided 0.925 -> 1.000. `motion`: the one wrong shape is gone (464 cylinders
+right, 1 -> 0 wrong), everything else of every clean set identical. Cost: at bad depth about one decided shape in eight
+(held-out, real, bad: decided 0.552 -> 0.524), none up to typical. A lying cylinder is thus an object of unknown shape with a
+good centre; it is not named as lying.
+
+**H11. On the nominal pose the layout is what that camera sees, not the scene file's.** When neither the scene anchor nor the
+hands fix the camera (every first look on a displaced table, and every look if the hand fit fails), bins used to be taken from
+the scene file. On a displaced table that left the far part of the real boxes outside the excluded footprints, and their
+cardboard insides (the yellow family) came back as `yellow` blobs at full colour confidence: `realsim_looks`, first looks,
+typical depth: 2 per look at x 0.68. Bins, counter height and rim are now found by geometry whenever the source is not
+"scene"; objects and bins then share the nominal camera's error instead of differing by the table's displacement.
+First looks, `dr_train` dev, `--shift real`: precision clean 0.989 -> 1.000, typical 0.887 -> 1.000 (44 phantoms -> 0; `left7`
+typical 0.958 -> 1.000); bins 67.9 mm (98 to 119 with the lateral offset) -> 11.7 / 21.4 / 30.1 (the nominal camera's own 11 mm
+included), counter 15.0 -> 6.6 (max 18); `rim_z` reported there too: +12.7 median, -4.0 to +33 (so on the nominal pose it can
+be a few mm low). Recall, xy and every clean set: unchanged. A look anchored to the scene file still gets the file's layout.
+
+### The real-look sim, whole episodes (`realsim_looks`)
+
+Recorded by the realsim workstream: policy v18, `sort_fixed`, seeds 1000 to 1007, `REAL_SIM=all` (bins +6 cm, counter +1 cm,
+walls 7 cm, real colours, bare table, half of the prisms lying), soft hands, every 10th tick: 2582 frames, 1326 of them still
+looks. On the instance under `/data/wt/infra/runs/frames/realsim_looks/`; the bench reads the placement from `scene.json`
+({"offsets": {"counter": [0, 0, 0.01], "bins": [0.06, 0]}, "boxes": {"wall_height": 0.07}}). Detector as of H11, one per episode.
+
+| | all frames, sim depth | typical | bad | still looks, sim depth | typical | bad |
+|---|---|---|---|---|---|---|
+| recall / precision | 0.917 / 1.000 | 0.838 / 1.000 | 0.811 / 0.997 | 1.000 / 1.000 | 0.941 / 1.000 | 0.929 / 0.997 |
+| xy mm, median / p95 | 2.2 / 3.6 | 3.2 / 12.4 | 5.7 / 14.3 | 2.5 / 3.5 | 3.3 / 15.0 | 6.3 / 15.8 |
+| camera part, median / p95 | 2.2 / 3.6 | 2.5 / 4.0 | 4.7 / 8.0 | 1.9 / 3.6 | 2.4 / 4.5 | 5.8 / 8.0 |
+| shape decided / right | 0.863 / 1.000 | 0.714 / 0.999 | 0.420 / 0.986 | 0.894 / 1.000 | 0.694 / 1.000 | 0.411 / 0.996 |
+| lying prisms seen as such | 0.897 of 1063 | 0.739 | 0.454 | 1.000 of 600 | 0.820 | 0.493 |
+| ridge direction deg, centre mm (medians) | 0.7, 1.5 | 0.9, 2.6 | 1.7, 4.1 | 0.8, 1.8 | 0.9, 2.5 | 1.7, 4.6 |
+| called lying without being one | 0 | 0 | 0 | 0 | 0 | 0 |
+| bins by hands mm, median / p95 / max | 3.3 / 6.1 / 9.4 | 3.2 / 6.7 / 13.5 | 5.7 / 11.4 / 109.4 | 3.3 / 5.8 / 6.9 | 2.9 / 6.4 / 10.9 | 6.4 / 11.4 / 16.5 |
+| counter mm, median | 2.9 | 3.3 | 3.5 | 2.8 | 3.0 | 1.3 |
+| rim mm, signed: median (lowest, highest) | +9.2 (+7.5, +10.6) | +10.5 (+6.8, +14.6) | +14.5 (+5.1, +26.6) | +9.2 (+7.8, +11.6) | +10.6 (+6.8, +14.4) | +13.4 (+5.3, +25.4) |
+
+- Layout source: nominal at the first frame of each episode (8 frames), hands at all 2574 others, at every depth level; no
+  other change in any episode. The policy's own log of that run agrees: 181 looks "layout from hands", none from scene, the
+  hand fit "trusted" with rms 1.7 to 1.8 mm, covered 0.85 to 0.92.
+- The xy tail under noisy depth (p95 12 to 15 mm) is lying prisms that fall back to blobs (seen as lying 1.000 -> 0.82 at
+  typical on still looks) and objects under a hand; upright, clear objects stay as in `dr_train`.
+- Wrong shapes at typical: 4 of 2702 decided (two cylinders as cubes, a cube and a cylinder as triangles).
+- At bad depth 4 of 2574 moving frames have a bin more than 3 cm off (one 109 mm), no still look.
+- Runtime per look in this hands mode: 60 ms median, 87 p95, 166 max on the Mac.
+This set gave H10 (lying cylinder called a triangle) and H11 (cardboard insides as yellow blobs on the nominal pose).
+Not yet run: the control set without offsets (`realsim_looks_nooff`, announced for later).
+
+### Real data, when it comes: `python -m halal.eval.real_replay runs/halal/<run>`
+
+Reads a runner run folder (`episode_NNN.npz` per tick: t, arm_q, hand_q, arm_dq and, with `--log-images`, head_rgb (T, 480, 640, 3)
+and head_depth (T, 480, 640) uint16; `episode_NNN.jsonl` for the instruction; `episode_NNN.mp4` from `--video`; `container.log`).
+Looks are the still moments (`perception.replay`), one detector per episode as the policy runs it. Output: a digest of our
+server's log (layout source of its looks, its "arms:" lines, warnings), then per episode a summary and one line per look, a few
+overlay PNGs and `report.json` under `<run>/replay/`.
+- With depth, per look: camera source, scene anchor fitted or not, the hand fit with rms / coverage / known share / pixels on
+  the model / which check failed, its distance to the anchor, counter height, rim, bins, detections. Summary: counter plane rms
+  and tilt against the pelvis, medians of the hand fit against their limits, per arm part (fingers, palm, wrist, forearm) the
+  share of visible model points that returned depth and that have depth on the model, and the share of DARK pixels around the
+  arms that returned depth, which needs no camera fit and names the depth level of `bench.d435` the hands resemble.
+- Overlay: left RGB with the bins at counter (cyan) and rim (yellow) height, detections, arm model; right depth (invalid purple)
+  with the arm model points green (depth on the model), yellow (depth elsewhere), red (none).
+- Without depth (frames from the mp4): the colour stage (white balance on pale bright pixels, blobs per family with the colour
+  they would be named) and the outline of the black links: share of their model points on dark pixels and distance to them
+  through the nominal camera, and after the best image shift (the head calibration's error at the hands, in pixels).
+Tested: (1) a real runner run with the mock backend, `--log-images --video`: the format reads, but that backend's images are
+black (the env's mock renders nothing), so such frames are skipped; (2) runner-format folders built from `realsim_looks` seed
+1002 with our server's log of that episode as `container.log`:
+
+| depth | camera by | hand fit rms / covered / known | fingers returned | palm | wrist | dark pixels returned | level named |
+|---|---|---|---|---|---|---|---|
+| sim | hands | 1.7 mm / 0.87 / 1.00 | 0.98 | 1.00 | 0.99 | 0.99 | mild |
+| typical | hands | 1.5 / 0.85 / 0.95 | 0.41 | 0.63 | 0.92 | 0.58 | typical |
+| bad | hands | 2.4 / 0.93 / 0.62 | 0.06 | 0.12 | 0.47 | 0.10 | bad |
+| RGB only | n/a | outline: 0.47 of the black links on dark pixels, 3.3 px; after a shift of (+12, -8) px 0.52, 2.3 px | | | | | |
+
+The sim arm is dark all over, so its dark-pixel share mixes hand and forearm; on the real robot only the hand is dark. In the
+sim's light the hand reads brighter than 60 in half of its pixels, hence the low outline share there; the real hand reads 43.
+
+**H12. A barely seen top face gives way to a lying prism** (`straggler.yield_visible`). Why the lying prisms of `realsim_looks`
+dropped from 1.000 to 0.82 under typical depth: noise and edge fattening widen the ridge at 45 mm into a strip that survives
+the top-face seed's opening; the outline fit accepts it as a top face seen 3 to 16 % (shape None, 16 mm off the ridge centre)
+and its claim radius removes the blob before the roof fit can see it. In all 39 misses of a 200-look sample no roof was even
+tried. Now an ACCEPTED top face seen less than 20 % claims nothing: if the blob there fits a roof, the lying prism replaces
+it; if not, the face stays and the blob is dropped as before. Faces the geometry rejects (a hand around an object, a wrong
+size) claim as before; without that the first version put four held objects and one false lying into clean `motion`.
+
+| | lying seen as such, before -> after | xy p95 mm |
+|---|---|---|
+| `realsim_looks` still looks (600 lying), sim depth | 1.000 -> 1.000 | 3.5 -> 3.5 |
+| typical | 0.820 -> 1.000 | 15.0 -> 5.5 |
+| bad | 0.493 -> 0.578 | 15.8 -> 13.2 |
+| `motion` (237 lying), mild / typical / bad | 0.776 -> 0.776, 0.743 -> 0.759, 0.443 -> 0.468 | 5.4, 6.2 -> 6.0, 11.7 -> 11.2 |
+
+Called lying without being one: unchanged (0 on `realsim_looks` at every level; `motion` 0 / 1 / 0 -> 0 / 1 / 1; `dr_train` 0 / 0 / 1).
+All clean sets including `motion`: identical line by line. What limits `motion` under noise is a different thing: prisms the
+roof fit does not accept (one face seen, support) and prisms under an arm.
+
+**H13. The hand fit may move the camera 10 deg / 7 cm (was 6 deg / 5 cm).** The realsim workstream built the head calibration
+error of the recordings into the sim (B7's six-parameter solution: -7.4, -1.9, -0.4 deg about the optical axes, -4 cm along
+optical y). Tried here first by handing the calibration stages a head pose that is wrong by exactly that (40 `dr_train` frames):
+the hand fit finds the camera to 3.5 mm median / 4.2 max at the band, and was thrown away in 40 of 40 by its own `turn` guard
+(6 deg), leaving the nominal pose, 31 mm off. With the limits at 10 deg / 7 cm: believed 40 of 40, 3.5 / 4.2 mm; -9 deg and -5 cm:
+40 of 40, 3.7 / 5.7; the opposite sign (+7.4 deg, +4 cm): 40 of 40, 5.0 median / 17.0 max; -12 deg and -6 cm: rejected (39 of 40).
+The prior of the fit (3 deg / 2 cm) does not stop it from getting there. Rotation-only error (-2.2, -1.8, -1.4 deg), 3 deg, 2 cm:
+believed before and after, 3.6 to 4.4 mm. All clean sets including `motion`: identical; `--armless` believed 0 at clean, typical
+and bad depth. The limit exists to refuse a fit that walked off; the other checks (coverage, pixels on the model, rms) did not
+need it in any frame here.
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to
@@ -657,7 +833,7 @@ Every row of "Sim benchmarks" above reproduced to the digit (`dr_train`, held-ou
 
 ## Next
 
-1. First real depth drop: hand fit on real data, then `agree_within` (10–12 mm instead of 25) and the blend decision. Check
+1. First real depth drop: hand fit on real data (`agree_within` is 12 mm since H9; the blend is still open). Check
    first which of mild / typical / bad the black links resemble (`known` in the "arms:" log line is the share that returned).
 2. Why the image disagrees with the measured finger joints while they reopen (a tick of skew, or the sim's finger
    actuator lag showing in the render but not in `hand_q`): not investigated beyond the measurement above.

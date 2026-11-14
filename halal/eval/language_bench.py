@@ -2,6 +2,7 @@
 
     python -m halal.eval.language_bench --split dev --failures 3
     python -m halal.eval.language_bench --split test --file halal/eval/paraphrases_fresh.yaml
+    python -m halal.eval.language_bench --split test --file halal/eval/paraphrases_black.yaml    (a fourth colour, named literally)
 """
 from __future__ import annotations
 
@@ -37,7 +38,7 @@ def run(parser: str, split: str | None, threshold: float) -> tuple[dict[str, Tal
     failures: dict[str, list[tuple]] = defaultdict(list)
     for entry, text, mapping in paraphrases.cases(split=split):
         parsed = parse_instruction(text, parser)
-        predicted, truth = paraphrases.assignment(parsed.mapping), paraphrases.assignment(mapping)
+        predicted, truth = paraphrases.assignment(parsed.mapping, text), paraphrases.assignment(mapping, text)
         acted = predicted if parsed.confidence >= threshold else dict.fromkeys(predicted)
         tally = tallies[entry.category]
         tally.cases += 1

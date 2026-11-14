@@ -74,6 +74,9 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v14 | e061f54d6437 | 7e94c20 | +3.75 ± 0.66, 30/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.25** | PASS (through the image, 0 clips, 29.99 Hz, rt ≥ 192) | v13 + v12's release slots + a target whose plan would touch a neighbour waits, the last resort plans as if alone + detector deadline 5 s + one target's failure no longer fails the look; lost: the same stacked cube as v13 (pick order); soft sim 30/31: a cube slipped out in the carry and lay 3 cm in front of a bin where no plan reaches |
 | v15 | 455b3c06f0f1 | 7d017e4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 153) | v14 + main 0a9cc58 (orange / yellow boundary from the hue gap of the look, measured object size, lying prisms) + v12's pick order + most room for the fingers when no target is clear + `done` after 10 s of empty looks + lying prisms grasped as unknown objects; 87 of 87 objects, no empty pick; soft sim 31/31, all picks held at the first try |
 | v16 | ae811fa244d1 | f58d8a4 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 149) | v15 + main 99e1976: grasps keyed as motion keys them (`lying` passed through, strategy `cage_lying` = the unknown-shape hold for now); no change of behaviour intended: a repeat of v15's result, 87 of 87, no empty pick; soft sim 31/31, all picks held at the first try |
+| v17 | 2332657ddf0e | 3ebbf19 | +3.88 ± 0.78, 31/31 | 7 episodes: 25/25, stopped | – | – | PASS on the 15 episodes run | v16 + main a8d0b63 (`min_wall_height` 0.07, `cage_side` last candidate) + `Grasp.last_resort` kept out of the retry rotation; stopped for v18 (robot slot), contained in it |
+| v18 | b99fd5dd4a9f | e981865 | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 134 with four sims running) | v17 + main 4d93acb (perception hardening, bin row finder) + perception's layout is the only layout (no scene-file re-plan, no latch); known leg on sim `d`; soft sim 31/31, 0 empty picks |
+| v19 | ede4203ebfb1 | 6216ebb | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 115 at rtf 0.33–0.38) | v18 + main c56b420 (fail-fast reach, `rim_z`, landing box, stiff lying list, black / colourless detections, `agree_within` 12 mm, `reaches_bin` fix) + planner keeps a tried plan's reason + arm choice for last-resort-only arms + `release_rise` list + a log line for a target no arm reaches |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -514,3 +517,156 @@ Scratch check (real detector, one object's detections rewritten): "Put the orang
 right box." → {red/triangle: right}; reported lying: picked with `cage`, grasp asked for (None, None), release
 check run, right bin, nothing else touched; reported upright: `cage_apex` for ('triangle', yaw); reported as a
 cube: not touched. Under the three-colour sentence the lying prism goes last, to its colour's bin.
+
+### What the finals may vary, in the mock (14.11 afternoon, v16 tree unless stated)
+Organisers (15:07): colours, count and placement vary at random; cubes, prisms and cylinders; prisms stand or lie; 120 s;
+real `sort_fixed` is yellow → left, purple → center, orange → right. Scratch script `crowd.py`: objects placed at random
+in the object band (cubes and cylinders, the mock draws prisms as boxes), 6.5 cm apart at least, real colours, the real
+sentence unless stated. The fast mock runs ~10× real time and charges planning at wall time, which made a 5-object
+episode look 98 s long; every number below is from runs paced at real time (planning as fast as the Mac plans).
+
+| Case | Result | Clips |
+|---|---|---|
+| 6 objects, 4 layouts | 24/24, last release 73–99 s, done | 0 |
+| 7 objects, 4 layouts | 28/28, last release 81–118 s (two only just) | 0 |
+| 8 objects, 4 layouts, 4 runs at a time | 31/32, last release 109–114 s, time limit | 0 |
+| one colour only, 5 and 8 objects, each colour | 15/15 and 24/24 (8: last release 107–116 s) | 0 |
+| sentence names one colour / two colours, 6 / 7 objects | 4/4 and 5/5 sorted, the other 2 + 2 untouched | 0 |
+| "Put all (the) cylinders in / to the left box." | every cylinder left, cubes untouched | 0 |
+| "cylinders left, cubes right", "cubes left, cylinders center, prisms right" | 6/6, 6/6 | 0 |
+| "yellow cylinders left, purple cubes right", "the orange cube into the center box" | 4/4 + 2 untouched, 2/2 + 4 untouched | 0 |
+| an object in a colour nobody names: green, cyan, teal, pink, magenta, white, grey, black | not detected, untouched | 0 |
+| the same, brown (orange hue, dark) and lime (85°) | sorted as orange / as yellow: wrong bin (perception's hue basins; told the orchestrator) | 0 |
+
+Nothing went to a wrong bin or was moved without being asked for, except the two foreign colours.
+Time: sim v16 needs 11–12 s per object (5 objects: done at ~70 s including the 10 s `done` span); 8 objects is the
+ceiling at 120 s, and only with objects that hold at the first pick. In a crowd (neighbours closer than 8.5 cm) nearly
+every look finds every target blocked: each is planned with the obstacles, refused, then the least tried are planned as
+if alone. A refused plan costs 0.45–1.1 s on the Mac (the planner runs the whole IK chain for each heading before it
+gives up; a clear plan is 0.14–0.3 s): 6–8 s per look with 7 targets, 19–24 refusals per 8-object episode.
+Tried and not adopted: a memory of refusals (a target refused for a neighbour is not planned with obstacles again while
+no object within 15 cm of it came, went or moved, same number of tries, same hands): refusals 22–24 → 15–20 per episode,
+32/32 instead of 31/32, last release 108–118 s: inside the noise of four runs. With planning twice as slow both sort 5–6
+of 8. The lever is a cheaper refusal in the planner (reported). Patch kept outside the repo.
+Not measurable in the mock: a third object in one bin takes the first object's release slot again (two slots per bin);
+the mock has no stacking and the sim never spawns more than five objects.
+
+### `cage_side` and the retry order (v17)
+Main a8d0b63 (motion ec8dcf9): `motion.min_wall_height` 0.07 (release 10 mm higher; the policy's transit checks go
+through the planner and see the same wall, nothing in the policy assumed 60 mm) and `cage_side` as the last candidate
+for cube, cylinder and unknown shape. The policy starts a retry with the NEXT candidate (`_rotated`), so the plain merge
+would have retried a cylinder, an unknown shape or a soft-hand cube missed once in the open with `cage_side` first
+(motion's verdict: only when nothing else plans; soft hand not measured). v17: a strategy can be flagged
+`last_resort: true` in `motion.grasps` (`Grasp.last_resort`); the policy rotates the others and keeps those at the end.
+Order tried, stiff cylinder, tries 1–4: before `cage | side side cage | side cage side | cage side side`, now always
+`cage side side`; stiff cube: `cage pinch side side`, `pinch cage side side`, alternating.
+Mock, real planner, a cube and two cylinders 3.5–4 cm before the bins' near walls and one free cylinder: v16 tree 1/4
+(the three never get a plan, time limit), v17 tree 4/4, the three with `cage_side`, 0 clips. All suites on the v17
+tree: 36 cases as before, neighbours_e2e (same orders; "hand would touch" reaches the chooser; the logged finger room
+is now measured to the neighbour's outline, 30 mm less than before), behind_pair, lying_prism, harden, real colours,
+blind_spell: unchanged, 0 clips.
+
+### v16 on fresh seeds (14.11, 14:24–15:11 UTC, through the image, sim `a`, seeds 1008–1015)
+
+| Leg | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | "hand would touch" / as if alone |
+|---|---|---|---|---|---|---|---|---|---|
+| fixed | +4.12 ± 0.78 | 33/33 | done 8 | 0 | 30.0 | 185 | PASS | 0 | 8 / 0 |
+| known | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 179 | PASS | 1 (seed 1014, sorted on the retry) | 7 / 1 |
+| unseen | +7.25 ± 1.39 | 29/29 | done 8 | 0 | 30.0 | 174 | PASS | 0 | 7 / 1 |
+
+Proxy +22.25 of 22.25. No error line, no detector deadline; 10 same-bin pairs on the fixed leg, smallest gap 51 mm, all
+flat. With seeds 1000–1007: 178 of 178 objects for v16 on stock legs, so there is no rare failure to explain at this
+sample size; seeds 1016–1023 were dropped in favour of v18's legs. (In the eval log `t=` is wall time; `sim_s` in
+`eval.json` is the episode: 46–73 s, 11–12 s per object.)
+
+### Perception's layout is the only layout (v18)
+Found by the orchestrator in the real-look sim (boxes 6 cm farther than the scene file, v16, fixed seed 1004): the
+detector's layout was `hands` all episode; at t = 48.5 the one remaining target (a lying prism) had no plan, the look
+re-planned it with the scene file's layout, got a plan, and `use_file_layout` stayed set: every later release went to the
+file's slot (x 0.463, 6 cm short) and an object landed on the counter in front of its box. The fallback dated from
+when a perceived layout could be garbage; since the detector reports `scene` or `nominal` (= the file's bins) unless
+the hands fit, it only ever replaced a measured layout.
+v18: the look plans with `detector.layout()` and nothing else; no re-plan, no latch, and a view move without a safe way
+is replaced by "look from here", never by the file's layout.
+Mock (`far_bins.py`: world with the boxes 6 cm farther, detector layout `hands` + 6 cm, real planner, one colour
+refused whenever the planner holds the perceived layout, real-time pace):
+
+| Case | v17 tree | v18 tree |
+|---|---|---|
+| every target has a plan | 5/5, releases at x 0.493 / 0.503 | the same |
+| blue has no plan in the perceived layout | source turns to `scene`, both blue objects released at x 0.463 (near wall of the real boxes at 0.46) | blue stays on the counter, 3/3 others, releases at 0.493 / 0.503 only |
+| red has no plan | all releases at 0.463, a yellow cube on the counter in front of its box (x 0.459) | red stays, 3/3 others |
+| a view move finds no safe way | the same latch, the same yellow cube | 4/5 at the limit, no file layout |
+
+Cost: a measured layout that is grossly wrong (bins 10 cm closer and counter 6 cm higher, source `hands`) was saved by
+the fallback (3/3) and now loses the episode (0/3, `done` at 34 s: every detection lies within a perceived bin's
+clearance). Seen on the way, for motion: with the boxes 6 cm farther many plans fail on IK before one passes and a
+failing plan is slow; 5 objects need the whole 120 s in the mock, and the real-look log shows 8.8 s between a release
+and the next pick.
+Mock timing caveat: other agents' benches load the Mac (load 39 at times); the fast mock charges planning at wall time,
+so its episode lengths stretch under load (`robust` looked regressed until rerun alone).
+
+### v18 per leg (through the image, 14.11, 15:43–16:45 UTC; seeds 1000–1007; four sims ran, rtf 0.38 on the stock legs)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Hands | Empty picks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 143 | PASS | stiff | 0 |
+| known | d | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 134 | PASS | stiff | 0 |
+| unseen | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 142 | PASS | stiff | 0 |
+| fixed, soft-hand sim | a | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 177 | PASS | soft 16/16 | 0 |
+
+No error line; soft lift scores 0.315–0.566; 7 same-bin pairs on the soft leg, smallest gap 53 mm, all flat. Equal to
+v16 on every leg. v17's 15 episodes before it was stopped: 56/56.
+Void runs of this hour (my mistake, kept under `VOID*` and `runs/void/`): the frozen tree's `sims.sh` did not know
+sim tag `d`, so the "d" evaluator fell back to the default sim and two evaluators drove sim `a` at once: objects swapped
+mid-episode, 1/3 and 0/3, and sim `a`'s robot was left with its arms below the counter (clips from step 9 of the next
+episode) until the sim was restarted. Check `AALTO_INSTANCE` in `/proc/<sim_eval pid>/environ` after every start.
+
+### Main f6d3f15: the landing-box reason hid "hand would touch" (found by `neighbours_e2e.py`, fixed in v19)
+The planner loops over the near insets; the insets whose landing box crosses the near wall come last and their text
+("release would land on a bin wall") replaced the reason of a plan that had been tried. The chooser then counted a
+target with a neighbour as unplannable: it neither waits nor goes as if alone. Mock, real planner, two cubes 50 / 60 /
+55 mm apart and a free cylinder: 1 of 3 sorted (2 of 3 once), time limit, 0 "hand would touch" lines, 48 landing lines;
+at 70 mm the cube fell through to `pinch`. Fix (117aee7, in motion's planner): a plan that was tried keeps its reason.
+After it: 3/3 in all five cases, orders and finger rooms as v18. Motion now exports the reason prefixes
+(`halal.motion.TOUCHING`, `LANDING`); the policy imports `TOUCHING`.
+
+### Lying prisms and the arm (v19)
+Stiff hands have a measured grasp for a lying prism (motion: `ridge_opposed` 18/23, `ridge_pinch` 15/21, `cage_lying`
+5/19 and `last_resort`), but an arm can turn its fingers along the ridge only within ±45° of its natural heading. The
+chooser now puts an arm whose candidates are all last resorts after the other arm. First option by ridge direction
+(12 directions, 15° apart): centre bin 0 of 12 start with `cage_lying` (2 of 12 before), side bins 2 of 12 (only
+their own arm reaches). `lying_prism.py`: lying prisms are picked with `ridge_opposed`, release check run, right bin.
+`policy.last_kinds`, `release_check_after` and the 3-pick limit still list `lying`: the soft list is `cage_lying`
+only and no number says the release check can go.
+
+### Black and colourless detections (v19, main 2ac315e)
+Detector: `black` is a colour family; a colourless blob comes back with `color=None`, confidence < 0.05.
+Policy: nothing to change. Mock: colours-only sentence with a black cube between two targets 6 cm away and a black
+cylinder: 3/3 coloured sorted, black untouched (it blocks: two as-if-alone picks); "black left, yellow right": both
+black objects left; "orange right, everything else center": black to the centre; "all cylinders left": the black
+cylinder too (literal, by the orchestrator's decision). A `color=None` detection injected next to a target and in the
+open: `bin_for` was called with red / yellow / blue only, every plan call received all detections as obstacles, 3/3.
+
+### `release_rise` and the silent target (v19)
+Real-look sim, v18, boxes 6 cm farther: purple → centre objects never got a plan and nothing in the log said why:
+`reaches_bin` was false for both arms, so the target had no option and the per-option "no plan for ..." line never
+ran (silent since v16). v19 logs "no plan for <target>: no arm in use reaches the <bin> bin with a grasp";
+`motion.release_rise` is `[0.0, 0.03, 0.06, 0.09, 0.12]` (reach engineer) and main has the `reaches_bin` stale-inset
+fix. Mock at nominal: release points and pick durations unchanged.
+
+### v19 per leg (through the image, 14.11, 16:45–18:10 UTC; seeds 1000–1007; sim `a`, instance loaded: rtf 0.33–0.38)
+
+| Leg | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | "hand would touch" / as if alone | Layout source per look |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fixed | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 125 | PASS | 0 | 3 / 1 | scene 177 of 177 |
+| known | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 118 | PASS | 0 | 7 / 2 | scene 174 of 174 |
+| unseen | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 115 | PASS | 0 | 7 / 2 | scene 174 of 174 |
+
+Grasps used: cage 70, cage_apex 42; no `cage_side`, pinch or lying grasp, no landing-box line, no "no arm reaches"
+line, no error line: with `release_rise` on and perception's 12 mm `agree_within` the nominal sim behaves as v18.
+Mock note for the version after v19 (main with perception's H11: on `nominal` the layout is the bins as seen): in the
+mock world with the boxes really 6 cm farther the mock shows no arms, the source is `nominal`; the v19 tree then
+releases at the file's x 0.463 (a cube on the counter in front of its box), the newer tree's detector puts the row at
+x 0.56 and the releases at 0.508–0.518. `far_bins.py` must not shift the layout itself on such a tree (`SEEN=1`
+in `far_one.py` uses the detector's own layout).
