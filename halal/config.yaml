@@ -56,7 +56,7 @@ perception:
       independent_points: 50  # ... of which this many are worth as independent (model errors are systematic)
       max_rms: 0.004          # a hand fit with a larger point-to-surface residual is not trusted,
       max_spread: 0.005       # nor one that leaves more than this standard deviation on a point at the object band,
-      min_coverage: 0.5       # nor one with depth on less than this share of the visible model (it matched something else),
+      min_coverage: 0.7       # nor one with depth on less than this share of the visible model that returned any (it matched something else),
       min_inliers: 0.5        # nor one where less than this share of the depth pixels around the arms lies on the model,
       max_turn_deg: 6.0       # nor one that moves the camera further than a head calibration can be wrong
       max_shift: 0.05
@@ -66,12 +66,21 @@ perception:
     lane_half: 0.08           # half width of the strip around a bin's scene y in which its front wall is looked for
     heights: [0.020, 0.030, 0.040]   # above the counter: where a wall is probed
     depth_tolerance: 0.008
-    min_visible: 6            # lane cells that must be seen (wall or past it) to judge an x
-    min_fill: 0.7             # share of the seen lane a wall must fill (an object fills a third)
-    row_tolerance: 0.10       # a front wall this far from the row's median x is another wall (e.g. a far wall)
+    min_visible: 6            # cells of the three lanes together that must be seen (wall or past it) to judge an x for the row
+    min_fill: 0.7             # share of the seen cells a wall must fill (an object fills a third of a lane)
+    row_window: 0.03          # a bin's own front wall is looked for this close to the row's (a row turned 3 deg: 0.014) ...
+    min_lane_visible: 3       # ... and needs this many seen cells of its lane
     span_reach: 0.20          # how far to either side of the lane centre the wall ends are looked for
     span_step: 0.002
     width_range: [0.15, 0.30] # a wall seen end to end outside this is not one of our bins
+    rim:                      # how tall the walls are: the heights of the points over the bin footprints stop at the rim
+      pixel_step: 2
+      margin: 0.010           # around a footprint
+      band: [0.030, 0.120]    # above the counter: where a rim may be (sim 0.060, real boxes about 0.070)
+      step: 0.002             # height bins
+      surely_wall: 0.045      # up to this height every bin wall stands: the median count there is what "wall" looks like
+      wall_share: 0.5         # the rim is the highest height bin with this share of that count (a finger over a bin has far less)
+      min_points: 40          # points per height bin needed to speak of walls at all
   topface:                    # halal.perception.detectors.topface
     arm_attempts: 12          # still looks per episode at which the arm fit is tried before the detector stops asking
     still_speed: 0.1          # rad/s: above it the arms are moving and their image lags the joints, no hand fit
@@ -165,6 +174,37 @@ perception:
     occlusion_gap: 0.015      # depth this much nearer than the top face means something is in front of it
     max_blocked: 0.1          # top-face fraction that may be covered before the view is `hidden`
     sim_principal_point: [319.5, 239.5]   # the Isaac renderer ignores calibration.yaml's cx, cy (fitted on dr_train)
+    shifts:                   # --shift: where the table stands against the scene file (real: drops 1 and 2, realdata.md B7)
+      near: {bins_x: 0.05, counter_z: 0.020, pitch_deg: 1.5}   # bins further (m), counter higher (m), far edge up (deg)
+      real: {bins_x: 0.07, counter_z: 0.015, pitch_deg: 7.0}
+      far: {bins_x: 0.14, counter_z: 0.0, pitch_deg: 9.0}
+    shift:                    # how a frame is taken apart for the re-rendering (halal.eval.scene_shift)
+      arm_reach: 0.010        # depth this close to the arm model is arm: it stays where it is
+      arm_height: 0.068       # so does everything this far above the counter (bin walls end at 0.060)
+      below: 0.02             # table points lie no further than this under the counter surface
+      bin_margin: 0.004       # points this close to a bin footprint move with the bins
+    d435:                     # --depth: RealSense D435i model (halal.eval.depth_sensor); px are those of the aligned 640x480 image
+      depth_focal: 425.0      # px of the IR imagers at 848x480 (HFOV about 90 deg)
+      baseline: 0.050         # m between the IR imagers
+      shadow_baseline: 0.065  # m from the colour sensor to the right imager: what colour sees and that imager does not has no depth
+      disparity_steps: 32     # subpixel steps per px of disparity
+      correlated_share: 0.7   # share of the disparity noise that is smooth over the matching window (the rest is per pixel)
+      window_px: 4            # scale (sigma) of the matching window
+      edge_step: 0.015        # m between neighbouring pixels that makes a depth edge
+      hole_px: 10             # scale of the holes on reflecting surfaces
+      arm_reach: 0.006        # depth this close to the model of a dark arm link is that link
+      hand: &hand [hand_palm_link, thumb_0_link, thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link]
+      levels:                 # subpixel rms 0.05 / 0.08 / 0.2: Intel's best, well tuned, "recalibrate"; bias 0.2 px = 2 % at 2 m (datasheet limit)
+        mild:                 # black_parts: arm links (name endings) that are glossy black; black_fill: share of them that returns depth
+          {subpixel_rms: 0.05, disparity_bias: 0.0, edge_jitter_px: 0.5, fatten_px: 0, smooth_px: 3, shadow_margin_px: 1, fly_rate: 0.05,
+           edge_drop: 0.1, black_parts: [thumb_1_link, thumb_2_link, middle_0_link, middle_1_link, index_0_link, index_1_link],
+           black_fill: 0.8, dark_value: 0, dark_fill: 1.0, dark_noise_gain: 1.5, hole_share: 0.005}
+        typical:              # dark_value: image value (0..255) below which a pixel is dark; dark_fill: share of those that returns depth
+          {subpixel_rms: 0.08, disparity_bias: 0.05, edge_jitter_px: 1.0, fatten_px: 1, smooth_px: 5, shadow_margin_px: 2, fly_rate: 0.15,
+           edge_drop: 0.3, black_parts: *hand, black_fill: 0.4, dark_value: 0, dark_fill: 1.0, dark_noise_gain: 2.5, hole_share: 0.02}
+        bad:                  # nothing at all from the hands, a third from every other dark surface (the sim arm is black all over)
+          {subpixel_rms: 0.2, disparity_bias: 0.2, edge_jitter_px: 2.0, fatten_px: 2, smooth_px: 5, shadow_margin_px: 4, fly_rate: 0.4,
+           edge_drop: 0.5, black_parts: *hand, black_fill: 0.0, dark_value: 60, dark_fill: 0.3, dark_noise_gain: 4.0, hole_share: 0.06}
     camera_edges_mm: [5, 10, 15]
     gain_edges: [0.97, 1.03]
     key_light_edges: [0.87, 1.13]

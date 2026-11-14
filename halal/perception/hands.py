@@ -64,7 +64,8 @@ class HandFit:
     points: int             # depth pixels matched to the model at the final gate
     rms: float              # their point-to-surface distance, m
     spread: np.ndarray      # predicted standard deviation (xyz, m) this pose leaves on a point at `anchor`
-    coverage: float         # share of the visible model surface that has depth on it: low = it locked onto something else
+    coverage: float         # share of the visible model surface with depth at its pixels that has depth on it: low = it locked onto something else
+    known: float            # share of the visible model surface with depth on it or at its pixels: the rest returned nothing
     inliers: float          # share of the depth pixels around the arms that lie on the model: low = something else is there
 
 
@@ -85,7 +86,7 @@ class HandReference:
             fit = self._register(depth, camera, np.r_[np.zeros(3), start], surface, floor, anchor)
             if fit is not None and (best is None or fit.points > best.points):
                 best = fit
-            if best is None or best.coverage >= self.cfg["settled_coverage"]:
+            if best is None or best.coverage * best.known >= self.cfg["settled_coverage"]:
                 break
         return best
 
@@ -111,7 +112,19 @@ class HandReference:
         around = np.isfinite(tree.query(seen, distance_upper_bound=self.cfg["gates"][0])[0])
         on_model = np.isfinite(tree.query(seen[around], distance_upper_bound=self.cfg["gates"][-1])[0])
         covered = np.isfinite(cKDTree(seen[around][on_model]).query(model, distance_upper_bound=self.cfg["gates"][-1])[0])
-        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.mean()), float(on_model.mean()))
+        known = covered | self._returned(depth, moved, model)
+        return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.sum() / max(known.sum(), 1)), float(known.mean()),
+                       float(on_model.mean()))
+
+    @staticmethod
+    def _returned(depth: np.ndarray, camera: Camera, model: np.ndarray) -> np.ndarray:
+        """True for model points at whose pixel the depth image holds a value: something was seen there, the arm or not."""
+        uvz = camera.project(model)
+        u, v = np.round(uvz[:, 0]).astype(int), np.round(uvz[:, 1]).astype(int)
+        inside = (u >= 0) & (u < depth.shape[1]) & (v >= 0) & (v < depth.shape[0])
+        out = np.zeros(len(model), bool)
+        out[inside] = depth[v[inside], u[inside]] > 0
+        return out
 
     def _facing(self, model: np.ndarray, normals: np.ndarray, camera: Camera, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
         """The model points inside the image that face the camera and are the nearest in their image cell."""

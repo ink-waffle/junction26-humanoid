@@ -4,6 +4,8 @@
     python -m halal.eval.perception_bench --armless 10      rendered scenes without arms: the hand fit must not be believed
     --stale   every episode's detector first sees a frame of another episode (a stale first frame must not stick)
     --looks 2 every frame is shown twice, 0.2 s apart (a robot standing still)
+    --depth typical --depth-seed 0   the depth image as a RealSense D435i would deliver it (bench.d435: mild | typical | bad)
+    --shift real                     the table re-rendered where the real recordings have it (bench.shifts)
 """
 from __future__ import annotations
 
@@ -26,6 +28,8 @@ from aaltonomous.interface.calibration import Calibration
 from aaltonomous.scene.scene import Scene, shape_polygon
 
 from halal import config
+from halal.eval.depth_sensor import LEVELS, ArmPixels, degrade
+from halal.eval.scene_shift import Displacement, displaced
 from halal.perception import SHAPES, Detector, ObjectDetection, make_detector
 from halal.perception.color import turned
 
@@ -79,6 +83,7 @@ class Frame:
     camera: Pinhole
     dr: dict[str, Any]
     arms: bool = True           # False: the image shows no robot arm, whatever the joint angles say
+    move: Displacement | None = None    # where the table stands against the scene file, when the frame was re-rendered
 
 
 def sim_camera(nominal: Pinhole, camera_dr: Mapping[str, Any], cfg: Mapping[str, Any]) -> Pinhole:
@@ -202,6 +207,40 @@ def repainted(frame: Frame, scene: Scene, turns: Mapping[str, float]) -> Frame:
 def rotated(frame: Frame, degrees: float) -> Frame:
     """The frame with the hue of the whole image turned: a colour cast the counter's white balance does not remove."""
     return replace(frame, obs={**frame.obs, "head_rgb": turned(frame.obs["head_rgb"], degrees)})
+
+
+def shifted(frame: Frame, scene: Scene, move: Displacement, arms: ArmPixels, cfg: Mapping[str, float]) -> Frame:
+    """The frame with table, objects and bins displaced against the robot, ground truth moved along."""
+    rgb, depth = displaced(frame.obs, frame.camera, scene, move, arms, cfg)
+    truths = [replace(t, top=move.moved(t.top[None])[0]) for t in frame.truths]
+    ignored = [move.moved(np.r_[xy, scene.counter_z][None])[0, :2] for xy in frame.ignored]
+    return replace(frame, obs={**frame.obs, "head_rgb": rgb, "head_depth": depth}, truths=truths, ignored=ignored, move=move)
+
+
+def dark_pixels(frame: Frame, arms: ArmPixels, c: Mapping[str, Any]) -> tuple[np.ndarray, np.ndarray]:
+    """Pixels that return little to an IR stereo camera: the black arm links by FK, and whatever is dark in the image."""
+    obs = frame.obs
+    parts = c["black_parts"] if frame.arms else []
+    black = arms.mask(obs["head_depth"], frame.camera, obs["arm_q"], obs["hand_q"], parts, c["arm_reach"])
+    return black, obs["head_rgb"].max(axis=2) < c["dark_value"]
+
+
+def sensed(frame: Frame, arms: ArmPixels, cfg: Mapping[str, Any], level: str, seed: int) -> Frame:
+    """The frame with its depth image as a D435i would deliver it; the noise is drawn from the frame's seed, tick and `seed`."""
+    rng = np.random.default_rng([seed, frame.seed, frame.tick])
+    black, dark = dark_pixels(frame, arms, {**cfg, **cfg["levels"][level]})
+    depth = degrade(frame.obs["head_depth"], black, dark, float(frame.camera.K[0, 0]), cfg, level, rng)
+    return replace(frame, obs={**frame.obs, "head_depth": depth})
+
+
+def conditioned(frames: Sequence[Frame], scene: Scene, cfg: Mapping[str, Any], shift: str | None, depth: str | None,
+                seed: int) -> list[Frame]:
+    """The frames with the table displaced (`shift`) and then seen through the depth sensor model (`depth`), as asked."""
+    arms = ArmPixels()
+    if shift:
+        move = Displacement.from_config(scene, cfg["shifts"][shift])
+        frames = [shifted(frame, scene, move, arms, cfg["shift"]) for frame in frames]
+    return [sensed(frame, arms, cfg["d435"], depth, seed) for frame in frames] if depth else list(frames)
 
 
 def in_split(seed: int, split: str, heldout_every: int) -> bool:
@@ -442,6 +481,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stale", action="store_true", help="show each episode's detector a frame of another episode first")
     ap.add_argument("--repaint", action="store_true", help="turn the objects' hues to the real foam palette (bench.repaint_deg)")
     ap.add_argument("--rotate", type=float, default=0.0, metavar="DEG", help="then turn the hue of the whole image by this much")
+    ap.add_argument("--depth", choices=LEVELS, help="deliver the depth image as a RealSense D435i would, at this severity")
+    ap.add_argument("--depth-seed", type=int, default=0)
+    ap.add_argument("--shift", choices=sorted(config.load()["perception"]["bench"]["shifts"]), help="re-render the table displaced")
     ap.add_argument("--out", type=Path, default=REPO / "runs" / "perception_bench")
     args = ap.parse_args(argv)
 
@@ -454,10 +496,12 @@ def main(argv: list[str] | None = None) -> int:
         if in_split(int(p.stem.split("_")[1]), args.split, cfg["heldout_every"])]
     frames = [repainted(frame, scene, cfg["repaint_deg"]) for frame in frames] if args.repaint else frames
     frames = [rotated(frame, args.rotate) for frame in frames] if args.rotate else frames
+    frames = conditioned(frames, scene, cfg, args.shift, args.depth, args.depth_seed)
     passed = run(args.detector, frames, nominal, cfg["match_radius"], args.looks, args.stale)
     result = report(passed, cfg)
     print(render(f"{args.detector} on {label} [{args.split}]", result))
     args.out.mkdir(parents=True, exist_ok=True)
+    label = "_".join(filter(None, [label, args.shift, args.depth]))
     (args.out / f"{args.detector}_{label}_{args.split}.json").write_text(json.dumps({**result, "rows": passed.rows}, indent=1))
     return 0
 

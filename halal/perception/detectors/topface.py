@@ -115,7 +115,8 @@ class TopFaceDetector:
         """Counter height and bins: the scene file's when the camera is anchored to it, as seen when the hands fixed it."""
         if self.pose.source != "hands":
             return SceneLayout(self.scene.counter_z, scene_layout(self.scene).bins, self.pose.source)
-        return SceneLayout(counter.z_at(self.band_centre), self.bins.find(depth, camera, counter), "hands")
+        bins = self.bins.find(depth, camera, counter)
+        return SceneLayout(counter.z_at(self.band_centre), bins, "hands", self.bins.rim_z(depth, camera, counter, bins))
 
     def _on_counter(self, cloud: np.ndarray) -> np.ndarray:
         """Pixels whose point lies inside the workspace and outside every bin footprint."""
