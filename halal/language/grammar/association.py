@@ -64,7 +64,7 @@ def _cued(mentions: list[Mention], tokens: list[Token]) -> list[bool]:
 def _extensions(sequence: _Sequence, partial: Reading, start: int) -> Iterator[tuple[int, Reading]]:
     """Ways to consume the mention at `start`: leave it unpaired, attach it to the last bin, or open a unit."""
     mention = sequence.mentions[start]
-    skipped = 0.0 if mention.soft else tuning.REDUNDANT
+    skipped = 0.0 if mention.soft else tuning.SKIPPED_PAIR if _opens_plain_pair(sequence, start) else tuning.REDUNDANT
     yield start + 1, replace(partial, unpaired=partial.unpaired + (start,), cost=partial.cost + skipped)
     previous_bin = _previous_bin(partial)
     if isinstance(mention, ObjectMention) and mention.add and previous_bin:
@@ -77,6 +77,36 @@ def _extensions(sequence: _Sequence, partial: Reading, start: int) -> Iterator[t
         unit = _unit(sequence, start, end, previous_bin)
         if unit:
             yield end, _with_unit(partial, replace(unit, cost=unit.cost + boundary))
+        for inner, outer in _nested_units(sequence, start, end, previous_bin):
+            yield end, _with_unit(_with_unit(partial, inner), replace(outer, cost=outer.cost + boundary))
+
+
+def _opens_plain_pair(sequence: _Sequence, start: int) -> bool:
+    """Mentions start, start + 1 are a self-contained 'red in the left bin', not items of longer lists."""
+    mentions, gaps = sequence.mentions, sequence.gaps
+    if start + 1 >= len(mentions) or _kind_changes(mentions[start:start + 2]) != 1 or mentions[start + 1].soft:
+        return False
+    listed_before = start > 0 and _kind_changes(mentions[start - 1:start + 1]) == 0 and gaps[start - 1].list_like
+    listed_after = start + 2 < len(mentions) and _kind_changes(mentions[start + 1:start + 3]) == 0 \
+        and gaps[start + 1].list_like
+    plain = _transition_charge(gaps[start], isinstance(mentions[start], BinMention))[0] == 0
+    return plain and not listed_before and not listed_after
+
+
+def _nested_units(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -> list[tuple[Unit, Unit]]:
+    """'what is left [after red goes left] goes right': inner objects take the first bin, outer ones the second."""
+    mentions = sequence.mentions[start:end]
+    kinds = [isinstance(mention, ObjectMention) for mention in mentions]
+    turn = start + sum(kinds) - 1
+    breaks = [i for i in range(start, turn) if not sequence.gaps[i].list_like]
+    if kinds != sorted(kinds, reverse=True) or end - turn != 3 or len(breaks) != 1 or sequence.gaps[turn + 1].list_like:
+        return []
+    inner = _unit(sequence, breaks[0] + 1, turn + 2, previous_bin)
+    outer_bin = _position(sequence.mentions[turn + 2], previous_bin)
+    if inner is None or len(inner.bins) != 1 or outer_bin in (None, *inner.bins) or sequence.mentions[turn + 2].negated:
+        return []
+    note = Issue("one clause is nested inside another", tuning.F_NESTED)
+    return [(inner, Unit(tuple(range(start, breaks[0] + 1)), (outer_bin,), cost=tuning.NESTED, issues=(note,)))]
 
 
 def _with_unit(partial: Reading, unit: Unit) -> Reading:
@@ -114,6 +144,8 @@ def _unit(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -
     forbidden = _unique(p for p, mention in zip(positions, bins) if mention.negated)
     if None in positions or (len(allowed) > 1 and (forbidden or len(allowed) != len(objects))):
         return None
+    if any(sequence.gaps[i].has(Tag.BREAK) for i in range(start, end - 1) if _kind_changes(members[i - start:i - start + 2]) == 0):
+        return None
     cost, issues = _unit_cost(sequence, start, end, len(allowed) > 1)
     return Unit(objects, allowed, forbidden, cost, issues)
 
@@ -145,13 +177,15 @@ def _unit_cost(sequence: _Sequence, start: int, end: int, distributes: bool) -> 
 def _run_charge(sequence: _Sequence, index: int) -> tuple[float, Issue | None]:
     """A list should hold only commas and conjunctions; a contrasted bin ('left, not right') is exempt."""
     gap = sequence.gaps[index]
-    pair = sequence.mentions[index:index + 2]
-    if gap.list_like or any(isinstance(m, BinMention) and m.negated for m in pair):
+    first, second = sequence.mentions[index:index + 2]
+    restated = isinstance(first, BinMention) and (first.negated or second.negated or first.position == second.position)
+    if gap.list_like or restated:
         return 0.0, None
-    if gap.has(Tag.BREAK, Tag.ARROW, Tag.CLAUSE):
-        return tuning.RUN_BROKEN, Issue("a list runs across a sentence break or colon", tuning.F_RUN_BROKEN)
-    mixed = tuning.RUN_UNKNOWN if gap.tags.isdisjoint({Tag.LINK, Tag.LEAVE, Tag.NOT, Tag.VOID}) else tuning.RUN_MIXED
-    return mixed, Issue("a list is interrupted by other words", tuning.F_RUN_MIXED)
+    if gap.has(Tag.ARROW, Tag.CLAUSE):
+        return tuning.RUN_BROKEN, Issue("a list runs across an arrow or 'but'", tuning.F_RUN_BROKEN)
+    if gap.tags.isdisjoint({Tag.LINK, Tag.LEAVE, Tag.NOT, Tag.VOID}):
+        return tuning.RUN_UNKNOWN, Issue("a list contains unknown words", tuning.F_RUN_UNKNOWN)
+    return tuning.RUN_MIXED, Issue("a list is interrupted by other words", tuning.F_RUN_MIXED)
 
 
 def _transition_charge(gap: Gap, bin_first: bool) -> tuple[float, Issue | None]:

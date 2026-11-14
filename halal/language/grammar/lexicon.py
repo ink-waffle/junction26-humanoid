@@ -25,6 +25,7 @@ class Tag(Enum):
     RESPECTIVELY = auto()
     PRONOUN = auto()
     ADD = auto()             # "too", "as well", "same for"
+    UNIVERSAL = auto()       # "regardless of colour", "whatever its shape"
     SAME = auto()            # "the same bin"
     ORDINAL = auto()         # value: rank counted along the row of bins
     BREAK = auto()           # sentence boundary
@@ -56,6 +57,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
     **_entries(Tag.LINK, {
         "directional": "to into in inside onto toward towards within",
         "copula": "is are was were be been being am",
+        "modal": "should must shall will would can could may might need needs have has had do does did",
         "": (
             "on at for with by from as than about through via under over beside across out up down off back away "
             "go goes going gone belong belongs belonging put puts putting place places placed placing move moves "
@@ -65,8 +67,8 @@ WORDS: dict[str, tuple[Tag, str]] = {
             "grabs take takes taken taking get gets getting receive receives hold holds contain contains use uses "
             "used using fill fills filled load insert inserts assign assigned assigns end ends land lands live "
             "lives sit sits arrive deliver delivers delivered relocate relocated push slide dump dumps dumped "
-            "want wants wanted need needs needed make makes sure ensure see sees find finds found look looks "
-            "do does did done should must shall will would can could may might have has had let lets like "
+            "want wants wanted needed make makes sure ensure see sees find finds found look looks "
+            "done let lets like starting beginning counting reading numbered ordered "
             "you i we me us if when whenever where wherever so such how touch touching handle lift "
             "start begin finish complete arrange organise organize separate distribute allocate group groups "
             "share shares house houses accept accepts give gives given reserve reserved meant intended "
@@ -169,6 +171,15 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("stays", "put"): (Tag.LEAVE, "backward"),
     ("three", "sided"): (Tag.SHAPE, "triangle"),
     ("point", "of", "view"): (Tag.FILL, ""),
+    ("regardless", "of"): (Tag.UNIVERSAL, ""),
+    ("irrespective", "of"): (Tag.UNIVERSAL, ""),
+    ("no", "matter"): (Tag.UNIVERSAL, ""),
+    ("whatever", "its"): (Tag.UNIVERSAL, ""),
+    ("whatever", "their"): (Tag.UNIVERSAL, ""),
+    ("whatever", "the"): (Tag.UNIVERSAL, ""),
+    **{(preposition, quantifier, noun): (Tag.UNIVERSAL, "")
+       for preposition in ("of", "in") for quantifier in ("any", "every", "all", "whatever", "whichever")
+       for noun in ("colour", "colours", "color", "colors", "shape", "shapes")},
     ("make", "sure"): (Tag.LINK, ""),
 }
 MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
@@ -177,7 +188,7 @@ MAX_PHRASE = max(len(phrase) for phrase in PHRASES)
 FUZZY_TARGETS = ("yellow", "blue", "cube", "cubes", "cylinder", "cylinders", "triangle", "triangles", "triangular",
                  "left", "right", "center", "centre", "middle", "leftmost", "rightmost")
 NOT_TYPOS = frozenset(
-    "lift loft heft deft weft cleft lefty lefts lent lest glue clue blur flue blued bluer bleu cure cute lube "
+    "lift loft heft deft weft cleft lefty lefts lent lest glue clue blur flue blued bluer cure cute lube "
     "rube cubs cubed curb night light might sight tight fight eight bright fright wright rights righty bight "
     "fellow mellow bellow yellowy enter centers centres centred centered canter renter meddle muddle riddle "
     "fiddle middles strangle triangled tubes cures".split())
@@ -187,6 +198,10 @@ RELATIVE_PRONOUNS = frozenset({"that", "which", "who"})
 WH_WORDS = frozenset({"what", "whatever", "that", "which", "whichever"})
 NOUN_FILLERS = frozenset({"the", "of", "a", "an", "coloured", "colored", "shaped", "sized"})
 SURFACES = frozenset({"table", "counter", "desk", "place", "workspace", "mat", "surface", "tabletop"})
+ROW_STARTERS = frozenset("start starting begin beginning counting going reading moving numbered ordered".split())
+ROW_JOINERS = frozenset({"to", "through", "till", "until", "→", ":"})
+COLOUR_EMOJI = {"🔴": "red", "🟥": "red", "❤": "red", "🟡": "yellow", "🟨": "yellow", "💛": "yellow",
+                "🔵": "blue", "🟦": "blue", "💙": "blue"}
 STAY_WORDS = frozenset({"alone", "untouched", "behind", "out", "unsorted", "unmoved", "there", "where", "as"})
 INTENSIFIED = frozenset({"away", "now", "here", "after", "before"})
 PRONOUN_QUANTIFIERS = frozenset({"everything", "anything", "all", "everyone", "whatever"})

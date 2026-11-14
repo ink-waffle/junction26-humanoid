@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from typing import Iterator
 
 from halal.language.grammar import tuning
-from halal.language.grammar.lexicon import (BINS, FUZZY_TARGETS, INTENSIFIED, MAX_PHRASE, MODAL_FOLLOWERS, NOT_TYPOS,
-                                            NUMBERS, PHRASES, RELATIVE_PRONOUNS, STAY_WORDS, SURFACES, WH_WORDS,
-                                            WORDS, Tag)
+from halal.language.grammar.lexicon import (BINS, COLOUR_EMOJI, FUZZY_TARGETS, INTENSIFIED, MAX_PHRASE,
+                                            MODAL_FOLLOWERS, NOT_TYPOS, NUMBERS, PHRASES, RELATIVE_PRONOUNS,
+                                            ROW_JOINERS, ROW_STARTERS, STAY_WORDS, SURFACES, WH_WORDS, WORDS, Tag)
 
-_QUOTES = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"'})
+_QUOTES = str.maketrans({"’": "'", "‘": "'", "`": "'", "“": '"', "”": '"',
+                         **{emoji: f" {colour} " for emoji, colour in COLOUR_EMOJI.items()}})
 _BULLET = re.compile(r"(?m)^\s*[-*•·]+\s+")
-_ARROW = re.compile(r"<-+|-+>|=+>|[→⇒➔➜➝⟶➡↦←⇐»>]")
+_ARROW = re.compile(r"<-+|-+>|=+>|[→⇒➔➜➝⟶➡↦←⇐⬅»>]")
 _DASH = re.compile(r"[–—]|\s-+\s")
 _CONTRACTIONS = (
     (re.compile(r"\bcan'?t\b|\bcannot\b"), "can not"),
@@ -55,7 +56,7 @@ def tag(text: str) -> list[Token]:
 
 
 def normalise(text: str) -> str:
-    """Lower-case text with unified quotes, arrows, dashes and expanded contractions."""
+    """Lower-case text with unified quotes, arrows, dashes, colour emoji as words and expanded contractions."""
     text = unicodedata.normalize("NFKC", text).lower().translate(_QUOTES)
     text = _DASH.sub(" : ", _ARROW.sub(" → ", _BULLET.sub(" ", text)))
     for pattern, replacement in _CONTRACTIONS:
@@ -153,22 +154,55 @@ def _retag(token: Token, new_tag: Tag, value: str = "") -> None:
 
 
 def _expand_rows(tokens: list[Token]) -> list[Token]:
-    """Rewrite 'left to right' / 'right to left' as the three bins in that order."""
+    """Rewrite 'left to right', 'from the leftmost bin to the rightmost', 'starting from the right' as the bin row."""
     out: list[Token] = []
     position = 0
     while position < len(tokens):
-        far = position + 2 + (_at(tokens, position + 2).text == "the")
-        ends = (tokens[position].value, _at(tokens, far).value)
-        both_bins = tokens[position].tag is Tag.BIN and _at(tokens, far).tag is Tag.BIN
-        if both_bins and _at(tokens, position + 1).text == "to" and ends in (("left", "right"), ("right", "left")):
-            row = BINS if ends[0] == "left" else BINS[::-1]
-            out.append(Token("in row order", Tag.RESPECTIVELY))
-            out.extend(Token(name, Tag.BIN, name, soft=True) for name in row)
-            position = far + 1
+        side, end = _row_at(tokens, position)
+        if side:
+            out.append(Token("in row order", Tag.RESPECTIVELY, side))
+            out.extend(Token(name, Tag.BIN, name, soft=True) for name in (BINS if side == "left" else BINS[::-1]))
+            position = end
         else:
             out.append(tokens[position])
             position += 1
     return out
+
+
+def _row_at(tokens: list[Token], position: int) -> tuple[str, int]:
+    """(side the row starts from, index after the phrase) for a row phrase at `position`, else ('', position)."""
+    first = position
+    if tokens[position].text in ROW_STARTERS:
+        first = position + 1
+        while _at(tokens, first).text in ("from", "at", "the", "your"):
+            first += 1
+    side, far = _at(tokens, first), _row_end(tokens, first)
+    stated_alone = first > position + 1 and _is_side(side)
+    if far is None and not stated_alone:
+        return "", position
+    return side.value, _skip(tokens, (first if far is None else far) + 1, (Tag.CONTAINER,))
+
+
+def _is_side(token: Token) -> bool:
+    return token.tag is Tag.BIN and token.value != "center"
+
+
+def _row_end(tokens: list[Token], first: int) -> int | None:
+    """Index of the opposite side closing 'left [bin] to [the] [center to the] right', None when there is none."""
+    if not _is_side(_at(tokens, first)):
+        return None
+    index = _skip(tokens, first + 1, (Tag.CONTAINER,))
+    for _ in range(2):
+        if _at(tokens, index).text not in ROW_JOINERS:
+            return None
+        index = _skip(tokens, index + 1, (Tag.FILL,))
+        stop = _at(tokens, index)
+        if _is_side(stop):
+            return index if stop.value != tokens[first].value else None
+        if stop.tag is not Tag.BIN:
+            return None
+        index = _skip(tokens, index + 1, (Tag.CONTAINER,))
+    return None
 
 
 def _resolve_left(tokens: list[Token]) -> list[Token]:
@@ -229,12 +263,14 @@ def _is_intensifier(tokens: list[Token], index: int) -> bool:
 
 
 def _resolve_between(tokens: list[Token]) -> list[Token]:
-    """'between the left and right bins' and a bare 'in between' both name the center bin."""
+    """'between the left and right bins', 'in between' and 'between them' all name the center bin."""
     for index, token in enumerate(tokens):
         if token.text != "between":
             continue
         ends = [t for t in tokens[index + 1:index + 7] if t.tag is Tag.BIN][:2]
-        if {t.value for t in ends} == {"left", "right"} or (not ends and _at(tokens, index - 1).text == "in"):
+        after = _at(tokens, _skip(tokens, index + 1, (Tag.FILL,)))
+        bare = not ends and (_at(tokens, index - 1).text == "in" or after.tag in (Tag.PRONOUN, Tag.REST, Tag.OBJECT))
+        if {t.value for t in ends} == {"left", "right"} or bare:
             for end in ends:
                 _retag(end, Tag.FILL)
             _retag(token, Tag.BIN, "center")
@@ -242,17 +278,18 @@ def _resolve_between(tokens: list[Token]) -> list[Token]:
 
 
 def _resolve_ordinals(tokens: list[Token]) -> list[Token]:
-    """Turn 'second bin from the right', 'the first box' and an elliptic 'the third' into bin positions."""
-    sides: list[str] = []
+    """Turn 'second bin from the right', 'the first box' and an elliptic 'the third one' into bin positions."""
+    declared = _declared_side(tokens)
+    sides = [declared] if declared else []
     elliptic: list[int] = []
     for index, token in enumerate(tokens):
         if token.tag is not Tag.ORDINAL:
             continue
         noun_end = _skip(tokens, index + 1, (Tag.CONTAINER, Tag.OBJECT))
-        counted_from = _counting_side(tokens, noun_end)
-        if counted_from or any(t.tag is Tag.CONTAINER for t in tokens[index + 1:noun_end]):
-            sides.append(counted_from)
-            _set_ordinal(token, counted_from)
+        attached = _counting_side(tokens, noun_end)
+        if attached or any(t.tag is Tag.CONTAINER for t in tokens[index + 1:noun_end]):
+            sides.append(attached)
+            _set_ordinal(token, attached or declared)
         else:
             elliptic.append(index)
     for index in elliptic:
@@ -263,6 +300,11 @@ def _resolve_ordinals(tokens: list[Token]) -> list[Token]:
         else:
             _retag(tokens[index], Tag.FILL)
     return tokens
+
+
+def _declared_side(tokens: list[Token]) -> str:
+    """Side the row is counted from when the text says so: 'numbered from the right', 'left to right'."""
+    return next((token.value for token in tokens if token.tag is Tag.RESPECTIVELY and token.value), "")
 
 
 def _counting_side(tokens: list[Token], index: int) -> str:
@@ -300,8 +342,8 @@ def _resolve_numbered(tokens: list[Token]) -> list[Token]:
         if number.text in NUMBERS and _at(tokens, number_index + 1).tag not in (Tag.COLOUR, Tag.SHAPE, Tag.OBJECT):
             for label in tokens[index + 1:number_index]:
                 _retag(label, Tag.FILL)
-            _retag(number, Tag.BIN, BINS[NUMBERS[number.text] - 1])
-            number.issue = Issue(f"bin {number.text} counted from the left", tuning.ORDINAL_ASSUMED)
+            number.value = str(NUMBERS[number.text])
+            _set_ordinal(number, _declared_side(tokens))
     return tokens
 
 
@@ -396,6 +438,15 @@ def _modifies_noun(before: Token) -> bool:
     return before.value == "copula" or before.tag in (Tag.ALL, Tag.REST, Tag.OBJECT, Tag.SHAPE)
 
 
+def _resolve_unless(tokens: list[Token]) -> list[Token]:
+    """'unless it is red' describes the objects that are not red; other uses of 'unless' stay exceptions."""
+    for index, token in enumerate(tokens):
+        subject_end = _skip(tokens, index + 1, (Tag.FILL, Tag.OBJECT, Tag.ALL))
+        if token.text == "unless" and subject_end > index + 1 and _describes(tokens, subject_end):
+            _retag(token, Tag.NOT, "constituent")
+    return tokens
+
+
 def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
     """'my left' is the speaker's side and may be mirrored for the robot."""
     for index, token in enumerate(tokens):
@@ -406,4 +457,4 @@ def _flag_viewpoint(tokens: list[Token]) -> list[Token]:
 
 _CONTEXT_RULES = (_expand_rows, _resolve_left, _resolve_right, _resolve_between, _resolve_ordinals,
                   _resolve_numbered, _resolve_relative, _resolve_can, _resolve_blocks, _resolve_but,
-                  _resolve_pronouns, _resolve_not, _flag_viewpoint)
+                  _resolve_pronouns, _resolve_not, _resolve_unless, _flag_viewpoint)
