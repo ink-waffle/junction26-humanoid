@@ -274,7 +274,7 @@ motion:
   release_stagger_s: 0.25     # at release one finger starts opening this long after the thumb and the other finger (0 = together)
   candidates:                 # strategy names per hand class and detected shape, best first; `unknown` = shape not classified, `lying` = prism on a side
     stiff: {cube: [cage, pinch, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, ridge_pinch, cage_lying]}
-    soft: {cube: [cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, cage_lying]}   # the pinches have no soft closure
+    soft: {cube: [cage_deep, cage, cage_side], cylinder: [cage, cage_side], triangle: [cage_apex, cage], unknown: [cage, cage_side], lying: [ridge_opposed, cage_lying]}   # the pinches have no soft closure
   # Per strategy: headings_deg (finger heading minus object yaw, per shape), inward_headings_deg (fixed finger headings
   # in the pelvis frame, positive = turned inward, tried in this order), point_in_palm, preshape / closed /
   # release (LEFT order), height_frac, shift_along_fingers, squeeze_axis, squeeze (rad, or per shape with `unknown`),
@@ -289,6 +289,9 @@ motion:
       soft:                   # hand="soft" (kp ~1.5): the fingers close too (tips 47 mm/rad), ~7.5 N on every shape by the static model
         squeeze_axis: [0.0, 1.0, -1.15, -0.5, 0.0, -0.5, 0.0]
         carry_acc: 4.0        # rad/s^2 while the object is held (lift, carry); the planner's default is 8
+    cage_deep:                # cube on a soft hand: 0.45 holds 55/56 where 0.30 holds 65/75 (it slides down out of the hand at lift start)
+      base: cage
+      squeeze: {cube: 0.45}
     cage_apex:                # triangle with a known yaw: fingers along the nearest vertex, which then nests between the fingertips
       base: cage
       headings_deg: {triangle: [0, 120, 240]}

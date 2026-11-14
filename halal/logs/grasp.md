@@ -661,3 +661,24 @@ nothing without the swing holds on the soft hand (0/10 here, 0/14 and 4/16 for t
 
 Verdict: `candidates.soft.lying: [ridge_opposed, cage_lying]` with the soft squeeze at 0.60. One grasp serves both
 cases: 11/12 when the thumb follows, 9/16 when it stalls at −0.26.
+
+## Sweeps 25, 22, 20c (soft-hand sim): cube depth, a level thumb, position tolerance, the low sequence
+
+| cell | cube | cylinder | triangle |
+|---|---|---|---|
+| s25 (grippy-light corner): cube at 0.45 | 24/24, slip 8 mm | | |
+| s25: cube at 0.30 (the candidate) | 11/12, slip 11 mm | | |
+| s25: level thumb (closed thumb_1 −0.18, thumb_2 1.49; cube 0.26 / cylinder 0.40 / triangle 0.80) | 8/12 + 11/12 | 12/12 | 12/12 |
+| s22: soft candidates with x or y error ±10 mm or 15 mm in a random direction | 17/20 | 18/20 | 20/20 |
+| s22: cube at 0.45, exact | 12/12, slip 8 mm | | |
+| s20c (hard DR): soft candidates, organiser sequence | 9/12 | 12/12 | 12/12 |
+| s20c: the same under the low sequence (lift 0.08) | 12/12 | 11/12 | 11/12 |
+
+- Cube on the soft hand over all soft sweeps: 0.30 holds 65/75, 0.45 holds 55/56 (sweep 17 19/20, here 36/36) with
+  a third less slip. All 0.30 losses are the slide out of the hand at lift start or in the carry.
+- The level thumb does not help the cube (19/24) and is dropped.
+- Position errors of 10–15 mm cost the soft candidates nothing visible (55/60 against 59/66 exact in sweeps 12–20c).
+- The low sequence is no worse on the soft hand (34/36 against 33/36); it stays off (rim clearance on the real robot).
+
+Verdict: `cage_deep` (cube 0.45) is the FIRST soft cube candidate, `cage` (0.30) the second. Not measured: 0.45 with a
+position error, and the soft 0.45 closure on a stiff hand (the soft 0.30 closure held 12/12 there, sweep 14).
