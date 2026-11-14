@@ -627,6 +627,29 @@ the 8 episodes have a still first frame); once the arm pose is kept it holds to 
 more than 3 cm off, and the camera part stays 2.0 / 2.7 (typical). The "phantoms" under the shift (8 looks of seed 2201) are a
 yellow cube that leaned on a bin wall in the recording and stands on the counter in the re-rendered scene: a bench artefact.
 
+**H6. The arm pose accumulates over looks** (`topface.arm_fits`, `SelfCalibration.consensus`). The first believed hand fit used
+to fix the camera for the episode. Now believed fits are gathered at up to 5 still looks and the one nearest to all others at
+the object band is used (with one or two fits: the first). Why: at bad depth 3 % of single fits are over 10 mm and pass every
+check. The same frame under six depth seeds (45 dev frames, `--shift real`), band error median / p95 / max mm: single look
+typical 3.7 / 4.6 / 6.4, bad 4.3 / 8.1 / 16.8 (8 of 270 over 10 mm); nearest-to-all of three looks 3.7 / 4.4 / 4.4, 4.2 / 8.2 / 12.5;
+of five 3.7 / 4.1 / 4.4, 4.2 / 8.5 / 11.0. Two of 45 frames stay over 10 mm at bad: there most seeds are off (seeds 2010, 2074),
+so it is the frame, not the noise. `motion --still --shift real`: clean and typical unchanged within 0.1 mm, bad camera part
+5.5 / 6.6 -> 5.0 / 6.4. All clean sets including `motion`: identical. Cost: up to four more hand fits per episode (30 ms each,
+200 ms when every restart is tried).
+Tried and dropped: left arm and right arm fitted separately as a cross-check. At `ARM_HOME` the right arm shows 211 model
+points (300 are needed for a fit), so there is nothing to compare.
+
+**H7. Objects of no colour family are reported, with `color` None.** A photo of the venue table shows black cubes, cylinders
+and prisms next to the foam. `perception_bench --blacken blue` paints one colour's objects black (grey value x 0.15). Before:
+0 of 158 (`dr_train`) and 0 of 65 (`lookpose`) black objects detected, clean or typical depth: the top-face fit found them
+and the colour confidence of 0 dropped them, so the policy could not even avoid them. Now every geometry-accepted object
+comes back; its `color` is None and its `confidence` below `min_confidence` when no family fits (black, grey, a hue between
+families). Black objects: `dr_train` recall 1.000 clean, 0.962 typical (the misses are under a thumb), xy 1.7 / 2.5 and 1.3 / 2.9,
+shape right 1.000 of 0.87 and 0.79 decided; `lookpose` 1.000 / 1.000, clean and typical. The red and yellow objects of the same
+frames: unchanged. All unpainted sets including `motion`: identical line by line, so no hand, wall or shadow has become a
+colourless object in 1401 sim frames. Not found: a black prism lying on its side (the fallback blob starts from coloured pixels).
+Not verified: black foam in real depth (if it returns as little as the black hand, it has no top face and stays unseen).
+
 ### Parked: camera pose from the arm outline (for arms that return no depth at all)
 
 Without any depth on the arms there is no hand fit and the pose is nominal; nothing in the chain covers that. Design sent to

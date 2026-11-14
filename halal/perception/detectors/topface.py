@@ -50,7 +50,7 @@ class TopFaceDetector:
     def _forget(self) -> None:
         """Drop what earlier looks established: a new episode has its own camera pose and scene."""
         self.anchor: Camera | None = None
-        self.arms: Camera | None = None
+        self.arm_fits: list[Camera] = []
         self.arm_attempts = 0
         self.split: float | None = None
         self.last_t = -np.inf
@@ -68,8 +68,8 @@ class TopFaceDetector:
         depth, rgb = obs["head_depth"], obs["head_rgb"]
         if not depth.any():
             return []
-        anchor, arms = self._references(obs)
-        pose = self.calibration.decide(self.nominal, anchor or self.anchor, arms)
+        anchor, arm_fits = self._references(obs)
+        pose = self.calibration.decide(self.nominal, anchor or self.anchor, self.calibration.consensus(arm_fits))
         if pose.source != self.pose.source:
             LOG.info("head camera now fixed by %s (was %s)", pose.source, self.pose.source)
         self.pose, camera = pose, pose.camera
@@ -85,22 +85,23 @@ class TopFaceDetector:
         drafts += self._stragglers(faces, camera, cloud, height, free, rgb, gains, counter)
         if self.split is None:
             self.split = self.colors.split([draft.colour for draft in drafts if draft.colour is not None])
-        found = [d for d in map(self._named, drafts) if d.confidence >= self.cfg["min_confidence"]]
+        found = [self._named(draft) for draft in drafts if draft.colour is not None]
         if found:
-            self.anchor, self.arms = anchor or self.anchor, arms
+            self.anchor, self.arm_fits = anchor or self.anchor, arm_fits
         return found
 
-    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, Camera | None]:
-        """This look's scene anchor, and the arm pose: the episode's once a look with objects kept one, else a new attempt."""
+    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[Camera]]:
+        """This look's scene anchor, and the episode's believed arm poses: those kept by looks with objects, plus this look's."""
         t = float(obs.get("t", 0.0))
         if t < self.last_t:
             self._forget()
         still = self._still(obs, t)
         anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
-        if self.arms is not None or not still or self.arm_attempts >= self.cfg["arm_attempts"]:
-            return anchor, self.arms
+        if not still or len(self.arm_fits) >= self.cfg["arm_fits"] or self.arm_attempts >= self.cfg["arm_attempts"]:
+            return anchor, self.arm_fits
         self.arm_attempts += 1
-        return anchor, self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+        fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+        return anchor, self.arm_fits + ([] if fit is None else [fit])
 
     def _still(self, obs: Mapping[str, Any], t: float) -> bool:
         """True when arms and fingers stand where an earlier look of this episode saw them: their image shows the joints."""
@@ -168,11 +169,9 @@ class TopFaceDetector:
         return slice(max(v - reach, 0), max(v + reach, 0)), slice(max(u - reach, 0), max(u + reach, 0))
 
     def _named(self, draft: Draft) -> ObjectDetection:
-        """The draft with its colour family and confidence, by the episode's red / yellow boundary where one was seen."""
-        if draft.colour is None:
-            return draft.detection
+        """The draft with its colour family and confidence, by the episode's boundary; no family (None) where the colour says none."""
         color, confidence = self.colors.name(draft.colour, self.split)
-        return replace(draft.detection, color=color, confidence=confidence)
+        return replace(draft.detection, color=color if confidence >= self.cfg["min_confidence"] else None, confidence=confidence)
 
     def _stragglers(self, faces: list[TopFace], camera: Camera, cloud: np.ndarray, height: np.ndarray, free: np.ndarray,
                     rgb: np.ndarray, gains: np.ndarray, counter: PlaneFit) -> list[Draft]:
