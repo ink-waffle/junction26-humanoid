@@ -96,7 +96,7 @@ class SortPolicy:
         self.episode_s = time_limit
         self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
         self.file_layout = scene_layout(planner.scene)
-        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]))
+        self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings["retry_offsets"])
         self.calibrator = HandCalibrator(planner, settings)
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
@@ -245,8 +245,8 @@ class SortPolicy:
         outside = [det for det in detections if not self.area.contains(det.top[:2], layout.bins)]
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
-        squeeze = {side: self.settings["squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
-        pick, unplannable = self.chooser.choose(clear, situation.released, squeeze, situation.blocked, situation.arm_q,
+        deeper = {side: self.settings["deeper_squeeze"][self.calibrator.hand_class(side)] for side in SIDES}
+        pick, unplannable = self.chooser.choose(clear, situation.released, deeper, situation.blocked, situation.arm_q,
                                                 situation.hand_q, cancelled)
         return Look(detections, outside, pick, unplannable, len(targets) - len(clear), layout.source, False, False)
 
@@ -366,7 +366,7 @@ class SortPolicy:
     def _check_release(self, obs: Mapping[str, Any], t: float) -> None:
         """The hand has closed again after letting go: if it still holds something, open and close once more, then give the arm up."""
         active, stream, window = self.active, self.stream, self.active.window
-        score = window.score(obs["hand_q"], self.calibrator.empty_error(window.side))
+        score = self._grip_score(obs)
         active.check_tick, active.carried = None, True
         if score < self._empty_below(window.side):
             return
@@ -390,7 +390,7 @@ class SortPolicy:
             self._check_release(obs, t)
         if active.carried or not window.first_tick <= tick <= window.last_tick:
             return
-        score = window.score(obs["hand_q"], self.calibrator.empty_error(window.side))
+        score = self._grip_score(obs)
         if math.isinf(active.lowest_score):
             log.info("t=%.1f grip score after the lift %.3f (empty below %.3f)", t, score, self._empty_below(window.side))
         active.lowest_score = min(active.lowest_score, score)
@@ -398,6 +398,11 @@ class SortPolicy:
             self._abandon_pick(t, score)
         else:
             self.grip_proven = True
+
+    def _grip_score(self, obs: Mapping[str, Any]) -> float:
+        """How far the picking hand's load-bearing joints stay short of the closed posture, beyond what its empty close showed."""
+        window = self.active.window
+        return window.score(obs["hand_q"], self.calibrator.empty_error(window.side), self.settings["grip_joints"])
 
     def _empty_below(self, side: str) -> float:
         """Grip score under which this hand holds nothing."""

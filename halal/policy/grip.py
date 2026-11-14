@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Sequence
 
 import numpy as np
 
@@ -96,10 +97,10 @@ class GripWindow:
         return cls(side, closed, np.sign(closed - before), first_tick, phase(plan, "open")[0] - 1 - OBS_LAG_TICKS,
                    plan.hand[phase(plan, "retreat")[1] - 1, joints])
 
-    def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float) -> float:
-        """Summed shortfall of the joints behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
+    def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float, joints: Sequence[int]) -> float:
+        """Summed shortfall of `joints` behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
         error = self.closed - np.asarray(hand_q, float)[hand_slice(self.side)]
-        return float(np.maximum(self.direction * (error - empty_error), 0.0).sum())
+        return float(np.maximum(self.direction * (error - empty_error), 0.0)[list(joints)].sum())
 
 
 @dataclass(frozen=True)

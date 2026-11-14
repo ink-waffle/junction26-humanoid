@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Collection, Mapping, Sequence
 
 import numpy as np
@@ -44,45 +44,48 @@ class Pick:
 
 
 class PickChooser:
-    def __init__(self, planner: PickPlanner, slots: ReleaseSlots) -> None:
-        self.planner, self.slots = planner, slots
+    def __init__(self, planner: PickPlanner, slots: ReleaseSlots, retry_offsets: Sequence[Sequence[float]]) -> None:
+        self.planner, self.slots, self.retry_offsets = planner, slots, retry_offsets
 
-    def choose(self, targets: Sequence[Target], released: Mapping[str, int], squeeze: Mapping[str, float | None],
+    def choose(self, targets: Sequence[Target], released: Mapping[str, int], deeper: Mapping[str, float],
                blocked: Collection[str], arm_q: np.ndarray, hand_q: np.ndarray,
                cancelled: Cancelled) -> tuple[Pick | None, list[Target]]:
         """The first plannable target (least tried, then nearest its bin) and the targets before it without a plan."""
         unplannable: list[Target] = []
         for target in sorted(targets, key=lambda target: (target.attempts, self._distance_to_bin(target))):
-            pick = self._plan(target, released.get(target.bin_name, 0), squeeze, blocked, arm_q, hand_q, cancelled)
+            pick = self._plan(target, released.get(target.bin_name, 0), deeper, blocked, arm_q, hand_q, cancelled)
             if pick is not None:
                 return pick, unplannable
             unplannable.append(target)
         return None, unplannable
 
-    def _plan(self, target: Target, released: int, squeeze: Mapping[str, float | None], blocked: Collection[str],
+    def _plan(self, target: Target, released: int, deeper: Mapping[str, float], blocked: Collection[str],
               arm_q: np.ndarray, hand_q: np.ndarray, cancelled: Cancelled) -> Pick | None:
-        """The first arm (not a blocked one), grasp and release slot with a plan."""
+        """The first arm (not a blocked one), grasp and release slot with a plan; `deeper` = extra squeeze per arm."""
         for side, grasp, shift in self._options(target, released):
             if cancelled():
                 break
             if side in blocked:
                 continue
-            plan = self._plan_pick(target, side, grasp, shift, squeeze[side], arm_q, hand_q)
+            depth = grasp.squeeze + deeper[side]
+            plan = self._plan_pick(target, side, grasp, shift, depth, arm_q, hand_q)
             if plan.ok:
-                return Pick(target, side, grasp, grasp.squeeze if squeeze[side] is None else squeeze[side], plan)
+                return Pick(target, side, grasp, depth, plan)
             log.info("no plan for %s with the %s arm, grasp %s, release shift %s: %s", target, side, grasp.name,
                      shift, plan.reason)
         return None
 
     def _options(self, target: Target, released: int) -> list[tuple[str, Grasp, Shift]]:
-        """Arm, grasp and slot in the order to try; a retry forgets the detected shape, the one after takes the next arm and grasp."""
-        det, turns = target.detection, target.attempts // 2
-        shape = det.shape if target.attempts % 2 == 0 else None
+        """Arm, grasp and slot in the order to try; a retry starts with the next arm and grasp and moves the grasp point a little."""
+        det, turns = target.detection, target.attempts
+        dx, dy = self.retry_offsets[turns % len(self.retry_offsets)]
         shifts = self.slots.candidates(target.bin_name, released)
+        grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
+                         for grasp in _rotated(candidate_grasps(det.shape, det.yaw, side), turns)] for side in SIDES}
         return [(side, grasp, shift) for shift in shifts for side in _rotated(self._arms(target), turns)
-                for grasp in _rotated(candidate_grasps(shape, det.yaw, side), turns)]
+                for grasp in grasps[side]]
 
-    def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, squeeze: float | None, arm_q: np.ndarray,
+    def _plan_pick(self, target: Target, side: str, grasp: Grasp, shift: Shift, squeeze: float, arm_q: np.ndarray,
                    hand_q: np.ndarray) -> Plan:
         """One planner call; an exception inside the planner counts as no plan."""
         try:
