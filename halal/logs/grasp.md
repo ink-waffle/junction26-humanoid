@@ -966,3 +966,51 @@ no options (`_depth` KeyError: `cage_lying` had `{triangle: 0.75}` only). Now `c
 shape key, and `_depth` falls back to `unknown`. Over every strategy and candidate list x shape (cube, cylinder,
 triangle, None) x hand x side x yaw x lying, 72 combinations raised before and none after. The other 280 give identical
 Grasp objects.
+
+## Planner: carry corridor in front of the boxes (offline; `motion.carry_corridor`, default off)
+
+Why: real-look sim v24, soft hands: a lying prism at pelvis y −0.12, left arm, `ridge_opposed`, bound for the left box,
+held after the lift (0.627), slipped 1 s into the cross-body carry and fell into the CENTRE box (−1 instead of 0).
+Lying prisms slipped in the carry about once per 8-episode leg there; the real pads are less grippy, so every shape.
+
+What: `_carry` plans today's joint-space carry first. Only if its held object (grasp point, sampled along the joint
+path) comes within `clearance` (4 cm) of another box's outer footprint, it is replaced by the shortest of four paths
+(by joint arc length, as the time scaling measures it): corner in front of the boxes (x = nearest other box's near
+wall − `clearance`) at the target box's near side edge or at the release y, each as two joint moves or as IK steps
+every `step` (4 cm) along straight legs. A path counts only if the object keeps `clearance` from every other box (or
+its start gap, if smaller) and the grasp point stays above the carry floor. None passes: today's carry (0 in the
+bench). Not routed: the low sequence's rising carry (off), the organiser's fallback carries after a failed joint carry,
+counter placements.
+
+Offline: 4 `plan_bench` layouts, every object (+ each upright triangle again lying, ridges 0, ±60°) × bin × the arms
+that reach it, first candidate grasp that plans, look pose → home, the policy's first release slot. "Over a box" =
+object centre within 3 cm of a non-target box's outer footprint during lift or carry.
+
+| boxes | hand | plans | over another box today → corridor | centre inside another box today | plans changed | pick time added, mean / max | dry-run clips | plans lost |
+|---|---|---|---|---|---|---|---|---|
+| +0 | stiff | 124 | 48 → 0 (19 lying) | 31 | 57 | +0.54 / +2.90 s | 0 | 0 |
+| +0 | soft | 124 | 48 → 0 | 31 | 57 | +0.52 / +2.87 s | 0 | 0 |
+| +6 | stiff | 124 | 48 → 0 (15 lying) | 34 | 50 | +0.22 / +1.53 s | 0 | 0 |
+| +6 | soft | 124 | 48 → 0 | 34 | 50 | +0.23 / +1.53 s | 0 | 0 |
+| +10 | stiff | 93 | 32 → 0 (13 lying) | 11 | 34 | +0.15 / +0.83 s | 0 | 0 |
+| +10 | soft | 93 | 32 → 0 | 11 | 34 | +0.15 / +0.80 s | 0 | 0 |
+| +12 | stiff | 36 | 6 → 0 | 0 | 9 | +0.05 / +0.47 s | 0 | 0 |
+| +12 | soft | 36 | 5 → 0 | 1 | 9 | +0.06 / +0.47 s | 0 | 0 |
+
+- Every crossing plan is the one the policy runs: a side box from its own arm (the only arm that reaches it), object
+  anywhere from the middle of the band to the far side. Centre-box plans from the near arm never cross.
+- Over all 300 changed plans: +0.31 s mean, median +0.07, p90 +0.83, max +2.9 (object at |y| 0.16 bound for the far
+  side box: the corridor pose is cramped, joint arc 2-3 rad against 0.7-1.0). The 9 plans per set with a 3-4 cm gap
+  are routed too; none with a gap ≥ 4 cm changed.
+- Corridor min gap to another box 4.5-6.3 cm (today down to 5.4 cm INSIDE one). The realsim case (lying prism, y
+  −0.105, left box, soft): centre 3.0-3.6 cm inside the centre box today → 4.7 cm outside, +0.5-1.1 s.
+- Corner spikes of the joint path (second difference of the commanded arm in the carry): median / max 17 / 51 rad/s²
+  today → 20 / 35 (+0 stiff), same elsewhere: no harder than today's carry→lower corner.
+- Reach: nothing lost at +10 / +12; the corridor point is nearer the body than the release point.
+- Planning: +0.24 s per affected planner call (0.57 → 0.81 s mean, max 4.2 → 4.7 s, Mac under load); others unchanged.
+- Off (default): 682/682 plans byte-identical to the tree before (arm and hand rows, ok, reason).
+
+Proposal: turn it on. A slip on the way then lands on the counter (0) instead of a wrong box (−1), at ~0.3 s per
+affected pick, about half of the side-box picks. Not measured in physics: the longer sideways leg could change the
+slip rate itself (spikes no worse offline); one realsim soft leg with it on should show no new carry losses. A slip in
+the corridor lands 4-7 cm in front of the box row, still pickable (`policy.bin_clearance` 3 cm).
