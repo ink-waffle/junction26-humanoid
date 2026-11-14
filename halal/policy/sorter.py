@@ -1,4 +1,4 @@
-"""Sequential sorter: go to the look pose -> look -> plan one pick -> execute -> look again, until nothing is left."""
+"""Sequential sorter: look pose -> calibrate the hands once -> look -> plan one pick -> execute and verify -> look again."""
 from __future__ import annotations
 
 import enum
@@ -10,16 +10,16 @@ from typing import Any, Callable, Mapping
 
 import numpy as np
 
-from aaltonomous.baselines.classical.planner import Plan
-
 from halal.motion import PickPlanner
 from halal.perception import Detector, ObjectDetection
 from halal.policy.area import ObjectArea
 from halal.policy.background import Background, Cancelled
-from halal.policy.commands import Action, CommandStream
+from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream
+from halal.policy.grip import CalibrationTrace, GripWindow, HandResponse, calibration_close, phase
 from halal.policy.memory import Attempts
 from halal.policy.picking import Pick, PickChooser, Target
 from halal.policy.release import ReleaseSlots
+from halal.policy.transit import checked_move
 
 log = logging.getLogger(__name__)
 HZ = 30.0
@@ -27,9 +27,10 @@ BinFor = Callable[[str, str | None], str | None]
 
 
 class Stage(enum.Enum):
-    MOVING = enum.auto()     # a trajectory runs; a look follows when it ends
-    LOOKING = enum.auto()    # perception and planning run in the background
-    WAITING = enum.auto()    # the next pick does not fit into the remaining time
+    MOVING = enum.auto()        # a trajectory runs; a look follows when it ends
+    CALIBRATING = enum.auto()   # both hands close on nothing once per episode
+    LOOKING = enum.auto()       # perception and planning run in the background
+    WAITING = enum.auto()       # the next pick does not fit into the remaining time
     DONE = enum.auto()
 
 
@@ -40,6 +41,14 @@ class Look:
     outside: list[ObjectDetection]
     pick: Pick | None
     unplannable: list[Target]
+
+
+@dataclass
+class ActivePick:
+    """The pick being executed and what its grip check has seen so far."""
+    pick: Pick
+    window: GripWindow | None   # None = not watched (check disabled, or no clear way back after a failed grip)
+    lowest_score: float = math.inf
 
 
 def leave_everything(color: str, shape: str | None) -> None:
@@ -68,8 +77,11 @@ class SortPolicy:
         self.stream = CommandStream(self.planner.spec, s["chunk_ticks"], s["hold_ticks"])
         self.attempts = Attempts(s["same_object_radius"], s["max_attempts"])
         self.released: Counter[str] = Counter()
+        self.hands: dict[str, HandResponse] = {}
+        self.trace: CalibrationTrace | None = None
+        self.active: ActivePick | None = None
         self.stage = Stage.MOVING
-        self.at_look_pose = False
+        self.at_look_pose = self.hands_clear = False
         self.empty_looks = 0
 
     def act(self, obs: Mapping[str, Any]) -> Action:
@@ -77,6 +89,7 @@ class SortPolicy:
         if not self.stream.started:
             self.stream.start(obs["arm_q"], obs["hand_q"])
         try:
+            self._observe(obs)
             self._advance(obs)
         except Exception:
             log.exception("policy step failed, holding")
@@ -84,13 +97,26 @@ class SortPolicy:
             return self.stream.next_chunk()
         return self.stream.hold(done=self.stage is Stage.DONE)
 
+    def _observe(self, obs: Mapping[str, Any]) -> None:
+        """Use the measured hand joints: calibration samples, and the grip check of a running pick."""
+        if self.stage is Stage.CALIBRATING:
+            self.trace.add_tick(float(obs["t"]), self.stream.observed_tick, obs["hand_q"])
+        elif self.active is not None and self.active.window is not None:
+            self._check_grip(obs)
+
     def _advance(self, obs: Mapping[str, Any]) -> None:
         """Move the state machine one step once the running trajectory has been handed out."""
         t = float(obs["t"])
         if self.stream.busy:
             return
+        if self.active is not None:
+            self._finish_pick(t)
+        if self.stage is Stage.CALIBRATING:
+            self._finish_calibration(t)
         if self.stage is Stage.MOVING and not self.at_look_pose:
             self._load_look_pose_move()
+        elif self.stage is Stage.MOVING and self._calibration_due():
+            self._start_calibration(obs)
         elif self.stage is Stage.MOVING:
             self._start_look(obs)
         elif self.stage is Stage.LOOKING:
@@ -100,14 +126,37 @@ class SortPolicy:
             self.time_limit, self.stage = math.inf, Stage.MOVING
 
     def _load_look_pose_move(self) -> None:
-        """Queue the move to the look pose with open hands, then a settle; hands only if the arm move would be clipped."""
+        """Queue the move to the look pose with open hands, then a settle; hands only if the arm move is not safe."""
         stream, planner = self.stream, self.planner
-        arm, hand = planner.go_to(stream.arm_cmd, stream.hand_cmd, self.look_pose, planner.post["open"])
-        if planner.dry_run_safety(stream.arm_cmd, stream.hand_cmd, arm, hand):
-            log.warning("the move to the look pose would be clipped: looking from here")
-            arm, hand = planner.go_to(stream.arm_cmd, stream.hand_cmd, stream.arm_cmd, planner.post["open"])
-        stream.load(arm, hand, round(self.settings["settle_s"] * HZ))
+        move = checked_move(planner, stream.arm_cmd, stream.hand_cmd, self.look_pose, planner.post["open"],
+                            self.settings["transit_clearance"])
+        self.hands_clear = move is not None
+        if move is None:
+            log.warning("no safe move to the look pose: looking from here")
+            move = planner.go_to(stream.arm_cmd, stream.hand_cmd, stream.arm_cmd, planner.post["open"])
+        stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
         self.at_look_pose = True
+
+    def _calibration_due(self) -> bool:
+        return self.settings["grip_check"] and self.hands_clear and not self.hands and self.trace is None
+
+    def _start_calibration(self, obs: Mapping[str, Any]) -> None:
+        """At the look pose, close both hands on nothing and record how they follow the command."""
+        stream, planner, every = self.stream, self.planner, self.settings["calibration_sample_ticks"]
+        hand, closed_until = calibration_close(stream.hand_cmd, planner.post["closed"], self._grip_settle_ticks,
+                                               planner.cfg["motion"]["hand_max_vel"], 1.0 / HZ)
+        self.trace = CalibrationTrace(hand, closed_until)
+        self.trace.add(float(obs["t"]), stream.hand_cmd, obs["hand_q"])
+        stream.load(np.repeat(stream.arm_cmd[None], len(hand), 0), hand,
+                    cuts=range(OBS_LAG_TICKS + every, closed_until + OBS_LAG_TICKS + 1, every))
+        self.stage = Stage.CALIBRATING
+
+    def _finish_calibration(self, t: float) -> None:
+        self.hands = self.trace.responses(self.settings["stiff_hand_lag_s"])
+        for side, hand in self.hands.items():
+            log.info("t=%.1f %s hand: lag %.3f s (%s), empty-hand error %s", t, side, hand.lag_s,
+                     "stiff" if hand.stiff else "soft", np.round(hand.empty_error, 3).tolist())
+        self.stage, self.at_look_pose = Stage.MOVING, False   # settle with open hands before the look
 
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         arm_q, hand_q = self.stream.arm_cmd.copy(), self.stream.hand_cmd.copy()
@@ -150,7 +199,7 @@ class SortPolicy:
         self._note_look(t, look)
         if look.pick is None:
             self._nothing_to_pick(t)
-        elif t + _release_s(look.pick.plan) + self.settings["time_margin_s"] > self.time_limit:
+        elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING
         else:
@@ -161,9 +210,9 @@ class SortPolicy:
             self.attempts.abandon(target.xy)
         self.tally.update(looks=1, detections=len(look.detections), outside_area=len(look.outside),
                           unplannable=len(look.unplannable))
-        spots = " ".join(f"{d.color}({d.top[0]:+.3f},{d.top[1]:+.3f})" for d in look.outside)
-        log.info("t=%.1f look: %d detections, %d outside the object area %s", t, len(look.detections),
-                 len(look.outside), spots)
+        seen = " ".join(f"{d.color}/{d.shape}({d.top[0]:+.3f},{d.top[1]:+.3f})" for d in look.detections)
+        log.info("t=%.1f look: %d detections, %d outside the object area: %s", t, len(look.detections),
+                 len(look.outside), seen)
 
     def _nothing_to_pick(self, t: float) -> None:
         """Finish only after several looks in a row agree that nothing sortable is left."""
@@ -179,20 +228,62 @@ class SortPolicy:
         self.empty_looks = 0
         self.attempts.record(pick.target.xy)
         self.tally.update(picks=1, relocations=int(pick.relocation))
-        self.released[pick.plan.target_bin] += 1
-        self.stream.load(pick.plan.arm, pick.plan.hand)
+        watch = self.settings["grip_check"]
+        window = GripWindow.of(pick.plan, pick.side, self._grip_settle_ticks) if watch else None
+        self.stream.load(pick.plan.arm, pick.plan.hand, cuts=[window.first_tick + OBS_LAG_TICKS] if watch else ())
+        self.active = ActivePick(pick, window)
         self.stage, self.at_look_pose = Stage.MOVING, False
         drop = pick.plan.waypoints["drop"]
         log.info("t=%.1f pick %s: %s arm, grasp %s, release at (%+.3f,%+.3f), %.1f s%s", t, pick.target, pick.side,
                  pick.grasp.name if pick.grasp else "default", drop[0], drop[1], pick.plan.duration,
                  " (relocation)" if pick.relocation else "")
 
+    def _check_grip(self, obs: Mapping[str, Any]) -> None:
+        """While the object should be in the hand: when the fingers say it is not, give the pick up."""
+        active, tick, t = self.active, self.stream.observed_tick, float(obs["t"])
+        window = active.window
+        if not window.first_tick <= tick <= window.last_tick:
+            return
+        hand = self.hands.get(window.side)
+        score = window.score(obs["hand_q"], hand.empty_error if hand else 0.0)
+        if math.isinf(active.lowest_score):
+            log.info("t=%.1f grip score after the lift %.3f (empty below %.3f)", t, score, self._empty_below(window.side))
+        active.lowest_score = min(active.lowest_score, score)
+        if score < self._empty_below(window.side):
+            self._abandon_pick(t, score)
+
+    def _empty_below(self, side: str) -> float:
+        """Grip score under which this hand holds nothing; an uncalibrated hand gets the value that never aborts wrongly."""
+        hand = self.hands.get(side)
+        return self.settings["grip_threshold"]["soft" if hand and not hand.stiff else "stiff"]
+
+    def _abandon_pick(self, t: float, score: float) -> None:
+        """The hand is empty: go back to the look pose if the way is clear, else let the plan run out unwatched."""
+        stream, planner = self.stream, self.planner
+        move = checked_move(planner, stream.arm_cmd, stream.hand_cmd, self.look_pose, planner.post["open"],
+                            self.settings["transit_clearance"])
+        if move is None:
+            log.info("t=%.1f hand empty (grip score %.3f) but no clear way back: finishing the plan", t, score)
+            self.active.window = None
+            return
+        log.info("t=%.1f hand empty (grip score %.3f): back to the look pose", t, score)
+        self.tally.update(empty_hand=1)
+        stream.load(*move, settle_ticks=round(self.settings["settle_s"] * HZ))
+        self.active, self.at_look_pose = None, True
+
+    def _finish_pick(self, t: float) -> None:
+        active, self.active = self.active, None
+        if active.lowest_score < self._empty_below(active.pick.side):
+            return
+        self.released[active.pick.plan.target_bin] += 1
+        self.tally.update(released=1)
+        log.info("t=%.1f released %s, lowest grip score %.3f", t, active.pick.target, active.lowest_score)
+
     def _log_tally(self) -> None:
         if self.tally:
             log.info("episode tally: %s", dict(self.tally))
         self.tally.clear()
 
-
-def _release_s(plan: Plan) -> float:
-    """Seconds from the start of the plan until the hand has let go of the object."""
-    return next(end for name, _, end in plan.phases if name == "open") / HZ
+    @property
+    def _grip_settle_ticks(self) -> int:
+        return round(self.settings["grip_settle_s"] * HZ)

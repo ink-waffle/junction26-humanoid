@@ -10,6 +10,9 @@ from aaltonomous.baselines.classical.planner import Plan, ramp
 from halal.policy.commands import OBS_LAG_TICKS
 
 
+SIDES = ("left", "right")
+
+
 def hand_slice(side: str) -> slice:
     return slice(0, 7) if side == "left" else slice(7, 14)
 
@@ -32,6 +35,31 @@ def calibration_close(hand_q: np.ndarray, closed: np.ndarray, still_ticks: int, 
     closing = ramp(hand_q, closed, hand_vel, dt)
     still = np.repeat(closed[None], still_ticks + OBS_LAG_TICKS, 0)
     return np.vstack([closing, still, ramp(closed, hand_q, hand_vel, dt)]), len(closing) + len(still) - 1
+
+
+class CalibrationTrace:
+    """Both hands during a calibration close, sampled from the observations of successive `act()` calls."""
+
+    def __init__(self, hand: np.ndarray, closed_until: int) -> None:
+        self.hand, self.closed_until = hand, closed_until
+        self.times: list[float] = []
+        self.commanded: list[np.ndarray] = []
+        self.measured: list[np.ndarray] = []
+
+    def add(self, t: float, commanded: np.ndarray, hand_q: np.ndarray) -> None:
+        self.times.append(t)
+        self.commanded.append(np.asarray(commanded, float))
+        self.measured.append(np.asarray(hand_q, float))
+
+    def add_tick(self, t: float, tick: int, hand_q: np.ndarray) -> None:
+        """Sample for trajectory tick `tick`; ticks outside the close-and-hold part are ignored."""
+        if 0 <= tick <= self.closed_until:
+            self.add(t, self.hand[tick], hand_q)
+
+    def responses(self, stiff_below_s: float) -> dict[str, HandResponse]:
+        times, commanded, measured = np.array(self.times), np.array(self.commanded), np.array(self.measured)
+        return {side: hand_response(times, commanded[:, hand_slice(side)], measured[:, hand_slice(side)], stiff_below_s)
+                for side in SIDES}
 
 
 def hand_response(times: np.ndarray, commanded: np.ndarray, measured: np.ndarray, stiff_below_s: float) -> HandResponse:
