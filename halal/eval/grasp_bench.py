@@ -2,8 +2,8 @@
 
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
-Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), empty (bool), shapes, yaws_deg (layout yaw of the
-left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise ([{pos, yaw_deg, yaw_known}]),
+Spec (yaml): seed, repeats, dr (any | hard), bin (side | center), end (home | retreat), empty (bool), shapes, yaws_deg
+(layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), noise ([{pos, yaw_deg, yaw_known}]),
 variants ({name: grasp params as in config `motion.grasps`, plus `base`, `shapes`, `candidates`, `overrides`}).
 """
 from __future__ import annotations
@@ -73,9 +73,9 @@ def list_cases(spec: Mapping[str, Any]) -> list[Case]:
     """Every variant on every shape, yaw, spot and noise level, arms alternating so both get each combination."""
     cases: list[Case] = []
     for name, variant in spec["variants"].items():
-        grid = itertools.product(variant.get("shapes", spec["shapes"]), spec["yaws_deg"], spec["spots"], spec["noise"],
+        grid = itertools.product(variant.get("shapes", spec["shapes"]), spec["spots"], spec["yaws_deg"], spec["noise"],
                                  range(spec["repeats"]))
-        for shape, yaw, spot, noise, _ in grid:
+        for shape, spot, yaw, noise, _ in grid:
             side = SIDES[len(cases) % 2]
             cases.append(Case(variant=name, shape=shape, yaw_deg=float(yaw), spot=(float(spot[0]), float(spot[1])),
                               side=side, bin_name=side if spec["bin"] == "side" else spec["bin"],
@@ -200,7 +200,7 @@ class Bench:
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         for grasp in grasps:
             plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
-                                     self.env.filter.hand_cmd.copy())
+                                     self.env.filter.hand_cmd.copy(), end=self.spec["end"])
             if plan.ok:
                 return grasp, plan
         return (grasps[-1] if grasps else None), plan

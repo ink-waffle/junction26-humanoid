@@ -9,6 +9,12 @@ motion:
   finger_yaw_tolerance: 0.21  # rad between requested and achieved finger heading before a grasp is rejected
   natural_heading_deg: 25     # finger heading an arm reaches most easily: forward, turned inward by this much
   max_heading_deviation_deg: 75   # headings further than this from the natural one are not tried
+  counter_from_detection: true    # counter height = detected object top minus object height (scene file value otherwise)
+  bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
+  shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
+    default: 0.01
+    descend: 0.004
+    lift: 0.004
   candidates:                 # strategy names per detected shape, best first; `unknown` = shape not classified
     cube: [pinch_face, pinch]
     cylinder: [pinch]
