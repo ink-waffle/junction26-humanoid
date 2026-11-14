@@ -126,6 +126,10 @@ motion:
   carry_margin: 0.03          # held object's bottom above a bin rim at carry height
   rim_clearance: 0.015        # held object's bottom above (and its side beside) a bin rim during the carry
   min_grip_below_top: 0.008   # the grasp point stays at least this far below the object's top
+  obstacles:                  # other objects the fingers must stay off while they are down among them (descend, close)
+    radius: 0.030             # footprint of an object of unknown shape and yaw around its centre (triangle circumradius)
+    finger_radius: 0.013      # half the width of a distal finger link
+    margin: 0.004             # extra distance, and how far above an object's top a finger point still counts
   drop_inset:                 # release point inside a bin's inner walls; objects land x -28..+77, outward y -40..+48 mm around it
     near: [0.06, 0.05, 0.04, 0.03]   # from the wall nearest the robot: the first the arm reaches (bins further away than nominal)
     side: 0.085               # from the side walls

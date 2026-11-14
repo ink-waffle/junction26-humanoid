@@ -5,7 +5,7 @@ import copy
 import itertools
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 import numpy as np
 
@@ -24,6 +24,8 @@ MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
 HELD_PHASES = ("lift", "carry")
+NEAR_OBJECTS_PHASES = ("descend", "close")
+OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
 
 
@@ -31,6 +33,7 @@ class PickPlanner(Planner):
     drop_shift = np.zeros(2)
     near_inset = 0.0
     low = False
+    obstacles: Sequence[np.ndarray] = ()
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -45,9 +48,11 @@ class PickPlanner(Planner):
 
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
-                  place_xy: tuple[float, float] | None = None, squeeze: float | None = None) -> Plan:
-        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat)."""
+                  place_xy: tuple[float, float] | None = None, squeeze: float | None = None,
+                  obstacles: Sequence[np.ndarray] = ()) -> Plan:
+        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (tops of other objects)."""
         self.drop_shift = np.asarray(drop_shift, float)
+        self.obstacles = [np.asarray(o, float) for o in obstacles if np.linalg.norm(np.subtract(o[:2], det.top[:2])) > self.motion["obstacles"]["radius"]]
         insets = [0.0] if place_xy is not None else self._reachable_insets(side, bin_name)
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
@@ -244,8 +249,29 @@ class PickPlanner(Planner):
                    place_xy: tuple[float, float] | None = None) -> Plan:
         """Our low sequence, or the organiser's high one (the fallback, and the only one that places on the counter)."""
         if self.low:
-            return sequence.plan_low(self, det, side, bin_name, arm_q, hand_q)
-        return super()._plan_side(det, side, bin_name, arm_q, hand_q, place_xy=place_xy)
+            return self._clear_of_obstacles(sequence.plan_low(self, det, side, bin_name, arm_q, hand_q), side)
+        return self._clear_of_obstacles(super()._plan_side(det, side, bin_name, arm_q, hand_q, place_xy=place_xy), side)
+
+    def _clear_of_obstacles(self, plan: Plan, side: str) -> Plan:
+        """Fail a plan whose fingers or thumb, while down among the objects, come too close to another object."""
+        limits = self.motion["obstacles"]
+        reach = limits["radius"] + limits["finger_radius"] + limits["margin"]
+        ticks = [(name, tick) for name, first, stop in plan.phases if name in NEAR_OBJECTS_PHASES
+                 for tick in range(first, stop, OBSTACLE_CHECK_EVERY)] if plan.ok else []
+        for (name, tick), obstacle in itertools.product(ticks, self.obstacles):
+            points = self._digit_points(side, plan.arm[tick], plan.hand[tick])
+            low = points[points[:, 2] < obstacle[2] + limits["margin"]]
+            if len(low) and np.linalg.norm(low[:, :2] - obstacle[:2], axis=1).min() < reach:
+                plan.ok = False
+                plan.reason = f"hand would touch the object at ({obstacle[0]:+.3f},{obstacle[1]:+.3f}) during {name}"
+                break
+        return plan
+
+    def _digit_points(self, side: str, arm_q: np.ndarray, hand_q: np.ndarray) -> np.ndarray:
+        """Joint, middle and tip of each distal finger link (index, middle, thumb) in the pelvis frame, (9, 3)."""
+        points = self.kin.hand_points(side, arm_q, hand_q)
+        joints, tips = points[2:5], points[5:8]
+        return np.vstack([joints, (joints + tips) / 2, tips])
 
     def _is_straight(self, side: str, p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray, name: str) -> bool:
         """Whether the joint-space move q0 -> q1 keeps the grasp point near the line p0 -> p1."""
