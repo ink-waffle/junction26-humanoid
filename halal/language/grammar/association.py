@@ -102,7 +102,9 @@ def _cued(mentions: list[Mention], tokens: list[Token]) -> list[bool]:
         sentence_of.append(sentence)
         if token.tag is Tag.RESPECTIVELY:
             cued_sentences.add(sentence)
-    return [sentence_of[mention.start] in cued_sentences for mention in mentions]
+    with_mentions = {sentence_of[mention.start] for mention in mentions}
+    everywhere = bool(cued_sentences - with_mentions)       # a cue on its own ("Same order.") covers the whole text
+    return [everywhere or sentence_of[mention.start] in cued_sentences for mention in mentions]
 
 
 def _moves(sequence: _Sequence, start: int, previous_bin: str | None) -> list[_Move]:
@@ -147,7 +149,8 @@ def _opens_plain_pair(sequence: _Sequence, start: int) -> bool:
         return False
     listed_before = start > 0 and not turns[start - 1] and gaps[start - 1].list_like
     listed_after = start + 2 < len(mentions) and not turns[start + 1] and gaps[start + 1].list_like
-    plain = _transition_charge(gaps[start], isinstance(mentions[start], BinMention))[0] == 0
+    same_cue = any(isinstance(mention, ObjectMention) and mention.same for mention in mentions[start:start + 2])
+    plain = _transition_charge(gaps[start], isinstance(mentions[start], BinMention), same_cue)[0] == 0
     return plain and not listed_before and not listed_after
 
 
@@ -216,7 +219,7 @@ def _unit(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -
     positions = [_position(mention, previous_bin) for mention in bins]
     allowed = _unique(p for p, mention in zip(positions, bins) if not mention.negated)
     forbidden = _unique(p for p, mention in zip(positions, bins) if mention.negated)
-    broken = any(sequence.gaps[i].has(Tag.BREAK) for i in range(start, end - 1) if i != turn)
+    broken = any(_breaks_list(sequence, i) for i in range(start, end - 1) if i != turn)
     if None in positions or broken or (len(allowed) > 1 and forbidden):
         return None
     if len(allowed) > 1 and len(allowed) != len(objects):
@@ -224,6 +227,12 @@ def _unit(sequence: _Sequence, start: int, end: int, previous_bin: str | None) -
         return Unit(objects, (), cost=tuning.UNDECIDED, issues=(note,))
     cost, issues = _unit_cost(sequence, start, end, turn, len(allowed) > 1)
     return Unit(objects, allowed, forbidden, cost, issues, corrects=any(mention.corrects for mention in members))
+
+
+def _breaks_list(sequence: _Sequence, index: int) -> bool:
+    """No list runs across a sentence break; no list of object groups runs across a colon or arrow."""
+    gap = sequence.gaps[index]
+    return gap.has(Tag.BREAK) or (gap.has(Tag.ARROW) and isinstance(sequence.mentions[index], ObjectMention))
 
 
 def _position(mention: BinMention, previous_bin: str | None) -> str | None:
@@ -243,9 +252,10 @@ def _unit_cost(sequence: _Sequence, start: int, end: int, turn: int,
     """Cost of reading mentions [start, end) as one unit, with the doubts that cost stands for."""
     members = sequence.mentions[start:end]
     charges = [_run_charge(sequence, i) for i in range(start, end - 1) if i != turn]
-    charges.append(_transition_charge(sequence.gaps[turn], isinstance(members[0], BinMention)))
     objects = [mention for mention in members if isinstance(mention, ObjectMention)]
     cued = any(sequence.cued[start:end])
+    charges.append(_transition_charge(sequence.gaps[turn], isinstance(members[0], BinMention),
+                                      any(mention.same for mention in objects), distributes and cued))
     if distributes and not cued:
         charges.append((tuning.DISTRIBUTION, Issue("lists paired in order without 'respectively'",
                                                    tuning.F_DISTRIBUTION)))
@@ -289,11 +299,13 @@ def _run_charge(sequence: _Sequence, index: int) -> tuple[float, Issue | None]:
     return tuning.RUN_MIXED, Issue("a list is interrupted by other words", tuning.F_RUN_MIXED)
 
 
-def _transition_charge(gap: Gap, bin_first: bool) -> tuple[float, Issue | None]:
+def _transition_charge(gap: Gap, bin_first: bool, same_cue: bool = False,
+                       ordered_lists: bool = False) -> tuple[float, Issue | None]:
     """Objects and their bin are normally joined by a verb, preposition or arrow, not split by punctuation."""
-    linked = gap.has(Tag.LINK, Tag.ARROW, Tag.NOT, Tag.LEAVE, Tag.COMPANION)
+    linked = gap.has(Tag.LINK, Tag.ARROW, Tag.NOT, Tag.LEAVE, Tag.COMPANION) or same_cue
     if gap.has(Tag.BREAK):
-        return tuning.ACROSS_BREAK, Issue("objects and bin stand in different sentences", tuning.F_ACROSS_BREAK)
+        doubt = Issue("objects and bin stand in different sentences", tuning.F_ACROSS_BREAK)
+        return tuning.ACROSS_BREAK, None if ordered_lists else doubt
     if gap.has(Tag.CLAUSE):
         return tuning.ACROSS_CLAUSE, Issue("objects and bin stand on two sides of 'but'", tuning.F_ACROSS_CLAUSE)
     if gap.has(Tag.AND) and not linked:

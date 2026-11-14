@@ -24,8 +24,8 @@ class Tag(Enum):
     VOID = auto()            # "empty", "unused"
     RESPECTIVELY = auto()
     PRONOUN = auto()
-    ADD = auto()             # "too", "as well", "same for"
-    UNIVERSAL = auto()       # "regardless of colour", "whatever its shape"
+    ADD = auto()             # "too", "as well"; value "same" for "the same holds for ..." (covers its sentence)
+    UNIVERSAL = auto()       # "regardless of colour"; value "aside" for "whether it is a cube or a cylinder"
     SAME = auto()            # "the same bin", "the opposite side"; value: same | opposite
     COMPANION = auto()       # "blue goes with yellow", "red joins blue"
     CORRECTION = auto()      # "sorry, I meant", "actually", "make that"
@@ -97,7 +97,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
         "triangle": "triangle triangles triangular prism prisms wedge wedges pyramid pyramids"}),
     **_entries(Tag.BIN, {
         "left": "left lef leftmost lefthand lhs",
-        "center": "center centre central middle mid midmost centermost",
+        "center": "center centre central middle mid midmost centermost ahead",
         "right": "right rightmost righthand rhs"}),
     **_entries(Tag.REST, {"": "rest remaining remainder other others leftover leftovers otherwise else"}),
     **_entries(Tag.ALL, {"": "everything anything all every each any whatever whichever everyone"}),
@@ -115,6 +115,7 @@ WORDS: dict[str, tuple[Tag, str]] = {
     **_entries(Tag.PRONOUN, {"": "them they those these it which"}),
     **_entries(Tag.ADD, {"": "too also likewise ditto similarly"}),
     **_entries(Tag.SAME, {"same": "same", "opposite": "opposite"}),
+    **_entries(Tag.UNIVERSAL, {"aside": "whether"}),
     **_entries(Tag.COMPANION, {"": "with alongside join joins accompany accompanies where wherever"}),
     **_entries(Tag.ORDINAL, {"1": "first 1st", "2": "second 2nd", "3": "third 3rd last"}),
     **_entries(Tag.AND, {"": "and or nor plus then & / +"}),
@@ -160,10 +161,10 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("as", "well"): (Tag.ADD, ""),
     ("so", "do"): (Tag.ADD, ""),
     ("so", "does"): (Tag.ADD, ""),
-    ("same", "for"): (Tag.ADD, ""),
-    ("same", "goes", "for"): (Tag.ADD, ""),
-    ("same", "applies", "to"): (Tag.ADD, ""),
-    ("same", "with"): (Tag.ADD, ""),
+    **{phrase: (Tag.ADD, "same") for phrase in (
+        ("same", "for"), ("same", "goes", "for"), ("same", "applies", "to"), ("same", "with"), ("same", "holds", "for"),
+        ("same", "is", "true", "for"), ("same", "thing", "for"), ("same", "thing", "with"), ("likewise", "for"),
+        ("likewise", "with"), ("similarly", "for"), ("similarly", "with"))},
     ("followed", "by"): (Tag.AND, ""),
     ("after", "that"): (Tag.AND, ""),
     ("make", "that"): (Tag.CORRECTION, ""),
@@ -181,6 +182,10 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("rather", "than"): (Tag.EXCEPT, ""),
     ("anywhere", "but"): (Tag.EXCEPT, ""),
     ("everywhere", "but"): (Tag.EXCEPT, ""),
+    **{phrase: (Tag.BIN, "center") for phrase in (
+        ("straight", "ahead"), ("directly", "ahead"), ("right", "ahead"), ("dead", "ahead"), ("in", "front"),
+        ("directly", "in", "front"), ("right", "in", "front"), ("straight", "in", "front"), ("facing", "you"),
+        ("facing", "the", "robot"), ("in", "front", "of", "you"), ("in", "front", "of", "the", "robot"))},
     ("left", "most"): (Tag.BIN, "left"),
     ("left", "hand"): (Tag.BIN, "left"),
     ("right", "most"): (Tag.BIN, "right"),
@@ -190,6 +195,10 @@ PHRASES: dict[tuple[str, ...], tuple[Tag, str]] = {
     ("three", "sided"): (Tag.SHAPE, "triangle"),
     ("point", "of", "view"): (Tag.FILL, ""),
     ("regardless", "of"): (Tag.UNIVERSAL, ""),
+    ("regardless", "of", "whether"): (Tag.UNIVERSAL, "aside"),
+    ("no", "matter", "whether"): (Tag.UNIVERSAL, "aside"),
+    ("no", "matter", "if"): (Tag.UNIVERSAL, "aside"),
+    ("be", "it"): (Tag.UNIVERSAL, "aside"),
     ("irrespective", "of"): (Tag.UNIVERSAL, ""),
     ("no", "matter"): (Tag.UNIVERSAL, ""),
     ("whatever", "its"): (Tag.UNIVERSAL, ""),
@@ -227,12 +236,16 @@ NOT_TYPOS = frozenset(
     "wright yellowy".split())
 
 NUMBERS = {"1": 1, "2": 2, "3": 3, "one": 1, "two": 2, "three": 3}
+LETTER_BINS = {"l": "left", "m": "center", "c": "center", "r": "right"}
 RELATIVE_PRONOUNS = frozenset({"that", "which", "who"})
 WH_WORDS = frozenset({"what", "whatever", "that", "which", "whichever"})
 NOUN_FILLERS = frozenset({"the", "of", "a", "an", "coloured", "colored", "shaped", "sized"})
 SURFACES = frozenset({"table", "counter", "desk", "place", "workspace", "mat", "surface", "tabletop"})
 ROW_STARTERS = frozenset("start starting begin beginning counting going reading moving numbered ordered".split())
 ROW_JOINERS = frozenset({"to", "through", "till", "until", "→", ":"})
+EGOCENTRIC = frozenset({"ahead", "front", "facing"})        # words of the phrases that place the center bin by gaze
+CORRECT_NOUNS = frozenset("place places spot spots position positions location locations way order destination "
+                          "destinations target targets".split())
 ROW_HEADINGS = {"rightward": "left", "rightwards": "left", "leftward": "right", "leftwards": "right"}
 ROW_LEADS = frozenset({"first", "one", "1", "1st"})
 ROW_EQUATES = frozenset({"as", "is", "being", "means", "=", "number", "bin", "the"})
