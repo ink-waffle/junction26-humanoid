@@ -6,6 +6,20 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sat 14.11, 13:50
+- **Hand-in candidate: v12, proxy +21.13 (86 of 87 objects), sim gate PASS on all 24 episodes through its
+  container; and 31/31 with the gate passing on the soft-hand sim** (hands classified soft by itself, 16/16).
+  `ghcr.io/ink-waffle/halal-policy@sha256:d2cadf30d4c2f503c88cd7b212795606b0a917c788e63ff3ac483f8c9c94e625`
+- **Organisers, 11:41:** the real objects are purple / yellow / orange foam blocks of ~5 cm, not the sim's red /
+  yellow / blue; a second real drop (48 teleop episodes, RGB only) shows them next to orange-taped boxes. Still
+  no hand-in form and no Aalto deadline.
+- **Our answer: three colour families** (orange counts as red, purple as blue), so one policy serves both
+  worlds. Parser done (real-style set 12 % → 100 %); real colours measured on drop 2 (orange 20–29°, yellow
+  44–96°, purple 217–223°: separable; orange objects versus orange box tape only by geometry); detector basins
+  being benchmarked on the sim sets. No published image can see or name the real colours yet: that is v13.
+- v13 (committed, not built): + obstacle-aware picking, isolated objects first, classifier leaning soft, real
+  colour words. Waits for the perception families.
+
 ### Sat 14.11, 13:00
 - **Hand-in candidate: v10, proxy +21.13 of a possible 21.38 (86 of 87 objects), sim gate PASS on all 24
   episodes, measured through its container.**
@@ -107,6 +121,7 @@ Full proxy (three legs, 8 seeds each, DR train):
 | v8: + final perception, hand-aware grasps, release check (through the image) | +3.88 (31/31) | +6.75 (27/28) | +6.50 (26/28) | **+20.38** | pass |
 | v9: + cheaper release check, more tries on toppled objects | +3.88 (31/31) | +7.00 (28/28) | +6.50 (26/28) | **+20.63** | pass |
 | v10: + staggered finger release, arm retired only on a confirmed read | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
+| v12: + vertex-aligned triangle grasp, soft-hand identification and carry profile (soft sim: fixed 31/31) | +3.88 (31/31) | +6.75 (27/28) | +7.00 (28/28) | **+21.13** | pass |
 
 v2 per pick (232 picks): cubes held 92 %, cylinders 58 %, triangles 26 %; first attempt 64 %, second 38 %, third
 27 %: a pinch that failed once mostly fails again and pushes the object towards the robot. Instructions: 16/16
