@@ -56,7 +56,7 @@ class Situation:
 class Looker:
     def __init__(self, detector: Detector, planner: PickPlanner, calibrator: HandCalibrator, settings: Mapping[str, Any]) -> None:
         self.detector, self.planner, self.calibrator, self.settings = detector, planner, calibrator, settings
-        self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"])
+        self.area = ObjectArea(planner.scene, settings["counter_edge_margin"], settings["bin_clearance"], settings["min_object_x"])
         self.chooser = PickChooser(planner, ReleaseSlots(settings["release_shifts"]), settings)
         self.detect_patience_s = float(settings["detect_deadline_s"])
         self.frames: dict[str, tuple[int, np.ndarray, float]] = {}   # per head image: hash of the one last looked at, the arm pose and arm travel it was first seen at

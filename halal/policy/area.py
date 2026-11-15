@@ -9,13 +9,14 @@ from aaltonomous.scene.scene import Scene
 
 
 class ObjectArea:
-    """The counter top inside an edge margin, minus a clearance strip around every bin footprint (pelvis frame)."""
+    """The counter top inside an edge margin and at least `min_x` ahead of the pelvis, minus a clearance strip around every bin footprint (pelvis frame)."""
 
-    def __init__(self, scene: Scene, edge_margin: float, bin_clearance: float) -> None:
+    def __init__(self, scene: Scene, edge_margin: float, bin_clearance: float, min_x: float = -np.inf) -> None:
         counter, bins = scene.cfg["counter"], scene.cfg["bins"]
         mat, size = np.asarray(counter["mat_size"], float), np.asarray(counter["counter_size"], float)
         corners = scene.mat_to_pelvis([mat / 2 - size / 2, mat / 2 + size / 2])[:, :2]
         self.lo, self.hi = corners.min(0) + edge_margin, corners.max(0) - edge_margin
+        self.lo[0] = max(self.lo[0], min_x)
         self.bin_half = np.asarray(bins["outer_size"], float)[::-1] / 2 + bin_clearance   # mat (x, y) = pelvis (y, x)
 
     def contains(self, xy: np.ndarray, bin_centers: Mapping[str, np.ndarray]) -> bool:

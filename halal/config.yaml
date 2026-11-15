@@ -444,6 +444,7 @@ reach_bench:
 
 policy:
   counter_edge_margin: 0.02   # a detection this close to the counter's edge, or beyond it, is not picked
+  min_object_x: 0.23          # nor is one nearer the pelvis than this: half out of the head view, under the hands (robot 15.11: 0 of 4, one knocked out of view)
   bin_clearance: 0.03         # nor is one in a bin or this close to its footprint (bin rims can look like objects)
   time_limit_s: 120.0         # episode length assumed when AALTO_TIME_LIMIT is not set
   time_margin_s: 0.5          # a pick starts only if its release ends this long before the limit
@@ -477,6 +478,7 @@ policy:
     right: [[0.0, 0.02], [0.0, -0.045]]
   grip_check: true            # calibrate the hands once per episode and give a pick up when the hand is empty after the lift
   grip_joints: [1, 3, 5]      # joints the grip score sums, each hand's own order: thumb_1 and both finger_0 (thumb_2 sits on its limit)
+  grip_dead_error: 0.15       # rad: a grip joint whose empty-hand error is larger does not follow its command (robot 15.11: left middle_0 stuck) and leaves the score
   grip_settle_s: 0.45         # the hand command must be still this long before its tracking error is read
   grip_threshold:             # summed finger shortfall (rad) under which a hand holds nothing, per hand class
     stiff: 0.02               # the sim hand: an empty hand reads 0.000, a held object 0.03 or more on these joints
