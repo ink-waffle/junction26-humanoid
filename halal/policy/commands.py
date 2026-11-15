@@ -18,6 +18,11 @@ def arm_travel(start: np.ndarray, arm: np.ndarray) -> float:
     return float(np.abs(np.diff(np.vstack([start, arm]), axis=0)).max(axis=1, initial=0.0).sum())
 
 
+def with_feedforward(action: Action, tau: np.ndarray | None) -> Action:
+    """The action with the arm feed-forward torques (`arm_tau_ff`, Nm per tick) when they are sent; runners without it ignore the key."""
+    return action if tau is None else {**action, "arm_tau_ff": tau}
+
+
 def trailing_equal(rows: np.ndarray) -> int:
     """How many rows at the end equal the last one."""
     differs = np.flatnonzero(np.any(rows != rows[-1], axis=1))
@@ -32,6 +37,7 @@ class CommandStream:
         self.arm_cmd: np.ndarray | None = None
         self.hand_cmd: np.ndarray | None = None
         self.sent: np.ndarray | None = None     # the arm command last sent
+        self.tau: np.ndarray | None = None      # (1, 14) feed-forward torque of the row last sent, when sent
         self.held = np.zeros(2, int)            # ticks each arm's sent command has stood unchanged
         self.load(np.empty((0, 14)), np.empty((0, 14)))
 
@@ -53,6 +59,7 @@ class CommandStream:
         self.arm_cmd = np.clip(np.asarray(arm_q, float), self.spec.arm_lower, self.spec.arm_upper)
         self.hand_cmd = np.clip(np.asarray(hand_q, float), self.spec.hand_lower, self.spec.hand_upper)
         self.sent = self.arm_cmd.copy()
+        self.tau = self.sag.feedforward(self.arm_cmd[None], self.hand_cmd[None])
 
     def load(self, arm: np.ndarray, hand: np.ndarray, settle_ticks: int = 0, cuts: Iterable[int] = ()) -> None:
         """Replace the trajectory: it starts at the last command, holds its end for `settle_ticks`, chunks end at `cuts`."""
@@ -77,14 +84,16 @@ class CommandStream:
         self.arm_cmd, self.hand_cmd = arm[-1].copy(), hand[-1].copy()
         self.sag.offset = self._offsets[end - 1].copy()
         self._note_sent(sent)
-        return {"arm_q_target": sent.copy(), "hand_q_target": hand.copy(), "done": False}
+        tau = self.sag.feedforward(arm, hand)
+        self.tau = None if tau is None else tau[-1:]
+        return with_feedforward({"arm_q_target": sent.copy(), "hand_q_target": hand.copy(), "done": False}, tau)
 
     def hold(self, done: bool = False) -> Action:
         """Repeat the last command; the final reply of an episode is a single tick with `done`."""
         k = 1 if done else self.hold_ticks
         self.held += k
-        return {"arm_q_target": np.repeat(self.sent[None], k, 0), "hand_q_target": np.repeat(self.hand_cmd[None], k, 0),
-                "done": done}
+        action = {"arm_q_target": np.repeat(self.sent[None], k, 0), "hand_q_target": np.repeat(self.hand_cmd[None], k, 0), "done": done}
+        return with_feedforward(action, None if self.tau is None else np.repeat(self.tau, k, 0))
 
     def _note_sent(self, rows: np.ndarray) -> None:
         """Count, per arm, how long the newest sent command has stood."""

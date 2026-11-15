@@ -343,6 +343,7 @@ motion:
     max_kappa: 1.5
     max_speed: 0.98           # rad/s per joint of the sent command, compensation included (filter 1.0, plans 0.97)
     max_offset_speed: 0.5     # rad/s at which the compensation itself may change
+    send_tau_ff: true         # every reply carries `arm_tau_ff`: URDF gravity (g1_body29_hand14, hands included) at the plan-space rows, as the teleop app sends. A runner that applies it removes the sag, kappa then fits under the dead band and the angle offset switches itself off
     budget:                   # shares of `clip` the real arm may use (estimated compliance; the far shoulder needs 15-25 % more than the fit: logs/sag.md)
       static: 0.78            # sag while the arm stands at the grasp, the release and the hover: a plan or hover over it is refused. Tonight the arm stood at the cap at 0.83-0.86 (kappa-scaled)
       moving: 0.82            # sag + damping lag (kd/kp x speed) along every arm move: rows are slowed until they fit
