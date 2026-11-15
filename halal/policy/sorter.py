@@ -255,10 +255,7 @@ class SortPolicy:
             log.info("t=%.1f no room here for the hands' calibration close: going home for it before the first pick", t)
             self.stage, self.next_view = Stage.MOVING, View.HOME
         elif self._waits_for_the_camera(look):
-            log.info("t=%.1f the camera is still the nominal one: look %d of %d for the hands before the first pick on it", t,
-                     self.unfitted_looks, self.settings["nominal_camera_looks"])
-            self.stage = Stage.MOVING
-            self._settle()
+            self._wait_for_the_camera(t)
         elif self._waits_for_the_sag(t):
             log.info("t=%.1f the arm sag is not measured yet (%s still samples): holding still before the first pick", t,
                      " / ".join(map(str, self.sag.samples)))
@@ -292,6 +289,17 @@ class SortPolicy:
         elif step is Next.HOME:
             self.attempts.record_pick(self.servo.stranded.xy)
             self.stage, self.next_view = Stage.MOVING, View.HOME
+
+    def _wait_for_the_camera(self, t: float) -> None:
+        """No hand fit yet: from the start pose go home, where the arms are in full view; at home hold still and look again."""
+        if self.view is View.START:
+            log.info("t=%.1f the camera is still the nominal one: going home, where the arms are in full view, for the hands' fit", t)
+            self.stage, self.next_view = Stage.MOVING, View.HOME
+            return
+        log.info("t=%.1f the camera is still the nominal one: look %d of %d for the hands before the first pick on it", t,
+                 self.unfitted_looks, self.settings["nominal_camera_looks"])
+        self.stage = Stage.MOVING
+        self._settle()
 
     def _waits_for_the_camera(self, look: Look) -> bool:
         """A pick on the nominal camera can miss by centimetres: with the hands in view (not the clear pose) a few more still looks let the detector fix it first."""
