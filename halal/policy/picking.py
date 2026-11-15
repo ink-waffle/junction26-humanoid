@@ -1,9 +1,10 @@
 """Pick selection: which object next, with which arm, grasp and release point; the first plan that passes wins."""
 from __future__ import annotations
 
+import itertools
 import logging
 from dataclasses import dataclass, replace
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 import numpy as np
 
@@ -102,16 +103,18 @@ class PickChooser:
         """`_first_plan` over the target's options; a target without options (no arm in use reaches its bin, or its data breaks them) goes to `broken`, the other targets keep their turn."""
         try:
             options = self._options(target, start.released.get(target.bin_name, 0), start.hands)
-            if not options:
+            first = next(options, None)
+            if first is None:
                 log.info("no plan for %s: no arm in use reaches the %s bin with a grasp", target, target.bin_name)
                 broken.append(target)
-            return self._first_plan(target, options, start, obstacles)
+                return None, False
+            return self._first_plan(target, itertools.chain([first], options), start, obstacles)
         except Exception:
             log.exception("no options for %s", target)
             broken.append(target)
             return None, False
 
-    def _first_plan(self, target: Target, options: list[tuple[str, Grasp, Shift]], start: PlanStart,
+    def _first_plan(self, target: Target, options: Iterable[tuple[str, Grasp, Shift]], start: PlanStart,
                     obstacles: Obstacles) -> tuple[Pick | None, bool]:
         """The first of the arm, grasp and release slot options with a plan; none, and True, if that plan would touch a neighbouring object."""
         for side, grasp, shift in options:
@@ -126,18 +129,20 @@ class PickChooser:
                 return None, True
         return None, False
 
-    def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> list[tuple[str, Grasp, Shift]]:
-        """Arm, grasp and slot in the order to try: a retry starts with the next arm and grasp and moves the grasp point a little; an arm left with last resorts only goes last."""
+    def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> Iterator[tuple[str, Grasp, Shift]]:
+        """Arm, grasp and slot in the order to try, an arm and slot pair only if it reaches the bin (asked when it comes up): a retry starts with the next arm and grasp and moves the grasp point a little; an arm left with last resorts only goes last."""
         det, turns = target.detection, target.attempts
         offsets = self.settings["retry_offsets"]
         dx, dy = offsets[turns % len(offsets)]
-        shifts = self.slots.candidates(target.bin_name, released)
         arms = _rotated([side for side in self._arms(target) if side in hands], turns)
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
                          for grasp in self._in_turn(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
                   for side in arms}
         arms = sorted(arms, key=lambda side: all(grasp.last_resort for grasp in grasps[side]))
-        return [(side, grasp, shift) for shift in shifts for side in arms for grasp in grasps[side]]
+        for shift in self.slots.candidates(target.bin_name, released):
+            for side in arms:
+                if self.planner.reaches_bin(side, target.bin_name, det, shift):
+                    yield from ((side, grasp, shift) for grasp in grasps[side])
 
     @staticmethod
     def _in_turn(grasps: list[Grasp], turns: int) -> list[Grasp]:
@@ -153,11 +158,11 @@ class PickChooser:
             log.exception("planning failed for %s", target)
             return Plan(False, side=side, color=target.detection.color, reason=repr(error))
 
-    def _arms(self, target: Target) -> list[str]:
-        """Arms that reach the bin: a side bin's own arm first, for the centre bin the arm on the object's side."""
+    @staticmethod
+    def _arms(target: Target) -> list[str]:
+        """Both arms in the order to try: a side bin's own arm first, for the centre bin the arm on the object's side."""
         near = target.bin_name if target.bin_name in SIDES else ("left" if target.xy[1] > 0 else "right")
-        far = "right" if near == "left" else "left"
-        return [side for side in (near, far) if self.planner.reaches_bin(side, target.bin_name, target.detection)]
+        return [near, "right" if near == "left" else "left"]
 
     def _distance_to_bin(self, target: Target) -> float:
         return float(np.linalg.norm(target.xy - self.planner.bin_xy(target.bin_name)))

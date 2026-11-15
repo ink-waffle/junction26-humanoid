@@ -1071,3 +1071,76 @@ after the lift (grip ≥ 0.15), then the hand empty before the release.
   1000's cylinder from y +0.18 to the right box, the far cross-body case the offline bench put at +2.9 s).
 - Gate passed in both (0 clips, rt_hz ≥ 122). n is small (12 rerouted held carries a leg): the A/B shows no new loss from
   the route, not a measured slip rate. Verdict: on (`e75413a`).
+
+## Planner: the release slot of the last plan leaked into every reach question (offline; realsim rs27-robot6edgefar-rest, boxes +10 cm)
+
+Symptom (realsim v27, boxes +10 cm, soft, resting start, seed 1004): a blue prism lying at (+0.316, −0.085), bound for
+the centre box, was tried with the right arm only, 88 times (slot −0.03: "release would land on a bin wall"; +0.03:
+"right arm cannot reach the center bin"), never with the left; 90 s lost, time limit. v24 tried only the left arm on
+the same object and sorted it.
+
+Defect (since the first planner, ffbd071): `plan_pick` set `PickPlanner.drop_shift` and never reset it; `drop_xy` adds it
+to every release point. So `reaches_bin`, which the policy's arm filter asks outside any plan, and the rim gate
+(`_beyond_reach`) answered at the slot of whatever plan ran last. In the v27 look, the red cube's last refused plan
+(right box, slot −0.045) left −0.045 behind: at that shift the left arm misses the centre box and the right arm
+reaches it, so only the right arm was tried. At +10 cm the centre box is reached by one arm per slot: left only at
++0.03, right only at −0.03. The far-box speed-up (59e86fc) changed no answer: `_reaches_any` is true exactly when
+`_lowest_rise` is not None for some inset (the lowest or the highest rise reaches), and lazy evaluation only reorders
+pure questions.
+
+Offline repro (boxes +10 x / +2 cm y, `reaches_bin(side, center, lying prism)` right after a right-box plan at shift s):
+s = −0.03 / −0.045: left no, right yes; s = +0.03 / +0.045 / +0.02: left yes, right no; s = 0: both. Per slot, with the
+fix, whatever ran before: left [−0.03 no, +0.03 yes], right [−0.03 yes, +0.03 no]; `plan_pick` agrees (left +0.03 plans,
+ridge_skew15). The rim gate flipped the same way: an upright cylinder for the left box at +10.5 got the rim insets only
+after a plan at +0.045, the `near` insets otherwise.
+
+Fix (`3e06539`):
+- `_dropped_at(shift)` sets the release shift for one plan or reach question and restores it; `plan_pick` uses it,
+  `reaches_bin(side, bin, det, shift)` takes the slot as an argument. Outside a call the shift is 0 again.
+- Rim gate: judged at the slot being asked, both arms (the asking arm first, which only saves IK). That is what
+  `plan_pick` already did, so the filter and the planner now ask the same question and every plan stays the same.
+  Judging over all of the bin's slots (branch `ws/reachfix-allslots`) needs the planner to read the policy's slot
+  table and changes 24/372 plans per hand class at +10: an upright cylinder or triangle for a side box at its outer
+  slot (±0.045) loses its 1 cm rim release (r3 / r7, centre box +10 at 1 cm: cylinders and triangles 8/8 stock, 8/8
+  soft) and the second object of that box goes to the inner slot instead, onto the first. It would help only at +10.5
+  to +11.5 cm, where the outer slot needs the 0 cm rim (r8: cylinders 3/8). Not adopted.
+- Policy: `_options` yields (arm, grasp, slot) for the (arm, slot) pairs that reach, asking `reaches_bin` lazily as the
+  pair comes up; same order as before (two arms: rotating then filtering = filtering then rotating).
+- Not changed, they leak but reach no decision: `near_inset` (every reader sets it first; `reach_bench` reads it on
+  purpose as the last plan's inset), `low` (only `_plan_side` reads it, inside `plan_pick`; `sequences: [organiser]`),
+  `obstacles` / `blocked` (reset by every `plan_pick`, read only inside it). `kin.offset`, `kin.hint`, `post`, `height`,
+  `scene` (per plan) and the grasp config are restored by their contexts.
+
+Bench (4 `plan_bench` layouts, every object + each upright triangle again lying (ridge 0, ±60°) × bin × both arms × both
+of the bin's slots, look pose → home, sha256 of ok, reason, arm and hand rows; 372 plans per offset and hand class):
+
+| boxes | plans identical (stiff, soft) | (object, bin, arm) whose filter answer depends on the slot | filter says no, a plan exists |
+|---|---|---|---|
+| +0 | 372/372, 372/372 | 0/186 | 0 |
+| +6 | 372/372, 372/372 | 0/186 | 0 |
+| +10 | 372/372, 372/372 | 62/186: every centre-box one (left only at +0.03, right only at −0.03) | 0 |
+| +12 | 372/372, 372/372 | 24/186: centre box, upright cylinders and triangles (rim) | 0 |
+
+Before the fix, those 62 at +10 were tried or skipped by history. Filter yes, planner "cannot reach" (the filter asks
+with the default palm point and the nominal object height, the plan with the grasp's): 9 / 38 per hand at +10 (side
+boxes' outer slot, cubes and lying prisms), 24 at +12, 0 at +0 / +6; they cost 0.04-0.18 s each (cached).
+
+Look replay (the policy's `PickChooser.choose` on the 8 rs24 looks + the rs27 look and the triangle alone, boxes moved,
+2 cm in y, Mac under load, CPU s per 10 looks):
+
+| boxes | picks | planning, old → new | median look |
+|---|---|---|---|
+| +0 | the same 10 (sha) | 79.4 → 71.3 s | 3.5 → 0.2 s |
+| +10 | 9 the same; rs27 look: none (16 refusals) → left arm, slot +0.03 | 114.3 → 125.0 s | 9.8 → 10.0 s |
+
+Nominal looks got faster: the lazy filter stops at the first arm and slot that plans (the old one asked both arms,
+the cross arm's failing IK first). At +10 a look can cost 2.5-5 s more: it now asks the near arm's far slot and
+plans the near arm's reachable slot, where the old filter had dropped one of them by chance (for the rs27 look that
+chance was the failure).
+
+Mock (Mac), old tree vs new: the chooser's option lists at nominal boxes are identical in all 1620 cases (30 objects ×
+bin × 3 hand sets × 3 tries × 2 release counts). The policy's mock suites (41 cases) and 12 `table_e2e` episodes
+(recorded robot starts, boxes +0 / +10: 24/24 correct each): 0 clips in both trees and the same outcomes, except two
+time-limited `robust` cases that moved with the Mac's load and `room_choice`, whose fake planner needs the new `shift`
+argument (with it: the same 7 outcomes). `deploy.runner --backend mock` (blank images: protocol only), 5 episodes:
+0 clips, 30 Hz, policy_hz_rt ~300.

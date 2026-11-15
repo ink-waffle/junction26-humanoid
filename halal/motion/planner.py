@@ -62,13 +62,12 @@ class PickPlanner(Planner):
                   place_xy: tuple[float, float] | None = None, squeeze: float | None = None,
                   obstacles: Sequence[Any] = ()) -> Plan:
         """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline)."""
-        self.drop_shift = np.asarray(drop_shift, float)
         self.obstacles = [o for o in obstacles if np.linalg.norm(top_of(o)[:2] - det.top[:2]) > self.motion["obstacles"]["radius"]]
         self.blocked = {}
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
         target = replace(det, top=det.top + np.r_[grasp.center_shift, 0.0])
         depth = grasp.squeeze if squeeze is None else squeeze
-        with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target):
+        with self._grasp_applied(grasp, side, depth), self._sized_as(det), self._counter_under(target), self._dropped_at(drop_shift):
             releases = iter([(0.0, 0.0)]) if place_xy is not None else self._reachable_releases(side, bin_name, det)
             tried, furthest = False, None   # a plan that was tried and failed keeps its reason: the policy reads it
             for (self.near_inset, rise), self.low in ((release, low) for release in releases for low in self._sequences(place_xy)):
@@ -211,18 +210,19 @@ class PickPlanner(Planner):
         cfg["bins"]["wall_height"] = max(float(cfg["bins"]["wall_height"]), self.motion["min_wall_height"], seen)
         return Scene(cfg)
 
-    def reaches_bin(self, side: str, bin_name: str, det: Any = None) -> bool:
-        """Whether this arm can hold the grasp point over one of the bin's release points (those for this object, when given)."""
-        return self._reaches_any(side, bin_name, self._release_insets(bin_name, det))
+    def reaches_bin(self, side: str, bin_name: str, det: Any = None, shift: Sequence[float] = (0.0, 0.0)) -> bool:
+        """Whether this arm can hold the grasp point over one of the bin's release points shifted by `shift` (those for this object, when given)."""
+        with self._dropped_at(shift):
+            return self._reaches_any(side, bin_name, self._release_insets(side, bin_name, det))
 
     def _reachable_releases(self, side: str, bin_name: str, det: Any) -> Iterator[tuple[float, float]]:
         """(distance from the bin's near wall, release rise) pairs this arm reaches, distances largest first, found as they are asked for."""
-        return self._reached(side, bin_name, self._release_insets(bin_name, det))
+        return self._reached(side, bin_name, self._release_insets(side, bin_name, det))
 
-    def _release_insets(self, bin_name: str, det: Any) -> Sequence[float]:
+    def _release_insets(self, side: str, bin_name: str, det: Any) -> Sequence[float]:
         """The bin's `near` insets; the rim insets for an object that may go in over the rim of a bin beyond both arms' reach."""
         insets = self.motion["drop_inset"]
-        return insets["rim"]["near"] if self._may_go_over_rim(det) and self._beyond_reach(bin_name) else insets["near"]
+        return insets["rim"]["near"] if self._may_go_over_rim(det) and self._beyond_reach(side, bin_name) else insets["near"]
 
     def _reaches_any(self, side: str, bin_name: str, insets: Sequence[float]) -> bool:
         """Whether this arm reaches one of the insets at some rise (as `_lowest_rise` decides it), the nearest inset and the highest rise asked first."""
@@ -240,9 +240,10 @@ class PickPlanner(Planner):
         """Whether the object is an upright shape that rolls or slides into the bin from a release on its near rim."""
         return det is not None and not det.lying and det.shape in self.motion["drop_inset"]["rim"]["shapes"]
 
-    def _beyond_reach(self, bin_name: str) -> bool:
-        """Whether neither arm reaches any of the bin's `near` insets."""
-        return not any(self._reaches_any(side, bin_name, self.motion["drop_inset"]["near"]) for side in SIDES)
+    def _beyond_reach(self, side: str, bin_name: str) -> bool:
+        """Whether neither arm reaches any of the bin's `near` insets at the current drop shift (this arm asked first)."""
+        arms = sorted(SIDES, key=lambda arm: arm != side)
+        return not any(self._reaches_any(arm, bin_name, self.motion["drop_inset"]["near"]) for arm in arms)
 
     def _lowest_rise(self, side: str, bin_name: str, inset: float) -> float | None:
         """The lowest configured rise from which this arm reaches that release point (reach grows with the height); None if the highest does not."""
@@ -292,6 +293,16 @@ class PickPlanner(Planner):
         finally:
             g["drop_above_rim"], g["retreat_up"] = saved
             self.release_rise = 0.0
+
+    @contextmanager
+    def _dropped_at(self, shift: Sequence[float]) -> Iterator[None]:
+        """Shift every release point by `shift` (pelvis xy) for one plan or reach question."""
+        saved = self.drop_shift
+        self.drop_shift = np.asarray(shift, float)
+        try:
+            yield
+        finally:
+            self.drop_shift = saved
 
     def drop_xy(self, name: str) -> np.ndarray:
         """Release point (pelvis xy): the point inside the bin's inset inner walls nearest the pelvis, plus the drop shift."""
