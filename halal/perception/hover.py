@@ -45,76 +45,39 @@ class ShiftFit:
     inliers: float
     points: int
     spread: float
+    centre: np.ndarray      # (3,) FK centre of the visible model points of the fitted links
 
 
-class HoverMeasurer:
-    """Measures the target from the hover pose relative to the picking hand; holds no episode state."""
+class HandShift:
+    """Translation-only point-to-plane ICP of one side's chosen links, seen in depth, onto their FK surface."""
 
-    def __init__(self) -> None:
-        cfg = config.load()["perception"]
-        self.cfg, self.hands = cfg["hover"], cfg["calibration"]["hands"]
-        scene = Scene.load()
-        self.calibration = SelfCalibration(scene, cfg["calibration"])
-        self.reference = self.calibration.hands
-        self.fitter = OutlineFitter(scene, cfg["topface"]["outline"])
-        self.median = cfg["topface"]["depth_median"]
-        self.bin_half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2 + self.cfg["bin_margin"]
+    def __init__(self, reference: HandReference, hands: Mapping[str, Any], cfg: Mapping[str, Any], scene: Scene) -> None:
+        self.reference, self.hands, self.cfg = reference, hands, cfg
+        self.bin_half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2 + cfg["bin_margin"]
         names = [str(name) for name in np.load(ASSET)["links"]]
         self.own = {side: self._side_links(names, side) for side in ("left", "right")}
 
     def _side_links(self, names: list[str], side: str) -> np.ndarray:
-        """True for the surface samples of one side's links named in `hover.links`."""
+        """True for the surface samples of one side's links named in `links`."""
         chosen = [i for i, name in enumerate(names) if name.startswith(f"{side}_") and name[len(side) + 1:].startswith(tuple(self.cfg["links"]))]
         return np.isin(self.reference.surface.link, chosen)
 
-    def measure(self, obs: Mapping[str, Any], camera: Camera, side: str, target: ObjectDetection,
-                bins: Mapping[str, np.ndarray]) -> HoverLook:
-        """The target top in the arm frame from one still look at the hover pose, with every guard by name."""
-        start, depth = time.perf_counter(), obs["head_depth"]
-        arm_q, hand_q = np.asarray(obs["arm_q"]), np.asarray(obs["hand_q"])
-        turned = self._turned(depth, camera, arm_q, hand_q)
-        expected = np.asarray(target.top, float) if turned is None else turned.deproject(camera.project(np.asarray(target.top, float)[None]))[0]
-        camera = turned or camera
-        counter = self.calibration.counter(depth, camera)
-        face = self._top_face(depth, camera, counter, expected)
-        fit = self._shift(depth, camera, counter, side, arm_q, hand_q, bins)
-        seen = None if face is None else face.centre
-        visible = 0.0 if face is None else face.visible
-        shift = None if fit is None else fit.shift
-        return HoverLook(None if seen is None or shift is None else seen + shift, seen, shift, visible,
-                         np.nan if fit is None else fit.rms, 0.0 if fit is None else fit.coverage, 0.0 if fit is None else fit.inliers,
-                         0 if fit is None else fit.points, np.nan if fit is None else fit.spread, ",".join(self._failed(visible, fit)),
-                         time.perf_counter() - start, turned)
+    def open(self, hand_q: np.ndarray) -> bool:
+        """True when no index or middle finger is curled beyond `open_curl`: the finger links are then part of the model."""
+        return bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.hands["open_curl"])
 
-    def _turned(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray) -> Camera | None:
-        """This look's own believed 6-DOF fit of both arms (held up at the hover, clear of the floor gate); None when off or not believed."""
-        if not self.cfg["arm_fit"]:
-            return None
-        fit = self.calibration.hand_fit(depth, camera, (arm_q, hand_q), self.calibration.counter_fit(depth, camera))
-        return fit.camera if fit is not None and all(self.calibration.hand_checks(fit, camera).values()) else None
-
-    def _failed(self, visible: float, fit: ShiftFit | None) -> list[str]:
-        """Names of the guards a look does not pass."""
+    def checks(self, fit: ShiftFit) -> dict[str, bool]:
+        """Every guard a shift fit must pass to be believed, by name."""
         c = self.cfg
-        failed = ["visible"] if visible < c["min_visible"] else []
-        if fit is None:
-            return failed + ["points"]
-        checks = {"points": fit.points >= c["min_points"], "rms": fit.rms <= c["max_rms"], "coverage": fit.coverage >= c["min_coverage"],
-                  "inliers": fit.inliers >= c["min_inliers"], "spread": fit.spread <= c["max_spread"],
-                  "shift": float(np.linalg.norm(fit.shift)) <= c["max_shift"]}
-        return failed + [name for name, ok in checks.items() if not ok]
-
-    def _top_face(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, expected: np.ndarray) -> OutlineFit | None:
-        """The best outline fit of the top face nearest where `camera` puts the target's top, seeded there; None when none lies within reach."""
-        faces = self.fitter.fit(cv2.medianBlur(depth, self.median), camera, expected, counter)
-        near = [face.best for face in faces if np.linalg.norm(face.best.centre[:2] - expected[:2]) <= self.cfg["match_radius"]]
-        return min(near, key=lambda fit: np.linalg.norm(fit.centre[:2] - expected[:2]), default=None)
+        return {"points": fit.points >= c["min_points"], "rms": fit.rms <= c["max_rms"], "coverage": fit.coverage >= c["min_coverage"],
+                "inliers": fit.inliers >= c["min_inliers"], "spread": fit.spread <= c["max_spread"],
+                "shift": float(np.linalg.norm(fit.shift)) <= c["max_shift"]}
 
     def _model(self, camera: Camera, side: str, arm_q: np.ndarray, hand_q: np.ndarray,
                shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Both arms' surface (points, normals) as far as it faces the camera, and True on the picking side's wrist and hand."""
+        """Both arms' surface (points, normals) as far as it faces the camera, and True on the side's chosen links."""
         surface = self.reference.surface
-        fingers = bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.hands["open_curl"])
+        fingers = self.open(hand_q)
         points, normals = surface.posed(arm_q, hand_q, fingers)
         own = self.own[side] if fingers else self.own[side][surface.rigid]
         front = self.reference.facing(points, normals, camera, shape)
@@ -137,9 +100,9 @@ class HoverMeasurer:
         uvz = np.c_[u.ravel(), v.ravel(), depth[v, u].ravel() * MM]
         return uvz[self._evidence(camera, counter, bins, uvz)]
 
-    def _shift(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, side: str, arm_q: np.ndarray, hand_q: np.ndarray,
-               bins: Mapping[str, np.ndarray]) -> ShiftFit | None:
-        """Translation-only point-to-plane ICP of the seen picking hand onto its model; None with too little of either in view."""
+    def fit(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, side: str, arm_q: np.ndarray, hand_q: np.ndarray,
+            bins: Mapping[str, np.ndarray]) -> ShiftFit | None:
+        """The shift that puts the seen links onto their model; None with too little of either in view."""
         model, normals, own = self._model(camera, side, arm_q, hand_q, depth.shape)
         if own.sum() < self.cfg["min_points"]:
             return None
@@ -162,7 +125,7 @@ class HoverMeasurer:
         rms = float(np.sqrt(np.mean(along ** 2)))
         spread = float(np.sqrt(np.diag(np.linalg.inv(information + prior))).max())
         coverage, inliers = self._support(depth, camera.moved(np.eye(3), shift), tree, model, own, seen + shift)
-        return ShiftFit(shift, rms, coverage, inliers, int(near.sum()), spread)
+        return ShiftFit(shift, rms, coverage, inliers, int(near.sum()), spread, model[own].mean(axis=0))
 
     def _support(self, depth: np.ndarray, moved: Camera, tree: cKDTree, model: np.ndarray, own: np.ndarray,
                  seen: np.ndarray) -> tuple[float, float]:
@@ -177,3 +140,56 @@ class HoverMeasurer:
         covered = np.isfinite(cKDTree(matched).query(hand, distance_upper_bound=last)[0]) if len(matched) else np.zeros(len(hand), bool)
         known = covered | HandReference._returned(depth, moved, hand)
         return float(covered.sum() / max(known.sum(), 1)), float(on_model.mean()) if len(on_model) else 0.0
+
+
+class HoverMeasurer:
+    """Measures the target from the hover pose relative to the picking hand; holds no episode state."""
+
+    def __init__(self) -> None:
+        cfg = config.load()["perception"]
+        self.cfg, self.hands = cfg["hover"], cfg["calibration"]["hands"]
+        scene = Scene.load()
+        self.calibration = SelfCalibration(scene, cfg["calibration"])
+        self.reference = self.calibration.hands
+        self.fitter = OutlineFitter(scene, cfg["topface"]["outline"])
+        self.median = cfg["topface"]["depth_median"]
+        self.shifts = HandShift(self.reference, self.hands, self.cfg, scene)
+
+    def measure(self, obs: Mapping[str, Any], camera: Camera, side: str, target: ObjectDetection,
+                bins: Mapping[str, np.ndarray]) -> HoverLook:
+        """The target top in the arm frame from one still look at the hover pose, with every guard by name."""
+        start, depth = time.perf_counter(), obs["head_depth"]
+        arm_q, hand_q = np.asarray(obs["arm_q"]), np.asarray(obs["hand_q"])
+        turned = self._turned(depth, camera, arm_q, hand_q)
+        expected = np.asarray(target.top, float) if turned is None else turned.deproject(camera.project(np.asarray(target.top, float)[None]))[0]
+        camera = turned or camera
+        counter = self.calibration.counter(depth, camera)
+        face = self._top_face(depth, camera, counter, expected)
+        fit = self.shifts.fit(depth, camera, counter, side, arm_q, hand_q, bins)
+        seen = None if face is None else face.centre
+        visible = 0.0 if face is None else face.visible
+        shift = None if fit is None else fit.shift
+        return HoverLook(None if seen is None or shift is None else seen + shift, seen, shift, visible,
+                         np.nan if fit is None else fit.rms, 0.0 if fit is None else fit.coverage, 0.0 if fit is None else fit.inliers,
+                         0 if fit is None else fit.points, np.nan if fit is None else fit.spread, ",".join(self._failed(visible, fit)),
+                         time.perf_counter() - start, turned)
+
+    def _turned(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray) -> Camera | None:
+        """This look's own believed 6-DOF fit of both arms (held up at the hover, clear of the floor gate); None when off or not believed."""
+        if not self.cfg["arm_fit"]:
+            return None
+        fit = self.calibration.hand_fit(depth, camera, (arm_q, hand_q), self.calibration.counter_fit(depth, camera))
+        return fit.camera if fit is not None and all(self.calibration.hand_checks(fit, camera).values()) else None
+
+    def _failed(self, visible: float, fit: ShiftFit | None) -> list[str]:
+        """Names of the guards a look does not pass."""
+        failed = ["visible"] if visible < self.cfg["min_visible"] else []
+        if fit is None:
+            return failed + ["points"]
+        return failed + [name for name, ok in self.shifts.checks(fit).items() if not ok]
+
+    def _top_face(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, expected: np.ndarray) -> OutlineFit | None:
+        """The best outline fit of the top face nearest where `camera` puts the target's top, seeded there; None when none lies within reach."""
+        faces = self.fitter.fit(cv2.medianBlur(depth, self.median), camera, expected, counter)
+        near = [face.best for face in faces if np.linalg.norm(face.best.centre[:2] - expected[:2]) <= self.cfg["match_radius"]]
+        return min(near, key=lambda fit: np.linalg.norm(fit.centre[:2] - expected[:2]), default=None)

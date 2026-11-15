@@ -19,7 +19,7 @@ from aaltonomous.scene.scene import Scene
 from halal import config
 from halal.motion import sequence
 from halal.motion.grasps import INWARD, Grasp, right_hand
-from halal.motion.obstacles import distance, outline, top_of
+from halal.motion.obstacles import distance, moved, outline, top_of
 from halal.motion.sag import Sag
 from halal.perception import SceneLayout
 
@@ -47,6 +47,7 @@ class PickPlanner(Planner):
     obstacles: Sequence[Any] = ()
     blocked: dict[tuple[float, ...], Plan | None] = {}
     rim_z: float | None = None
+    hand_offsets: dict[str, np.ndarray] = {}   # side -> real hand minus FK through the episode's camera: that arm plans against the scene moved by minus it
     sag: Sag | None = None             # the policy's sag compensation: dry runs see the arm commands it sends
 
     @classmethod
@@ -65,8 +66,17 @@ class PickPlanner(Planner):
     def plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, *,
                   drop_shift: tuple[float, float] = (0.0, 0.0), end: str = "home",
                   place_xy: tuple[float, float] | None = None, squeeze: float | None = None,
-                  obstacles: Sequence[Any] = ()) -> Plan:
-        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline)."""
+                  obstacles: Sequence[Any] = (), arm_frame: bool = False) -> Plan:
+        """Pick (closing `squeeze` rad past `closed`; None = the grasp's own depth) -> bin release point + `drop_shift` (or counter spot `place_xy`) -> `end` (home | retreat), keeping the hand off `obstacles` (other objects: detections, or bare top points of unknown outline); `arm_frame`: `det` and `obstacles` are already where this arm's FK has them (no hand offset)."""
+        by = np.zeros(3) if arm_frame else -self.hand_offset(side)
+        det, obstacles = moved(det, by), [moved(o, by) for o in obstacles]
+        place_xy = None if place_xy is None else tuple(np.asarray(place_xy, float) + by[:2])
+        with self._scene_moved(by):
+            return self._plan_pick(det, grasp, side, bin_name, arm_q, hand_q, drop_shift, end, place_xy, squeeze, obstacles)
+
+    def _plan_pick(self, det: Any, grasp: Grasp, side: str, bin_name: str, arm_q: np.ndarray, hand_q: np.ndarray, drop_shift: tuple[float, float],
+                   end: str, place_xy: tuple[float, float] | None, squeeze: float | None, obstacles: Sequence[Any]) -> Plan:
+        """`plan_pick` with everything in this arm's FK frame."""
         self.obstacles = [o for o in obstacles if np.linalg.norm(top_of(o)[:2] - det.top[:2]) > self.motion["obstacles"]["radius"]]
         self.blocked = {}
         plan = Plan(False, side=side, color=det.color, reason=f"{side} arm cannot reach the {bin_name} bin")
@@ -244,8 +254,8 @@ class PickPlanner(Planner):
         return super().dry_run_safety(self.sag.sent_at(arm_q, offset), hand_q, sent, hand)
 
     def set_layout(self, layout: SceneLayout) -> None:
-        """Plan against the counter height, bin positions and highest rim perception reports for this episode."""
-        self.rim_z = layout.rim_z
+        """Plan against the counter height, bin positions, highest rim and hand offsets perception reports for this episode."""
+        self.rim_z, self.hand_offsets = layout.rim_z, dict(layout.hand_offsets)
         file_scene = self.__dict__.setdefault("file_scene", self.scene)
         cfg = copy.deepcopy(file_scene.cfg)
         cfg["counter"]["mat_origin_in_pelvis"][2] = float(layout.counter_z)
@@ -266,7 +276,7 @@ class PickPlanner(Planner):
 
     def reaches_bin(self, side: str, bin_name: str, det: Any = None, shift: Sequence[float] = (0.0, 0.0)) -> bool:
         """Whether this arm can hold the grasp point over one of the bin's release points shifted by `shift` (those for this object, when given)."""
-        with self._dropped_at(shift):
+        with self._dropped_at(shift), self._scene_moved(-self.hand_offset(side)):
             return self._reaches_any(side, bin_name, self._release_insets(side, bin_name, det))
 
     def _reachable_releases(self, side: str, bin_name: str, det: Any) -> Iterator[tuple[float, float]]:
@@ -352,6 +362,23 @@ class PickPlanner(Planner):
         finally:
             g["drop_above_rim"], g["retreat_up"] = saved
             self.release_rise = 0.0
+
+    def hand_offset(self, side: str) -> np.ndarray:
+        """Real hand minus FK (pelvis xyz) of this arm this episode; 0 when perception measured none."""
+        return np.asarray(self.hand_offsets.get(side, np.zeros(3)), float)
+
+    @contextmanager
+    def _scene_moved(self, by: np.ndarray) -> Iterator[None]:
+        """Counter, bins and rim moved by `by` (pelvis xyz) for one plan or reach question: where an arm whose hand is off has them in its FK frame."""
+        saved = self.scene, self.rim_z
+        if np.any(by):
+            cfg = copy.deepcopy(self.scene.cfg)
+            cfg["counter"]["mat_origin_in_pelvis"] = (self.scene.origin + by).tolist()
+            self.scene, self.rim_z = Scene(cfg), None if self.rim_z is None else self.rim_z + float(by[2])
+        try:
+            yield
+        finally:
+            self.scene, self.rim_z = saved
 
     @contextmanager
     def _dropped_at(self, shift: Sequence[float]) -> Iterator[None]:
