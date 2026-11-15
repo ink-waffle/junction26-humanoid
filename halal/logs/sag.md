@@ -6,6 +6,14 @@ rs19 soft-hand sim ep 0). Scratch scripts only for the analysis; FK and gravity 
 
 ## Verdict
 
+Real-arm sim (ARM_GAINS), seeds 1000-1003, objects in their box:
+
+| boxes | v28 | v29dev (static 0.78 / moving 0.82) | v31 (0.84 / 0.88) |
+|---|---|---|---|
+| scene file | 12/13 (+11), releases at rim height | 10/13 (+9), two lying prisms refused | 13/13 (+13), releases +45 mm above the rim |
+| +6 cm | 7/13 (+7), releases 11 mm under the rim, wall hits | 0/7 (2 seeds, all refused) | 3/13 (+3), small-inset releases land on the near wall |
+
+
 - The real arm sinks under gravity: the runner drives it with a PD and no feedforward. At home the grasp point sits 28-34 mm
   under its command, at the hover 45-52 mm, at the release 165-215 mm.
 - The steady error is `s * e = c * tau_g(q)` with `s = min(1, 0.12 / max|e|)`. Without saturation the model predicts the
@@ -153,3 +161,130 @@ the cap (0.83-0.86) if a 5-10 % deficit at the release is acceptable.
 
 Soft-arm mock (seeds 3/5/7): 0 clips, outcomes unchanged (5/5, 5/5, 4/5), episodes 4-10 s longer. The sent rows of every
 moving load match a planner dry run within 6.7e-7 rad: `_assembled` dry-runs from its first row instead of the start.
+
+## Real-arm sim (d): `ARM_GAINS` (dev-only, next to `HAND_GAINS`)
+
+`ARM_GAINS="kp,kd,kp_wrist,kd_wrist[,limit,limit_wrist]"` replaces the arm actuators of the upstream robot config
+(`halal/ops/soft_hand_sim.py`, composes with `REAL_SIM`). The legs below use `71,3,40,1.5,8.5,4.8`:
+- The sim's USD masses give alpha_sim 1.07 against the real 1.2 (far shoulder). So kp 80 * 1.07 / 1.2 = 71 reproduces
+  the real steady errors: home shoulder pitch 3.42 Nm / 71 = 0.048 rad (real 0.047), hover 0.093 (real 0.098).
+- The torque limit 0.12 * 71 = 8.5 Nm stands in for the 0.12 rad clip. It is per joint, not scaled over the 14-vector,
+  and it also caps the damping force, so the sim arm is somewhat stronger while moving than the real one.
+- How well it reproduces the robot (v28, robot6edge24 with the camera error, seed 1000, before the leg was stopped):
+  - At home the steady error is [-0.049 0.021 0.017 -0.048 -0.001 -0.029 0.006] rad; the robot's is
+    [-0.047 0.03 0.021 -0.049 0.011 -0.014 0.002].
+  - In six releases the hand ends 127-161 mm under its command (robot 165-184), its grasp point 21-35 mm under the box
+    rim: tonight's failure.
+- Sim artefact: when still, the soft-arm sim reports the elbow's `arm_dq` at 0.105 rad/s (stock sim 0.086, robot 0.018 at
+  the max joint). That is over the detector's still gate of 0.1, so no hand fit ever runs and the camera stays nominal.
+  The A/B legs therefore run without the `camera` feature (`lying,colours,boxes,table,offsets`).
+
+### Legs: boxes at the scene file (robot6edge24 without `camera`, seeds 1000-1003, soft hands, real words)
+
+| | v28 (75cc8a0a8e34) | v29dev (72e14afea99c, ws/sag a004ec7) |
+|---|---|---|
+| objects | 12/13 (+11), 0 clips | 10/13 (+9), 0 clips |
+| release: hand under plan | 67 mm median (max 76) | 22 mm (max 28); the sim arm's own sag is 16-20 mm |
+| release: grasp point above the box rim | +0 mm, at rim height | +41 mm median (compensated releases +40..+47) |
+| pick plan, mean | 10.5 s | 11.7 s |
+| episode, sim time | 107-211 s | 142-315 s |
+
+- kappa 0.94-1.01 per arm. It is committed after the first pick (t 26-33 s): the arms rest on the counter until t 12-17 s,
+  so there are no still samples at home before the first look. Each episode's first release is uncompensated.
+- Slowed plans: 14 picks. Retreat +20.4 s in total (straight up 8 cm at x ≈ 0.46, about 0.81 of the clip), carry
+  +2.1 s, to_pregrasp +3.5 s. 37 plans refused at 0.78-0.85.
+- Lost to the budget: two lying prisms. v28 sorted them with `ridge_opposed` (right arm, centre box, x 0.463). v29dev
+  refused the ridge grasps there (0.84-0.85) and missed three times each with `cage_lying`. This sim arm holds those
+  poses; the robot's stood at its cap at 0.83-0.86.
+
+## After the first A/B (v31 candidates: 7be24ff, ebdcc39, 5b56b76)
+
+- `arm_tau_ff` (7be24ff): every reply carries the URDF gravity torque at its plan-space rows. The model is
+  g1_body29_hand14 with the Dex3 hands, the same file teleop's IK uses. A runner that applies it removes the sag, kappa
+  falls into the dead band and the angle offset switches itself off.
+  - Mock q streams unchanged; the key is in every reply.
+  - `deploy.replay` passes on synthetic frames and on the robot npz. Cost 0.025 ms per 15-row reply.
+- Budgets (ebdcc39, 5b56b76): static 0.84 (only the clearly impossible are refused), moving 0.88. A moving budget under
+  the static one makes the last centimetres to a near-cap release crawl at the floor speed.
+  - Reach bench, kappa 1, cubes, boxes +0 / +3 / +6 cm. Plans: 16/16, 16/16, 4/16 (cylinders 16/16, 16/16, 12/16).
+  - Mean pick, by moving budget: 0.82 12.0 / 13.0 / 13.4 s; 0.86 9.5 / 10.6 / 11.7 s; 0.88 9.1 / 9.6 / 10.1 s;
+    0.92 8.7 / 8.9 / 9.1 s. kappa 0: 8.6 / 9.2 / 9.3 s.
+- First pick waits for the estimate (ebdcc39, `policy.sag_wait_s` 3): while the estimate committed at the last look
+  start rests on fewer than `min_samples` on either arm, the pick settles and looks again. There is no wait from the
+  start view, where resting hands give no samples.
+  - Mock: no wait, streams unchanged. Soft-arm mock: one wait of 0.7 s, and the first pick is compensated.
+
+- v31 (official, 5052e5c7b334; static 0.84, moving 0.88), same seeds: **13/13 (+13)**, 0 clips, all in their boxes.
+  - Releases: grasp point 24 mm under the plan (max 59), +45 mm above the rim (min +11), +61 mm past the near wall
+    (min +34).
+  - The first-pick wait triggered twice (7 and 9 samples per arm, under 4 at the commit before): one 0.3 s settle and
+    a new look, then kappa 1.01 committed at t 14.7 / 17.0. Later in the episodes kappa drifts to 0.76-0.96.
+  - 5 plans refused at 0.84-0.85. Slowed: 22 plans, retreat +15.1 s in total, to_pregrasp +3.9 s, carry +1.0 s, lift
+    +0.9 s. Pick plan mean 11.8 s.
+
+### Legs: boxes +6 cm (robot6edge24near6 = robot6edge24 with the box row at [0.06, 0], seeds 1000-1003)
+
+- v28: 7/13 (+7), 2 time limits, 0 clips. In 24 release attempts the grasp point was 168 mm under the plan (max 189),
+  -11 mm under the rim (min -34) and only +20 mm past the near wall (min +6). Objects hit the wall and were picked again;
+  6 ended on the counter. This is the robot night.
+- v29dev (static 0.78): 0/4 and 0/3 on seeds 1000-1001, both time limits. Every release was refused, as the reach bench
+  predicts for 0.78 (cubes 0/16). The leg was stopped as moot once the budget went to 0.84 / 0.88.
+- v31 (official, 5052e5c7b334 = main fd4d848 = ws/sag 5b56b76; static 0.84, moving 0.88): 3/13 (+3), 2 time limits,
+  0 clips, 10 objects left on the counter, nothing in a wrong box or knocked off. (v28: 7/13, 6 on the counter.)
+  - kappa committed at t 7.0-11.7 on 16-30 samples per arm, at the first look from home; the first-pick wait never
+    triggered.
+  - The 8 compensated releases had the grasp point 24-39 mm under the plan and +31..+58 mm above the rim, but only
+    +1..+30 mm past the near inner wall (release x 0.463-0.493, wall at 0.46). Of the 8 objects released, 3 landed in
+    their box; the rest fell on the near wall and then the counter.
+  - 12 plans refused at 0.84-0.89; cubes went unattempted ("no arm in use reaches the left bin").
+  - Slowed: retreat +23.6 s over 21 plans, carry +4.4 s, to_pregrasp +2.4 s; pick plan mean 12.0 s (v28 11.7 s).
+  - One ridge prism stayed stuck in the hand at x 0.498: the release checks held the arm there for about 10 s near the
+    cap, and it sank 24 cm under the plan.
+
+### Landing rule and the forward exit
+
+- The landing box `limit` (objects leave the hand 6-117 mm forward) was measured with the arm stretched to its
+  kinematic reach limit (reach.md: forward drift there, median +25..+58 mm; none at +6 / +8 cm away from the limit;
+  cause not established).
+- With the torque budget inside the reach question, the planner sees 0-2 cm as the furthest inset. `_landing_box` then
+  calls those releases `limit` although the compensated arm stands well inside its kinematic reach. There the object
+  drops straight down onto the near wall.
+- v28 scores 7/13 at +6 cm in this sim only because its arm sinks below the rim to about +20 mm past the wall before it
+  lets go. On the robot the arm sank further (x 0.453, short of the wall) and hit the wall.
+- Judging `limit` by kinematic reach only would refuse those releases. At +6 cm that turns 3/13 into about 0/13: the
+  wall drops score 0 and knocked nothing off, so refusing them only removes the three that went in. Not built (main's
+  decision). At +6 cm no planning change buys points with this controller; the levers are box placement and `arm_tau_ff`.
+
+## Design note (not built): a forward exit for a compensated arm at a small inset
+
+Goal: at a small near inset (0-2 cm), the released object should leave the hand 3-6 cm forward, as it does from a
+stretched arm, so that its centre clears the near wall.
+
+**A. Tilt the hand forward for the open.** In the last ticks of the carry, rotate the hand about the pelvis y axis
+around the grasp point by 20-30° (open side towards the box), then open (thumb and one finger first, as the staggered
+release does). The object then slides off the opening side instead of dropping straight.
+- Wrist budget: in the top-down release pose the hand's centre of mass lies almost on the wrist axes. FK at x 0.47:
+  wrist pitch gravity 0.00-0.13 Nm for wrist offsets of 0-45°, i.e. 0.00-0.03 of the wrist clip (kp 40, cap 4.8 Nm).
+  The worst case, the whole hand (≈0.8 kg with the fingers and a foam object) at its full 7 cm lever, is 0.55 Nm: 0.13
+  of the wrist clip at alpha 1.1. The wrist is not the limit.
+- Shoulder: the hand's centre moves about 5 cm × sin θ forward. At 30° that adds ≈0.2 Nm, +0.02 of the shoulder clip.
+  The same FK gives 0.72-0.80 for those poses, so a release at static use 0.82 or under stays under 0.84.
+- Joints: a pure world-y rotation of a top-down hand needs wrist pitch together with roll/yaw. Plan it as an IK target
+  (grasp point fixed, approach axis tilted θ towards +x) on the release row, then an "open" phase from that pose.
+- Risk: a tilted cage can let a cube slide out before the open (soft-hand grip at 0.3-0.45 rad past contact, unknown real
+  friction). Tilt only in the last 0.2 s and only for the `limit` small insets.
+
+**B. Open during the last centimetres of forward motion.** The object takes the hand's horizontal speed v. Over a fall of
+about 10 cm (0.14 s) it moves v × 0.14 s. A 3 cm exit needs v ≥ 0.2 m/s at the moment the fingers part.
+- Near the cap the moving budget allows (0.88 - 0.84) × 0.12 / 0.0375 ≈ 0.13 rad/s at the shoulder, ≈6.5 cm/s at the
+  hand: only ≈1 cm of exit.
+- The finger lag (90 % after 300-380 ms on the real hand) puts ±1 cm of jitter on it. Not worth it, unless the forward
+  motion goes with gravity (a forward-and-down arc frees budget), which only works from a higher carry and costs
+  clearance over the near wall.
+
+**Test in the ARM_GAINS realsim.** grasp_bench-style scripted drops (privileged object poses, landing minus release point,
+as in the reach sweeps), with the sag offset applied through `Sag.commands` at a fixed kappa from a home measurement:
+- boxes +6 cm, insets 0 / 1 / 2 cm, tilt 0 / 20 / 30°, cube / cylinder / triangle, 8 drops each (about 1 h of sim c);
+- read: binned share, forward landing offset (median, p2.5) and objects lost before the open;
+- the stock-arm sim at the same points tells whether any tilt effect belongs to the soft arm.
+Accept when tilt 20-30° binned ≥ 7 of 8 at inset 1 cm on all three shapes, with no loss before the open.
