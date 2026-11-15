@@ -6,6 +6,28 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 03:30
+- **Hand-in candidate: v28** (amd64 `sha256:75cc8a0a8e34eaeb255b254130a30c8d8a9b41d559812b30c64f7995cf5c5bfe`,
+  `:v28-multi` `sha256:ab0b407b…`): fixed 31/31, known 28/28, unseen 28/28 (+21.38 of 21.38), soft 31/31, gate PASS on
+  all 32 episodes. = v27 + the release slot passed to every reach question (the arm filter had judged reach at the last
+  plan's slot since the first planner; 2976/2976 bench plans byte-identical) + box rim taken at the box entry (a tilted
+  counter made 7 cm walls look 17 cm) + a one-arm hand fit confirmed by the hand's RGB outline when the two arms disagree
+  (drop 3: camera from the hands in 13 of 15 episodes instead of 9; bit-identical on every sim fit believed today).
+  **Real-look sim, boxes +10 cm, hands on the counter: 21/26 (v27 18/26, v24 19/26), 0 time limits, no-plan lines 390 -> 77.**
+  v27 on fresh seeds 1008-1015: 91/91, gate PASS.
+- **Real robot, Sun 02:31 (servo5-servo = v26 + hover look, organisers' RTX PC, 120 s, 0 clips):** the home hand fit was
+  TRUSTED on real depth in every look (camera turned 2.0 deg, 22 mm); 3 of 4 grasps held (grip after the lift 0.22-0.46,
+  empty 0.002); the servo correction itself was never applied (guards). Every held object hit the box's near wall:
+  **the real arm sags under gravity**. The runner's arm controller clips the target to the measured pose +-0.12 rad
+  (30 rad/s x 4 ms) at kp 80 and sends no feed-forward torque, so the shoulder holds at most ~9.6 Nm; a hand ~0.5 m forward
+  needs ~10 Nm (and damping eats 3 Nm while moving at 1 rad/s): the arm sank 17-18 cm during the carry (shoulder pitch
+  0.28 rad below its command at rest). Sim arms are stiff, so no sim showed it.
+- **Now:** v29 = v28 + sag compensation estimated on the robot per episode (still ticks: joint error = compliance x
+  gravity torque; replay of the robot run: kappa 0.95 / 1.06, sim 0.003 -> exactly 0; hover error 45-52 -> ~3 mm),
+  re-timing of arm moves that would exceed the controller's torque budget, and no release planned at a pose the arm
+  cannot hold. A runner change for the organisers (`--arm-gravity-ff`, gravity feed-forward as their teleop app sends;
+  default off) is ready on our fork; whether to offer it is the team's call.
+
 ### Sun 15.11, 02:20
 - **Hand-in candidate: v27** (amd64 `sha256:ba84e7a30e4129d661055492465d19ed50060686b1a91bd1e66631b797770315`,
   `:v27-multi` `sha256:ab8ea52e…`): fixed 31/31, known 28/28, unseen 28/28 (+21.38 of 21.38), soft 31/31, gate PASS on
