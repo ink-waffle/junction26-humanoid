@@ -327,6 +327,8 @@ motion:
     max_inset: 0.02           # only releases this close to the bin's near inner wall ...
     min_use: 0.5              # ... at which the arm's sag uses at least this share of the clip: a compensated arm near its budget (kappa 0: ~0.2)
     max_error_deg: 2.0        # the turned hand may miss its orientation by this much (its grasp point: ik.pos_tol)
+    turn_s: 1.0               # the turn is blended into the carry's last this long (`tilt` phase, re-timed at the speed limits); it is shed on the way home
+    reach: false              # the reach question and the static budget accept a release whose turned hand holds still: the turn frees ~0.055 of the clip, ~2 cm of inset at +6 cm
   hover:                      # closed-loop grasp correction: the hand waits beside the grasp point, both in the head camera's view (halal.motion.hover)
     offsets: [[0.0, 0.05, 0.07], [0.0, 0.06, 0.07], [0.0, -0.05, 0.07], [0.03, 0.04, 0.07]]   # [forward, outward, up] from the grasp point (m), tried in order; outward = the picking arm's side
     min_low: 0.075            # lowest hand point above the counter at the hover: the hand fit's floor gate (0.065) + 1 cm
