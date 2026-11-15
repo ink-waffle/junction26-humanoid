@@ -416,6 +416,8 @@ motion:
 grasp_bench:
   settle_ticks: 20            # hold after placing the objects before reading their poses
   trace_every: 2              # ticks between privileged object pose samples
+  sag_samples: 10             # spec `sag`: still holds at home, one sample each, before kappa is committed
+  sag_sample_ticks: 20        # ticks per hold (the estimate needs the command unchanged for `motion.sag.still_ticks`)
   held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
   lifted_height: 0.03         # and at least this far above its resting height
   topple:                     # scripted push that tips an upright prism onto a side (variant key `topple_deg`)
