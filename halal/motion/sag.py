@@ -78,7 +78,17 @@ class Sag:
         self.kappa = np.zeros(2)
         self.offset = np.zeros(14)   # sent minus plan-space arm command of the row last sent
         self._xr, self._xx, self._samples = np.zeros(2), np.zeros(2), np.zeros(2, int)
+        self._measured = np.zeros(2, bool)
         self._previous: tuple[np.ndarray, np.ndarray] | None = None
+
+    @property
+    def samples(self) -> tuple[int, int]:
+        return int(self._samples[0]), int(self._samples[1])
+
+    @property
+    def measured(self) -> bool:
+        """Whether the committed estimate of both arms rests on enough still samples (it may still be 0)."""
+        return bool(self._measured.all())
 
     @property
     def idle(self) -> bool:
@@ -116,7 +126,8 @@ class Sag:
     def commit(self, t: float) -> None:
         """The estimate so far becomes the one plans and commands use; an arm with too few samples or under the dead band gets none."""
         fit = np.clip(np.divide(self._xr, self._xx, out=np.zeros(2), where=self._xx > 0), 0.0, self.cfg["max_kappa"])
-        kappa = np.where((self._samples >= self.cfg["min_samples"]) & (fit >= self.cfg["dead_band"]), fit, 0.0)
+        self._measured = self._samples >= self.cfg["min_samples"]
+        kappa = np.where(self._measured & (fit >= self.cfg["dead_band"]), fit, 0.0)
         if np.abs(kappa - self.kappa).max() >= KAPPA_LOG_STEP or (kappa > 0).tolist() != (self.kappa > 0).tolist():
             log.info("t=%.1f arm sag: kappa left %.2f, right %.2f (fit %.2f / %.2f on %d / %d still samples)", t, *kappa, *fit,
                      *self._samples)
