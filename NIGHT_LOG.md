@@ -6,7 +6,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
-### Sun 15.11, 07:50
+### Sun 15.11, 06:55
 - **Real robot with the runner's gravity feed-forward** (our PR #3 merged, `--arm-gravity-ff`; PR #5 makes it the
   default), servo11-servo (= v33 + hover servo), 06:27: **3 of 3 sorted** (cube, cylinder, cube). At every descent
   bottom without contact the hand is within 3 mm of its command: no sag. 06:30 (made harder, +2 prisms): 1 of 5; the
