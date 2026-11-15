@@ -44,13 +44,14 @@ class HandSurface:
         self.frames = [self.model.getFrameId(str(name)) for name in asset["links"]]
         self.link, self.points, self.normals = asset["link"], asset["points"].astype(float), asset["normals"].astype(float)
         self.rigid = np.array([str(name).endswith(RIGID_PARTS) for name in asset["links"]])[self.link]
+        self.side = np.array([str(name).split("_", 1)[0] for name in asset["links"]])[self.link]
 
-    def posed(self, arm_q: np.ndarray, hand_q: np.ndarray, fingers: bool) -> tuple[np.ndarray, np.ndarray]:
-        """Surface points and outward normals (N, 3) in the pelvis frame; without `fingers` only forearms and palms."""
+    def posed(self, arm_q: np.ndarray, hand_q: np.ndarray, fingers: bool, side: str | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Surface points and outward normals (N, 3) in the pelvis frame; without `fingers` only forearms and palms; one `side` or both."""
         q = pin.neutral(self.model)
         q[self.arm_iq], q[self.hand_iq] = arm_q, hand_q
         pin.framesForwardKinematics(self.model, self.data, q)
-        keep = slice(None) if fingers else self.rigid
+        keep = (np.ones(len(self.link), bool) if fingers else self.rigid) & (self.side == side if side else True)
         rotations = np.stack([self.data.oMf[f].rotation for f in self.frames])[self.link[keep]]
         offsets = np.stack([self.data.oMf[f].translation for f in self.frames])[self.link[keep]]
         return (np.einsum("nij,nj->ni", rotations, self.points[keep]) + offsets,
@@ -69,6 +70,7 @@ class HandFit:
     inliers: float          # share of the depth pixels around the arms that lie on the model: low = something else is there
     clear: int              # visible model points above the floor gate (their depth can be evidence): what coverage and known judge
     visible: int            # visible model points
+    side: str = "both"      # whose arm the model held: "both", or "left" / "right" alone
 
     @property
     def clear_share(self) -> float:
@@ -90,12 +92,12 @@ class HandReference:
         self.prior = np.r_[np.full(3, np.radians(cfg["prior_turn_deg"])), np.full(3, cfg["prior_shift"])] ** -2.0
 
     def fit(self, depth: np.ndarray, camera: Camera, arm_q: np.ndarray, hand_q: np.ndarray, floor: PlaneFit | None,
-            anchor: np.ndarray, turned: bool = False) -> HandFit | None:
-        """The registration with the most depth pixels on the model among starts around `camera` (shifted, or turned); None if no arm is in view."""
+            anchor: np.ndarray, turned: bool = False, side: str | None = None) -> HandFit | None:
+        """The registration with the most depth pixels on the model (both arms, or one `side`) among starts around `camera` (shifted, or turned); None if no arm is in view."""
         best = None
-        surface = self.surface.posed(arm_q, hand_q, bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.cfg["open_curl"]))
+        surface = self.surface.posed(arm_q, hand_q, bool(np.abs(hand_q[list(CURL_JOINTS)]).max() <= self.cfg["open_curl"]), side)
         for start in self._starts(turned):
-            fit = self._register(depth, camera, start, surface, floor, anchor)
+            fit = self._register(depth, camera, start, surface, floor, anchor, side or "both")
             if fit is not None and (best is None or fit.points > best.points):
                 best = fit
             if best is None or best.settled >= self.cfg["settled_coverage"]:
@@ -109,7 +111,7 @@ class HandReference:
         return [np.r_[np.zeros(3), shift] for shift in self.cfg["starts"]]
 
     def _register(self, depth: np.ndarray, camera: Camera, start: np.ndarray, surface: tuple[np.ndarray, np.ndarray],
-                  floor: PlaneFit | None, anchor: np.ndarray) -> HandFit | None:
+                  floor: PlaneFit | None, anchor: np.ndarray, side: str) -> HandFit | None:
         """One point-to-plane descent from the camera moved by `start` (turn, shift); the prior still pulls to `camera`."""
         first = camera.moved(Rotation.from_rotvec(start[:3]).as_matrix(), start[3:])
         front = self.facing(*surface, first, depth.shape)
@@ -134,7 +136,7 @@ class HandReference:
         covered = np.isfinite(cKDTree(seen[around][on_model]).query(model[clear], distance_upper_bound=self.cfg["gates"][-1])[0])
         known = covered | self._returned(depth, moved, model[clear])
         return HandFit(moved, points, rms, np.sqrt(np.diag(covariance)), float(covered.sum() / max(known.sum(), 1)),
-                       float(known.mean()) if len(known) else 0.0, float(on_model.mean()), len(known), len(model))
+                       float(known.mean()) if len(known) else 0.0, float(on_model.mean()), len(known), len(model), side)
 
     def _clear(self, start: Camera, moved: Camera, model: np.ndarray, floor: PlaneFit | None) -> np.ndarray:
         """True for model points whose depth pixel, as the fitted camera images them, would pass the floor gate of `_pixels`."""

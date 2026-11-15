@@ -49,7 +49,7 @@ def plane_row(frame: Frame, plane: PlaneFit | None, nominal: Camera, surface: np
 def hands_row(frame: Frame, calibration: SelfCalibration, nominal: Camera, plane: PlaneFit | None, band: np.ndarray) -> Row:
     """The hand fit of one look: every check by name, whether it is believed, and how far it puts the object band off."""
     obs = frame.obs
-    fit = calibration.hand_fit(obs["head_depth"], nominal, (obs["arm_q"], obs["hand_q"]), plane)
+    fit = calibration.hand_fit(obs["head_depth"], nominal, (obs["arm_q"], obs["hand_q"]), plane, obs["head_rgb"])
     if fit is None:
         return {"hands_fit": False, "hands_ok": False}
     checks, (turn, shift) = calibration.hand_checks(fit, nominal), calibration.displacement(fit, nominal)
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     frames = [load_frame(p, scene, Pinhole(head.K, head.T_pelvis_optical), settings["bench"]) for p in sorted(args.frames.glob("seed_*.npz"))
               if in_split(int(p.stem.split("_")[1]), args.split, settings["bench"]["heldout_every"])]
     frames = conditioned(frames, scene, settings["bench"], args.shift, args.depth, args.depth_seed)
-    calibration, finder = SelfCalibration(scene, settings["calibration"]), BinFinder(scene, settings["bins"])
+    calibration, finder = SelfCalibration(scene, settings["calibration"], settings["outline"]), BinFinder(scene, settings["bins"])
     rows = [measure(frame, calibration, finder, nominal, scene) for frame in frames]
     label = "_".join(filter(None, [args.frames.name, args.shift, args.depth, args.split]))
     print(render(f"calibration stages on {label}, {len(rows)} frames", rows))

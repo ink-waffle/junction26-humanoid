@@ -66,6 +66,9 @@ perception:
       max_turn_deg: 10.0      # nor one that moves the camera further than a head calibration can be wrong (recordings: 7.4 deg, 4 cm)
       max_shift: 0.07
       clear_margin: 0.05      # fits less clear of the counter (visible model share) than the clearest by more: not used (hands on the table)
+      one_arm:                # no fit of both arms believable: each arm alone (same guards), believed only if RGB confirms it (drop 3: arms 2 cm apart)
+        enabled: true
+        max_outline_px: 8     # its own hand's best outline shift (outline.*) under that camera; drop 3: left arm 66 % within, right 11 %, nominal 3 %
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
