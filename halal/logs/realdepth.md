@@ -297,3 +297,54 @@ The `HoverMeasurer` translation fit (links `wrist_` + `hand_`) through the left-
 
 Not justified on this evidence: loosening `min_coverage` or `min_inliers` (the compromise they reject is about 1 to 1.5 cm off for
 each arm), and right-arm joint offsets (they failed the RGB check).
+
+## P2: per-arm hand offset (`0bcb96d`)
+
+What runs: at every still look with open fingers, each arm's palm and fingers (no wrist links) are fitted by translation only
+through the camera the episode uses (`HandShift`, the hover look's fit with `links: [hand_]`). A fit counts as a sample if it has
+rms <= 4 mm, coverage >= 0.6, inliers >= 0.5, spread <= 3 mm and a shift <= 5 cm. The detector keeps up to 6 samples per arm and
+moves them rigidly onto the current camera when the episode's camera changes. The median goes into `SceneLayout.hand_offsets` only
+with >= 2 samples, with a length between the 10 mm dead band and 4 cm, and in xy only (`correct_z: false`). The planner plans that
+arm against the target, release point, bins, counter, rim and neighbours, all moved by minus the offset (`_scene_moved`, in
+`plan_pick` and `reaches_bin`). So the dry run checks the joints that are sent, and the joint-space sag compensation stays
+separate. A servo final pick onto its corrected target is already in the arm frame, so it is not shifted again
+(`arm_frame=True`); its open-loop fallback is shifted.
+
+**Drop 3, the policy's own still looks** (primer + look, as `episodes.py`), samples seen through each episode's left-arm-alone camera:
+
+| hand | episodes with samples | median of episode medians, mm | sd of episode medians, mm | all samples |
+|---|---|---|---|---|
+| right | 10 | **(-8.2, -17.0, +1.7)** | 5.2, 4.5, 2.6 | 17, median (-9.3, -17.5, +1.7) |
+| left | 11 | (+0.6, -0.3, +0.3) | 2.8, 1.5, 1.7 | 25 |
+
+- This matches the analyst's (-7, -17, -2) in x and y. The z sd is larger than its value, so z is not applied.
+- Applied (right arm) in 5 of 15 teleop episodes: eps 4, 5, 6, 7, 9, from 2 to 4 samples each. The others have 0 or 1 sample.
+  Teleop gives only 0 to 5 still looks; at home in the finals there are up to 12.
+- Through the episode's own camera the offset follows the camera. Ep 4 has a both-arm medoid camera and gets (-17, -18) mm;
+  ep 7 has the left-arm camera and gets (-14, -10). The left hand under a both-arm camera reaches -21, +15 mm (ep 11, 1 sample).
+  This is the case P2 exists for.
+- Requiring open fingers dropped one ep 11 right sample at (+18, +1, +18) mm. Fingers were curled, so the fit had the palm only.
+
+**Sim no-op** (fresh detector per seed, each still frame shown twice 0.2 s apart):
+
+| set | seeds | camera | per-look xy left / right, median / max mm | median over >= 2 samples, max mm | applied |
+|---|---|---|---|---|---|
+| dr_train | 120 | scene | 2.1 / 4.7, 4.1 / 5.4 | (1 frame per seed) | 0 |
+| realsim_looks (still, 12 looks) | 8 | hands | 0.6 / 4.9, 1.9 / 7.0 | 2.7 / 4.7 | 0 |
+| movinghands (still) | 4 | scene | 2.5 / 4.2, 2.8 / 8.6 | 3.5 / 3.7 | 0 |
+| lowhands, lookpose | 20, 45 | scene | <= 2.0, <= 5.2 | | 0 |
+| closedhands | 20 | scene | 2 samples, 8.6 max (fingers curled; now not sampled) | | 0 |
+
+- Mock seeds 3/5/7 hashes are unchanged (94e5e360 / 0a5ced74 / 264852e6) with 0 clips. The mock renders no arms, so it takes no samples.
+- Mock with forced offsets (left +12 mm x, right (-7, -17) mm): 0 clips and 0 plan clips. Every right-arm grasp is at the seen
+  target + (7, 17) mm, every left-arm one at -12 mm. In the mock the hand really is at FK, so the shifted picks missed there;
+  that is expected.
+- The `HoverMeasurer` refactor keeps its results: 62 of 62 drop-3 looks are identical before and after.
+
+**Robot evidence** (servo hover looks in the 15.11 robot exports, links wrist + hand): the right-hand shift is (-15.8, +15.9),
+(-0.4, +26.4), (+15.2, +14.3), (0, +7.9) and (-0.7, +1.9) mm. The left hand is mostly within 3 mm (worst (+6.7, -12.2)). So the
+finals robot's right hand also stands 8 to 26 mm towards -y of its FK. The 05:20 video showed the right cage_deep coming down on
+the cube's far/right edge.
+
+Log lines: `hand offset (side): seen minus FK ...: sample n | rejected [...]` per look, and `hand offsets (real minus FK through
+the episode's camera): left <verdict> ...; right <verdict> ...` whenever a verdict or median changes.
