@@ -153,6 +153,10 @@ class Sag:
         out = np.column_stack([np.interp(at, times, rows[:, j]) for j in range(rows.shape[1])])
         return out[:, :14], out[:, 14:]
 
+    def feedforward(self, arm: np.ndarray, hand: np.ndarray) -> np.ndarray | None:
+        """URDF gravity torques (n, 14) at these plan-space rows, for a runner that applies `arm_tau_ff`; None when not sent."""
+        return self.model.gravity(arm, hand) if self.cfg["send_tau_ff"] else None
+
     def targets(self, arm: np.ndarray, hand: np.ndarray) -> np.ndarray:
         """Offsets (n, 14) that undo the excess sag at each planned pose."""
         return np.repeat(self.kappa, 7) * self.excess * self.model.gravity(arm, hand)

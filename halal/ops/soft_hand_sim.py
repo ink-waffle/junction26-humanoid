@@ -1,6 +1,7 @@
-"""Dev-only sim main: the organisers' aalto_sim_main.py with the Dex3 actuator gains taken from $HAND_GAINS ("kp,kd[,armature]").
+"""Dev-only sim main: the organisers' aalto_sim_main.py with the Dex3 gains from $HAND_GAINS ("kp,kd[,armature]") and the arm gains from $ARM_GAINS.
 
-    HAND_GAINS="1.5,0.2" bash halal/ops/sims.sh start b     (a sim started without HAND_GAINS never loads this file)
+    HAND_GAINS="1.5,0.2" bash halal/ops/sims.sh start b     (a sim started without HAND_GAINS or ARM_GAINS never loads this file)
+    ARM_GAINS="80,3,40,1.5,9.6,4.8" ...                     (shoulder/elbow kp, kd, wrist kp, kd, then torque limits: the real runner's PD and its clip)
 """
 from __future__ import annotations
 
@@ -51,8 +52,27 @@ def soften_hands(module: ModuleType) -> None:
     print(f"[soft_hand_sim] hand actuators: stiffness {hands.stiffness}, damping {hands.damping}, armature {hands.armature}", flush=True)
 
 
+def soften_arms(module: ModuleType) -> None:
+    """Replace the arm actuators' gains (and torque limits, when given) in the upstream robot config and print what was applied."""
+    kp, kd, kp_wrist, kd_wrist, *limits = (float(value) for value in os.environ["ARM_GAINS"].split(","))
+    arms = getattr(module, ROBOT_CONFIG).actuators["arms"]
+    groups = (".*_shoulder_.*_joint", ".*_elbow_joint", ".*_wrist_.*_joint")
+    arms.stiffness, arms.damping = dict(zip(groups, (kp, kp, kp_wrist))), dict(zip(groups, (kd, kd, kd_wrist)))
+    if limits:
+        arms.joint_effort_limit = dict(zip(groups, (limits[0], limits[0], limits[1])))
+    print(f"[soft_hand_sim] arm actuators: stiffness {arms.stiffness}, damping {arms.damping}, limit {getattr(arms, 'joint_effort_limit', None)}", flush=True)
+
+
+def patch_robot(module: ModuleType) -> None:
+    """The gains asked for by $HAND_GAINS and $ARM_GAINS."""
+    if os.environ.get("HAND_GAINS"):
+        soften_hands(module)
+    if os.environ.get("ARM_GAINS"):
+        soften_arms(module)
+
+
 def main() -> None:
-    sys.meta_path.insert(0, PatchOnImport(ROBOT_MODULE, soften_hands))
+    sys.meta_path.insert(0, PatchOnImport(ROBOT_MODULE, patch_robot))
     sys.argv[0] = str(SIM_MAIN)
     runpy.run_path(str(SIM_MAIN), run_name="__main__")
 

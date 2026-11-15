@@ -1,6 +1,6 @@
 """Dev-only sim main: the organisers' sim patched in memory to look and behave like the real setup (real_sim.yaml).
 
-    REAL_SIM=lying,colours,boxes bash halal/ops/sims.sh start c     (REAL_SIM=all: every feature; composes with HAND_GAINS)
+    REAL_SIM=lying,colours,boxes bash halal/ops/sims.sh start c     (REAL_SIM=all: every feature; composes with HAND_GAINS and ARM_GAINS)
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from typing import Any, Callable
 import numpy as np
 import yaml
 
-from soft_hand_sim import REPO, ROBOT_MODULE, SIM_MAIN, PatchOnImport, soften_hands
+from soft_hand_sim import REPO, ROBOT_MODULE, SIM_MAIN, PatchOnImport, patch_robot
 
 FEATURES = ("lying", "colours", "boxes", "table", "offsets", "camera")
 CONFIG = Path(os.environ.get("REAL_SIM_CONFIG") or Path(__file__).with_name("real_sim.yaml"))
@@ -168,8 +168,8 @@ def patch_look(scene_cfg: ModuleType, cfg: dict, features: set[str]) -> None:
 def install(features: set[str], cfg: dict) -> None:
     """Register every patch the chosen features need; nothing is touched before the organisers' modules load."""
     patches: list[tuple[str, Callable[[ModuleType], None]]] = []
-    if os.environ.get("HAND_GAINS"):
-        patches.append((ROBOT_MODULE, soften_hands))
+    if os.environ.get("HAND_GAINS") or os.environ.get("ARM_GAINS"):
+        patches.append((ROBOT_MODULE, patch_robot))
     if "lying" in features:
         patches.append((f"{TASK_PACKAGE}.hooks", lambda module: patch_layout(module, cfg["lying"])))
     if features & {"boxes", "table", "camera"}:
