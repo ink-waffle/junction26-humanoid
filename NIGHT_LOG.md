@@ -6,6 +6,20 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 05:00
+- **Release candidate: v31** (`sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`) = v28 + arm-sag
+  compensation and torque budget (static 0.84 / moving 0.88 of the runner's clip) + `arm_tau_ff` in every reply (ignored by
+  today's runner) + the first pick waits up to 3 s for the sag estimate. Stock legs so far: known 28/28, unseen 28/28, fixed
+  clean; soft leg running. Its servo twin **servo9-servo** (`sha256:ff82f3c1…`) passed the fixed leg 31/31 and is what the
+  team runs on the robot now; it is the organisers' pre-submission (form re-submitted 05:00, latest response counts).
+- **Sag in sim**: a dev-only `ARM_GAINS` knob (real PD 80/3 and a torque limit standing in for the 0.12 rad clip)
+  reproduces the robot's home error (-0.049 vs -0.047 rad) and tonight's failure (v28, boxes +6 cm: releases 17 cm under
+  the plan, 11 mm under the rim). v29 (static 0.78) released 4 cm higher than v28 at scene-file boxes but refused every
+  release at +6 cm; v31's budgets are measured next.
+- **Runner**: PR #3 (runner-side gravity feed-forward, default off) reopened at the organisers' request; PR #4 (a
+  policy-supplied torque channel) declined by them (it bypasses the safety filter). v31 works either way: with runner
+  feed-forward the measured sag falls to the dead band and the compensation switches itself off.
+
 ### Sun 15.11, 03:30
 - **Hand-in candidate: v28** (amd64 `sha256:75cc8a0a8e34eaeb255b254130a30c8d8a9b41d559812b30c64f7995cf5c5bfe`,
   `:v28-multi` `sha256:ab0b407b…`): fixed 31/31, known 28/28, unseen 28/28 (+21.38 of 21.38), soft 31/31, gate PASS on
