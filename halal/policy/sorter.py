@@ -13,6 +13,7 @@ import numpy as np
 from aaltonomous.baselines.classical.planner import Plan, ramp
 
 from halal.motion import PickPlanner
+from halal.motion.sag import ArmModel, Sag
 from halal.perception import Detector
 from halal.policy.background import Background
 from halal.policy.commands import OBS_LAG_TICKS, Action, CommandStream, arm_travel
@@ -69,6 +70,7 @@ class SortPolicy:
         self.calibrator = HandCalibrator(planner, settings)
         self.looker = Looker(detector, planner, self.calibrator, settings)
         self.servo = GraspServo(planner, detector, settings)
+        self.sag = planner.sag = Sag(ArmModel(planner.spec), planner.motion["sag"], planner.spec, planner.safety, planner.dt)
         self.jobs = Background(settings["background_nice"])
         self.tally: Counter[str] = Counter()
         self.arm_travel = 0.0   # rad the commanded arms have travelled since the server started: the frozen-stream check outlives episodes
@@ -81,10 +83,12 @@ class SortPolicy:
         self.jobs.cancel()
         self.servo.reset()
         self.calibrator.reset(enabled=bool(s["grip_check"]))
+        self.sag.reset()
         self.bin_for = bin_for
         self.time_limit = self.episode_s
         capped = s["hand_lead_cap"] is not None   # short replies: each one re-reads where the fingers are
-        self.stream = CommandStream(self.planner.spec, *((s["lead_cap_ticks"],) * 2 if capped else (s["chunk_ticks"], s["hold_ticks"])))
+        self.stream = CommandStream(self.planner.spec, *((s["lead_cap_ticks"],) * 2 if capped else (s["chunk_ticks"], s["hold_ticks"])),
+                                    self.sag)
         self.attempts = Attempts(s["same_object_radius"])
         self.shapes = Shapes(s["same_object_radius"])
         self.released: Counter[str] = Counter()
@@ -111,11 +115,15 @@ class SortPolicy:
             log.exception("reading the hands failed: grip check off for this episode")
             self._stop_grip_check()
         try:
+            self.sag.observe(self.stream.sent, self.stream.held, obs["arm_q"], obs["hand_q"], self.planner.scene)
+        except Exception:
+            log.exception("measuring the arm sag failed")
+        try:
             self._advance(obs)
         except Exception:
             log.exception("policy step failed: starting over from a look")
             self._start_over()
-        before = self.stream.arm_cmd
+        before = self.stream.sent
         action = self.stream.next_chunk() if self.stream.busy else self.stream.hold(done=self.stage is Stage.DONE)
         self.arm_travel += arm_travel(before, action["arm_q_target"])
         return self._within_hand_lead(action, obs)
@@ -211,6 +219,7 @@ class SortPolicy:
     def _start_look(self, obs: Mapping[str, Any]) -> None:
         """Look at this frame; if the hands are not calibrated yet they close on nothing while it is processed."""
         stream, primer = self.stream, self.view in (View.START, View.HOME) and not self.primed
+        self.sag.commit(float(obs["t"]))   # the plans of this look and the commands that run them share one estimate
         calibrate = not primer and self.calibrator.due(stream.arm_cmd)
         hand_q = self.planner.post["open"] if calibrate else stream.hand_cmd.copy()
         situation = Situation(stream.arm_cmd.copy(), self.arm_travel, hand_q, self.view is View.CLEAR, self.bin_for, self.attempts,
