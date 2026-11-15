@@ -118,3 +118,38 @@ Deterministic in-process mock (render mock world, jobs inline, 120 s), sha256 of
 Held grasp point against the sim-like target, seed 3, soft mock: 0.4 mm median with compensation (max 30 mm: the holds
 before the first commit) against 27.5 mm median and 54 mm max without. The mock grasps attach within 4 cm, so its
 outcomes cannot show the difference.
+
+## Torque budget in planning (built: 7c)
+
+`motion.sag.budget`, in shares of the 0.12 rad clip, at the estimated compliance `c_ref + kappa * (c_real - c_ref)`. At
+kappa 0 it does nothing (mock streams bit-identical, seeds 3/5/7).
+- **Static** (0.78): the arm must stand still at the grasp and at the release (the arm pose of the `close`, `squeeze` and
+  `open` phases) and at the hover. Over the budget, the plan is refused ("arm cannot hold still during open (sag uses
+  0.80 of the clip)"). The reach question (`_reaches`, so also the policy's arm filter and the rim fallback) asks the same
+  of its IK pose with a closed hand. Tonight's arms stood at the cap at 0.83-0.86 of the clip in these units: right t 46.5
+  0.81 × kappa 1.06, left t 24.5 0.87 × 0.95.
+- **Moving** (0.82): along every arm move (every phase of a pick plan, and every `go_to`: view moves, hover moves) the
+  signed `c * tau_g + kd / kp * dq` must stay under the budget. Moving with gravity frees room. Ticks are stretched
+  until they fit (`Sag.timed`, linear resampling at 30 Hz, phases rebuilt and dry-run again). Each slowed plan logs one
+  line ("left arm plan slowed: carry +0.6 s, retreat +2.1 s").
+- The descent to the grasp at x 0.31 uses 0.58 of the clip at rest and moves with gravity: never slowed. Lift: 0.58, not
+  slowed. Carry to a box at the scene file's distance: +0.1-0.6 s. Retreat from it (straight up 8 cm at x 0.47, ending at
+  0.81): +0.5-2.1 s.
+
+Reach with the box row moved away (reach bench: spots (0.30, ±0.10) and (0.33, ±0.02), every bin, arm and slot; soft hand):
+
+| boxes | kappa 0 cubes | kappa 1 cubes | kappa 1 cylinders (rim insets) | pick duration kappa 0 -> 1 |
+|---|---|---|---|---|
+| scene file | 16/16, inset 6 | 16/16, insets 3-6 | 16/16 | 8.58 -> 9.74 s |
+| +3 cm | 16/16 | 2/16 (inset 3) | 10/16 (insets 0-3) | 9.22 -> 10.9 s |
+| +6 cm | 16/16 | 0/16 | 2/16 (inset 0) | |
+| +8 cm | 16/16 | 0/16 | 0/16 | |
+| +10 cm | 8/16 | 0/16 | 0/16 | |
+
+Tonight's boxes stood about 6 cm beyond the scene file (releases at x 0.51-0.53 with inset 6 cm). With the budget the
+real arm refuses every release there rather than sinking onto the near wall. What can still win them: boxes 3-6 cm nearer
+(staff), the runner's `velocity_limit` raised (the clip grows with it) or gravity feedforward, or a static budget closer to
+the cap (0.83-0.86) if a 5-10 % deficit at the release is acceptable.
+
+Soft-arm mock (seeds 3/5/7): 0 clips, outcomes unchanged (5/5, 5/5, 4/5), episodes 4-10 s longer. The sent rows of every
+moving load match a planner dry run within 6.7e-7 rad: `_assembled` dry-runs from its first row instead of the start.

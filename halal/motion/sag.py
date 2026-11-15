@@ -13,6 +13,7 @@ from aaltonomous.scene.scene import Scene
 
 log = logging.getLogger(__name__)
 SIDES = ("left", "right")
+KAPPA_LOG_STEP = 0.05   # a committed kappa is logged when it moves this far
 
 
 def compliance(arm: Mapping[str, Any]) -> np.ndarray:
@@ -65,6 +66,8 @@ class Sag:
         self.model, self.cfg = model, cfg
         self.reference = compliance(cfg["reference"])
         self.excess = compliance(cfg["real"]) - self.reference
+        self.lag = np.tile(np.asarray(cfg["real"]["kd"], float) / np.asarray(cfg["real"]["kp"], float), 2)   # s: damping error per rad/s
+        self.dt = dt
         margin = np.minimum(safety.arm_pos_margin, 0.25 * (spec.arm_upper - spec.arm_lower))
         self.lower, self.upper = spec.arm_lower + margin, spec.arm_upper - margin
         self.step, self.offset_step = cfg["max_speed"] * dt, cfg["max_offset_speed"] * dt
@@ -114,10 +117,41 @@ class Sag:
         """The estimate so far becomes the one plans and commands use; an arm with too few samples or under the dead band gets none."""
         fit = np.clip(np.divide(self._xr, self._xx, out=np.zeros(2), where=self._xx > 0), 0.0, self.cfg["max_kappa"])
         kappa = np.where((self._samples >= self.cfg["min_samples"]) & (fit >= self.cfg["dead_band"]), fit, 0.0)
-        if not np.array_equal(kappa, self.kappa):
+        if np.abs(kappa - self.kappa).max() >= KAPPA_LOG_STEP or (kappa > 0).tolist() != (self.kappa > 0).tolist():
             log.info("t=%.1f arm sag: kappa left %.2f, right %.2f (fit %.2f / %.2f on %d / %d still samples)", t, *kappa, *fit,
                      *self._samples)
         self.kappa = kappa
+
+    def estimated(self) -> np.ndarray:
+        """Compliance (rad/Nm) of the 14 arm joints at the committed kappa."""
+        return self.reference + np.repeat(self.kappa, 7) * self.excess
+
+    def static_use(self, arm_q: np.ndarray, hand_q: np.ndarray) -> float:
+        """Share of the clip that the sag at this pose takes on its worst joint."""
+        tau = self.model.gravity(np.asarray(arm_q, float)[None], np.asarray(hand_q, float)[None])[0]
+        return float(np.abs(self.estimated() * tau).max() / self.cfg["clip"])
+
+    def holds(self, arm_q: np.ndarray, hand_q: np.ndarray) -> bool:
+        """Whether the arm can stand still at this pose within the static budget (always at kappa 0)."""
+        return not self.kappa.any() or self.static_use(arm_q, hand_q) <= self.cfg["budget"]["static"]
+
+    def timed(self, arm_from: np.ndarray, hand_from: np.ndarray, arm: np.ndarray, hand: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The rows after (`arm_from`, `hand_from`) slowed wherever sag plus damping lag would pass the moving budget; the same rows where they do not."""
+        if not self.kappa.any() or not len(arm):
+            return arm, hand
+        arm_rows, hand_rows = np.vstack([arm_from, arm]), np.vstack([hand_from, hand])
+        velocity = np.diff(arm_rows, axis=0) / self.dt
+        sag = self.estimated() * self.model.gravity(arm, hand)
+        room = self.cfg["budget"]["moving"] * self.cfg["clip"] - np.sign(velocity) * sag   # moving with gravity frees room
+        stretch = np.maximum(1.0, (np.abs(velocity) * self.lag / np.maximum(room, self.cfg["budget"]["min_room"])).max(1))
+        if np.all(stretch <= 1.0):
+            return arm, hand
+        times = np.r_[0.0, np.cumsum(stretch)] * self.dt
+        at = np.minimum(np.arange(1, int(np.ceil(times[-1] / self.dt - 1e-9)) + 1) * self.dt, times[-1])
+        at[-1] = times[-1]
+        rows = np.hstack([arm_rows, hand_rows])
+        out = np.column_stack([np.interp(at, times, rows[:, j]) for j in range(rows.shape[1])])
+        return out[:, :14], out[:, 14:]
 
     def targets(self, arm: np.ndarray, hand: np.ndarray) -> np.ndarray:
         """Offsets (n, 14) that undo the excess sag at each planned pose."""

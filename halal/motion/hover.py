@@ -68,6 +68,8 @@ def _hover_at(planner: PickPlanner, side: str, camera: Camera, arm_q: np.ndarray
     if not ok:
         return None
     pose = _with_side(arm_q, q, side)
+    if not planner.holds_still(pose, hand):
+        return None
     low = planner.clearance(side, pose, hand)
     if low < settings["min_low"]:
         return None

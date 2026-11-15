@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import logging
 from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any, Iterator, Sequence
@@ -22,11 +23,13 @@ from halal.motion.obstacles import distance, outline, top_of
 from halal.motion.sag import Sag
 from halal.perception import SceneLayout
 
+log = logging.getLogger(__name__)
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SIDES = ("left", "right")
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
 HELD_PHASES = ("lift", "carry")
+STILL_PHASES = ("close", "squeeze", "open")     # the arm stands still at the grasp and the release while the hand works
 NEAR_OBJECTS_PHASES = ("descend", "close")
 OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
@@ -78,10 +81,51 @@ class PickPlanner(Planner):
                     plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
-                    plan, tried = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy), True
+                    plan, tried = self._held_up(self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)), True
                 if plan.ok:
                     break
-        return self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end)
+        return self._sag_timed(self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end), arm_q, hand_q)
+
+    def go_to(self, arm_from: np.ndarray, hand_from: np.ndarray, arm_to: np.ndarray, hand_to: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """The organiser's joint-space move, slowed where the real arm's sag budget needs it."""
+        arm, hand = super().go_to(arm_from, hand_from, arm_to, hand_to)
+        if self.sag is None:
+            return arm, hand
+        timed = self.sag.timed(np.asarray(arm_from, float), np.asarray(hand_from, float), arm, hand)
+        if len(timed[0]) > len(arm):
+            log.info("arm sag: joint move slowed by %.1f s", (len(timed[0]) - len(arm)) * self.dt)
+        return timed
+
+    def holds_still(self, arm_q: np.ndarray, hand_q: np.ndarray) -> bool:
+        """Whether the real arm can stand still at this pose (sag within the static budget); always without a sag estimate."""
+        return self.sag is None or self.sag.holds(arm_q, hand_q)
+
+    def _held_up(self, plan: Plan) -> Plan:
+        """The plan, refused when the real arm could not stand still at its grasp or release (sag over the static budget)."""
+        if not plan.ok:
+            return plan
+        for name, first, _ in plan.phases:
+            if name in STILL_PHASES and not self.holds_still(plan.arm[first], plan.hand[first]):
+                use = self.sag.static_use(plan.arm[first], plan.hand[first])
+                log.info("arm sag: %s arm plan refused: the sag during %s would use %.2f of the clip", plan.side, name, use)
+                return replace(plan, ok=False, reason=f"arm cannot hold still during {name} (sag uses {use:.2f} of the clip)")
+        return plan
+
+    def _sag_timed(self, plan: Plan, arm_q: np.ndarray, hand_q: np.ndarray) -> Plan:
+        """The plan with every phase slowed where the real arm's sag budget needs it, dry-run again; unchanged at kappa 0 or within budget."""
+        if not plan.ok or self.sag is None:
+            return plan
+        parts, start, added = [], (np.asarray(arm_q, float), np.asarray(hand_q, float)), []
+        for name, first, stop in plan.phases:
+            arm, hand = self.sag.timed(*start, plan.arm[first:stop], plan.hand[first:stop])
+            if len(arm) > stop - first:
+                added.append(f"{name} +{(len(arm) - stop + first) * self.dt:.1f} s")
+            parts.append((name, arm, hand))
+            start = (plan.arm[stop - 1], plan.hand[stop - 1])
+        if not added:
+            return plan
+        log.info("arm sag: %s arm plan slowed: %s", plan.side, ", ".join(added))
+        return self._assembled(plan, parts)
 
     def _landing_box(self, rise: float, furthest_inset: float) -> str:
         """Which measured landing box the current release has: `limit` (the arm at its reach limit: a small inset and no larger one in reach), `risen` or `nominal`."""
@@ -269,16 +313,21 @@ class PickPlanner(Planner):
         return rises[enough]
 
     def _reaches(self, side: str, bin_name: str, inset: float, rise: float) -> bool:
-        """Whether the IK of the carry holds the grasp point over that release point at carry and release height (cached per point)."""
+        """Whether the IK of the carry holds the grasp point over that release point at carry and release height, and the real arm can stand there (cached per point)."""
         self.near_inset = inset
         with self._released_from(rise), self._heading_free(True):
             points = [np.r_[self.drop_xy(bin_name), z] for z in sorted({self.carry_height(), self.release_height()})]
-            key = (side, *np.round([*self.kin.offset[side], *np.ravel(points)], 3))
+            kappa = () if self.sag is None else tuple(np.round(self.sag.kappa, 3))
+            key = (side, *np.round([*self.kin.offset[side], *np.ravel(points)], 3), *kappa)
             cache = self.__dict__.setdefault("_reach", {})
             if key not in cache:
-                cache[key] = self._within_arm_length(side, points) and all(
-                    self.kin.solve(side, p, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])[1] for p in points)
+                cache[key] = self._within_arm_length(side, points) and all(self._reaches_point(side, p) for p in points)
         return cache[key]
+
+    def _reaches_point(self, side: str, point: np.ndarray) -> bool:
+        """Whether the IK holds the grasp point there and the real arm can stand still in that pose with a closed hand."""
+        q, ok, _, _ = self.kin.solve(side, point, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])
+        return ok and self.holds_still(q, self.post["closed"])
 
     def _within_arm_length(self, side: str, points: Sequence[np.ndarray]) -> bool:
         """Whether every point lies within the arm's fully stretched length (+ IK tolerance) of its shoulder: beyond it no IK can succeed."""
