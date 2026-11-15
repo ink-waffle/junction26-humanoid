@@ -21,6 +21,7 @@ from halal.motion import sequence
 from halal.motion.grasps import INWARD, Grasp, right_hand
 from halal.motion.obstacles import distance, moved, outline, top_of
 from halal.motion.sag import Sag
+from halal.motion.tilt import turned_pose
 from halal.perception import SceneLayout
 
 log = logging.getLogger(__name__)
@@ -28,8 +29,9 @@ MIRROR_Y = np.array([1.0, -1.0, 1.0])
 SIDES = ("left", "right")
 SHORTCUT_SAMPLES = 12
 BIN_PHASES = ("carry", "lower", "retreat")
-HELD_PHASES = ("lift", "carry")
+HELD_PHASES = ("lift", "carry", "tilt")
 STILL_PHASES = ("close", "squeeze", "open")     # the arm stands still at the grasp and the release while the hand works
+TURN_PHASES = ("tilt", "open", "retreat", "home")   # phases a forward-turned release rebuilds
 NEAR_OBJECTS_PHASES = ("descend", "close")
 OBSTACLE_CHECK_EVERY = 3
 LATE_FINGER = slice(5, 7)
@@ -91,7 +93,8 @@ class PickPlanner(Planner):
                     plan = plan if tried else replace(plan, reason=LANDING)
                     continue
                 with self._released_from(rise):
-                    plan, tried = self._held_up(self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy)), True
+                    plan, tried = self._plan_with(grasp, target, side, bin_name, arm_q, hand_q, place_xy), True
+                plan = self._held_up(self._tilted(plan, side, bin_name) if place_xy is None else plan)
                 if plan.ok:
                     break
         return self._sag_timed(self._ending_at(self._staggered_release(self._carried_gently(plan, grasp), side), end), arm_q, hand_q)
@@ -120,6 +123,77 @@ class PickPlanner(Planner):
                 log.info("arm sag: %s arm plan refused: the sag during %s would use %.2f of the clip", plan.side, name, use)
                 return replace(plan, ok=False, reason=f"arm cannot hold still during {name} (sag uses {use:.2f} of the clip)")
         return plan
+
+    def _tilted(self, plan: Plan, side: str, bin_name: str) -> Plan:
+        """The plan with the hand turned forward before it opens (`motion.release_tilt`) where that applies and the turned release passes every check; else unchanged."""
+        if not self._tilt_applies(plan):
+            return plan
+        turned = self._turned(plan, side, bin_name)
+        degrees, inset = self.motion["release_tilt"]["deg"], 100 * self.near_inset
+        if not turned.ok:
+            log.info("release tilt: %s arm keeps the upright release at inset %.1f cm: %s", side, inset, turned.reason)
+            return plan
+        log.info("release tilt: %s arm turns the hand %g deg forward to let go at inset %.1f cm", side, degrees, inset)
+        return turned
+
+    def _tilt_applies(self, plan: Plan) -> bool:
+        """Whether this release gets the forward turn: tilt on, an inset this small, and an arm whose sag uses this much of the clip there."""
+        settings = self.motion["release_tilt"]
+        if not plan.ok or not settings["deg"] or self.near_inset > settings["max_inset"] + 1e-9:
+            return False
+        first = _open_start(plan)
+        use = 0.0 if self.sag is None else self.sag.static_use(plan.arm[first], plan.hand[first])
+        return use >= settings["min_use"]
+
+    def _turned(self, plan: Plan, side: str, bin_name: str) -> Plan:
+        """The plan with the turned release, dry-run; `ok` False with the reason when its landing box, pose, clearances or sag budget fail."""
+        settings = self.motion["release_tilt"]
+        if not self._lands_inside(side, bin_name, "tilted"):
+            return replace(plan, ok=False, reason="its landing box crosses a bin wall")
+        first = _open_start(plan)
+        pose, miss, error = turned_pose(self.kin, side, plan.arm[first], np.radians(settings["deg"]))
+        if miss > self.cfg["ik"]["pos_tol"] or error > np.radians(settings["max_error_deg"]):
+            return replace(plan, ok=False, reason=f"no turned pose (grasp point {1000 * miss:.1f} mm, hand {np.degrees(error):.1f} deg off)")
+        turned = self._held_up(self._assembled(plan, self._turned_parts(plan, pose)))
+        violation = self._turn_violation(turned, side) if turned.ok else turned.reason
+        return replace(turned, ok=not violation, reason=violation)
+
+    def _turned_parts(self, plan: Plan, pose: np.ndarray) -> list[tuple[str, np.ndarray, np.ndarray]]:
+        """The plan's parts with the turn to `pose` blended into the end of the carry (the `tilt` phase), kept through the open and the retreat and shed on the way home."""
+        turn, window = pose - plan.arm[_open_start(plan)], int(round(self.motion["release_tilt"]["turn_s"] / self.dt))
+        parts = []
+        for name, first, stop in plan.phases:
+            arm, hand = plan.arm[first:stop], plan.hand[first:stop]
+            if name == "carry":
+                cut = max(first + 1, stop - window)
+                parts.append((name, plan.arm[first:cut], plan.hand[first:cut]))
+                name, arm = "tilt", self._blended(plan.arm[cut - 1], plan.arm[cut:stop], turn, gaining=True)
+                hand = np.repeat(plan.hand[stop - 1][None], len(arm), 0)
+            elif name in ("open", "retreat"):
+                arm = arm + turn
+            elif name == "home":
+                arm = self._blended(parts[-1][1][-1], arm, turn, gaining=False)
+                arm, hand = (sequence._padded(rows, max(len(arm), len(hand)), rows[-1]) for rows in (arm, hand))
+            parts.append((name, arm, hand))
+        return parts
+
+    def _blended(self, start: np.ndarray, rows: np.ndarray, turn: np.ndarray, gaining: bool) -> np.ndarray:
+        """Rows after `start` with the joint offset `turn` added in evenly (`gaining`) or shed evenly, re-timed at the speed limits."""
+        share = np.arange(1, len(rows) + 1) / len(rows)
+        rows = rows + (share if gaining else 1.0 - share)[:, None] * turn
+        motion = self.cfg["motion"]
+        return time_scale([start, *rows], motion["arm_max_vel"], motion["arm_max_acc"], self.dt)
+
+    def _turn_violation(self, plan: Plan, side: str) -> str:
+        """First clearance the turned release breaks (counter, bin rims) while it turns, opens and retreats; empty when none."""
+        floor = self.cfg["motion"]["counter_clearance"]
+        for name, first, stop in plan.phases:
+            for tick in range(first, stop, sequence.CHECK_EVERY) if name in TURN_PHASES else ():
+                if self.clearance(side, plan.arm[tick], plan.hand[tick]) < floor - 2e-3:
+                    return f"hand under the counter clearance during {name}"
+                if self.bin_clearance(side, plan.arm[tick], plan.hand[tick]) < sequence.RIM_TOUCH:
+                    return f"hand below a bin rim during {name}"
+        return ""
 
     def _sag_timed(self, plan: Plan, arm_q: np.ndarray, hand_q: np.ndarray) -> Plan:
         """The plan with every phase slowed where the real arm's sag budget needs it, dry-run again; unchanged at kappa 0 or within budget."""
@@ -337,7 +411,16 @@ class PickPlanner(Planner):
     def _reaches_point(self, side: str, point: np.ndarray) -> bool:
         """Whether the IK holds the grasp point there and the real arm can stand still in that pose with a closed hand."""
         q, ok, _, _ = self.kin.solve(side, point, self.home, extra_seeds=[self.home[ArmKinematics.sl(side)]])
-        return ok and self.holds_still(q, self.post["closed"])
+        return ok and (self.holds_still(q, self.post["closed"]) or self._holds_turned(side, q))
+
+    def _holds_turned(self, side: str, arm_q: np.ndarray) -> bool:
+        """Whether the release tilt counts for reach here (`release_tilt.reach`, an inset it applies to) and the turned hand can stand still where the upright one cannot."""
+        settings = self.motion["release_tilt"]
+        if not settings["deg"] or not settings["reach"] or self.near_inset > settings["max_inset"] + 1e-9:
+            return False
+        pose, miss, error = turned_pose(self.kin, side, arm_q, np.radians(settings["deg"]))
+        held = miss <= self.cfg["ik"]["pos_tol"] and error <= np.radians(settings["max_error_deg"])
+        return held and self.holds_still(pose, self.post["closed"])
 
     def _within_arm_length(self, side: str, points: Sequence[np.ndarray]) -> bool:
         """Whether every point lies within the arm's fully stretched length (+ IK tolerance) of its shoulder: beyond it no IK can succeed."""
@@ -672,6 +755,11 @@ class PickPlanner(Planner):
         if error > self.motion["finger_yaw_tolerance"]:
             plan.ok, plan.reason = False, f"fingers {np.degrees(error):.0f} deg off the requested heading"
         return plan
+
+
+def _open_start(plan: Plan) -> int:
+    """First tick of the plan's open phase: the arm pose the hand lets go in."""
+    return next(start for name, start, _ in plan.phases if name == "open")
 
 
 def _length(path: list[np.ndarray]) -> float:

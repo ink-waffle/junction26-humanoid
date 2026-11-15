@@ -8,10 +8,10 @@ rs19 soft-hand sim ep 0). Scratch scripts only for the analysis; FK and gravity 
 
 Real-arm sim (ARM_GAINS), seeds 1000-1003, objects in their box:
 
-| boxes | v28 | v29dev (static 0.78 / moving 0.82) | v31 (0.84 / 0.88) |
-|---|---|---|---|
-| scene file | 12/13 (+11), releases at rim height | 10/13 (+9), two lying prisms refused | 13/13 (+13), releases +45 mm above the rim |
-| +6 cm | 7/13 (+7), releases 11 mm under the rim, wall hits | 0/7 (2 seeds, all refused) | 3/13 (+3), small-inset releases land on the near wall |
+| boxes | v28 | v29dev (static 0.78 / moving 0.82) | v31 (0.84 / 0.88) | v31 + release tilt 20° + reach (tilt20rdev) |
+|---|---|---|---|---|
+| scene file | 12/13 (+11), releases at rim height | 10/13 (+9), two lying prisms refused | 13/13 (+13), releases +45 mm above the rim | not run: offline its plans equal v31's there, nothing tilted |
+| +6 cm | 7/13 (+7), releases 11 mm under the rim, wall hits | 0/7 (2 seeds, all refused) | 3/13 (+3), small-inset releases land on the near wall | 10/13 (+10), 1 time limit, 0 clips (section at the end) |
 
 
 - The real arm sinks under gravity: the runner drives it with a PD and no feedforward. At home the grasp point sits 28-34 mm
@@ -288,3 +288,91 @@ as in the reach sweeps), with the sag offset applied through `Sag.commands` at a
 - read: binned share, forward landing offset (median, p2.5) and objects lost before the open;
 - the stock-arm sim at the same points tells whether any tilt effect belongs to the soft arm.
 Accept when tilt 20-30° binned ≥ 7 of 8 at inset 1 cm on all three shapes, with no loss before the open.
+
+## Forward-exit release (`motion.release_tilt`, ws/tilt): built, measured
+
+**Verdict.** At +6 cm without gravity feed-forward, tilt 20° with `reach` sorts 10/13 in the real-arm realsim, where v31
+sorts 3/13 (same seeds 1000-1003). With the runner's feed-forward (`--arm-gravity-ff`) the arm fits kappa ~0 and the tilt
+never triggers: with the recommended config the mock streams at kappa 0 are bit-identical to v31 (stiff 3/5/7). So it
+is a free fallback for runs without feed-forward.
+- Recommended for a hand-in that may run without feed-forward: `release_tilt: {deg: 20, max_inset: 0.04, reach: true}`,
+  the rest as committed. Committed default: off (deg 0), which keeps v31 bit-identical.
+- 30° loses objects in the turn once the turn is blended into the carry.
+- Cost: a reach release at inset 4 cm crawls near the cap (side-box picks +4 s).
+
+What it does (`halal/motion/tilt.py`, `PickPlanner._tilted`):
+- Applies when deg > 0, the release inset is at most `max_inset`, and the arm's sag uses at least `min_use` (0.5) of the
+  clip there. kappa 0 uses ~0.25, so a stiff or feed-forward arm never tilts.
+- The turned pose is an IK target: grasp point fixed, approach axis turned `deg` towards +x about pelvis y. At +6 cm it
+  is mostly wrist yaw (0.46 rad at 20°, 0.76 at 30°), and the hand moves back, so the static use drops by 0.05-0.07.
+- The turn is blended into the carry's last `turn_s` (1.0 s, phase `tilt`, re-timed at the speed limits). The arm stays
+  turned through the open and the retreat and sheds the turn on the way home.
+- The landing box (`landing.tilted`), the pose error, counter and rim clearance (tilt, open, retreat, home), the static
+  budget at the turned open and the sag-aware dry run all check it. A release that fails any of them stays upright (v31).
+- `reach: true`: the reach question and the static budget accept a release whose turned hand holds still. Offline at
+  +6 cm, kappa 1, reach bench: cube plans 4/16 -> 16/16 (centre box 0/8 -> 8/8), insets 0-2 -> 3-4 cm. Scene-file boxes:
+  plans identical to v31 for every config (16/16 at inset 6 cm, nothing tilted).
+- Mock (render mock, 3/5/7): flag off bit-identical (stiff 94e5e360 / 0a5ced74 / 264852e6, soft-arm 4ffc9394 / ef3cff0c /
+  7503cfd6). Forced on (30°, every inset, reach): 0 clips, every moving load matches a dry run.
+
+### Sweep: fixed insets, tilt phase standing before the open (99983b7)
+
+Real-arm sim (ARM_GAINS 71,3,40,1.5,8.5,4.8, soft hands, REAL_SIM=boxes,offsets, boxes +6 cm, counter +1 cm), grasp_bench
+with `sag: true` (kappa 1.008 measured at home), side boxes, policy candidates, 8 drops per shape and cell. Binned /
+carried:
+
+| inset | tilt 0 | tilt 20° | tilt 30° |
+|---|---|---|---|
+| 0 cm | 2/24 | 2/24 | 1/23 |
+| 1 cm | 1/23 | 14/24 (cube 2/8, cylinder 4/8, triangle 8/8) | 16/23 (6/7, 7/8, 3/8) |
+| 2 cm | 18/24 (cube 5/8, cylinder 5/8, triangle 8/8) | 24/24 | 23/24 |
+
+- 0 clips, nothing knocked off, nothing in a wrong box, 1 of 215 lost before the open.
+- In this sim the held object is 20-30 mm short of the planned release x when the hand opens, so at inset 0 its centre is
+  still behind the near wall: every drop there lands ~30 mm short, on the counter, whatever the tilt.
+- Landing of binned tilted drops (n 80): forward +5..+47 mm (median +18 at 20°, +21 at 30°), outward -35..+35 mm.
+  Untilted: forward +3..+49 mm, median +5. The turn shifts the landing forward by ~1 cm per 10°.
+- The design note's bar (≥ 7/8 per shape at inset 1 cm) is not met. At 2 cm the tilt makes the release reliable.
+
+### Round 2: the planner's own insets, turn blended into the carry (9d1422b)
+
+Same sim and bench. Every variant has `min_use` 0.5 and `turn_s` 1.0. `r` = `reach: true` with `max_inset` 0.04, plain
+tilt has `max_inset` 0.02. Centre box: one arm at a time, each on its own-side slot (y ±0.03). Binned / cases:
+
+| box | v31 | tilt 20° | tilt 20° + reach | tilt 30° + reach |
+|---|---|---|---|---|
+| side boxes | 15/24 (inset 2 cm, pick 11.9 s; cylinders 3/8, cubes 4/8) | 23/24 (inset 2 cm, 10.7 s) | 23/24 (inset 4 cm, 15.9 s) | 23/24 (inset 4 cm, 16.6 s), **9 lost before the open** |
+| centre box | 1/12 (4 cubes unplannable, the rest at insets 0-1 cm onto the wall) | | 11/12 (inset 3 cm, 11.7 s) | |
+
+- Misses with tilt 20°: two cubes not lifted (grasp misses) and one triangle that fell out of the hand in the carry. 2 of
+  the 36 reach cylinders left the hand before the open and still fell into the box. 0 clips, nothing knocked off,
+  nothing in a wrong box.
+- 30° with the turn in the carry lets cylinders slide out before the open (8 of 8 left the hand early, but they still
+  fell into the box at inset 4 cm). Not worth the risk on the real hand: 20°.
+- Without reach, tilt 20° is as good in the side boxes and 5 s faster per pick. Only reach plans the centre box at +6 cm.
+  The reach releases at inset 4 cm sit near the cap and crawl (side picks +4 s against v31).
+- Landing box of a tilted release, 20°, binned drops of the sweep and round 2 (n 97, rest minus planned release point):
+  forward -13..+46 mm, outward -25..+35 mm. The low end comes from this sim's compensated arm, which still ends 20-30 mm
+  short in x. `landing.tilted` keeps `limit`'s values (+6..+117 mm): the tilted check only ever falls back to the upright
+  release at the same point, and that lands worse at every small inset (sweep: 1/23 against 14/24 at 1 cm), so the
+  stricter measured box would only cost points.
+
+### Policy legs: boxes +6 cm (robot6edge24near6, real-arm realsim, seeds 1000-1003)
+
+halal/policy:tilt20rdev (3c6d8c0a7dac = 9d1422b with `deg: 20, max_inset: 0.04, reach: true`), same harness and seeds
+as the v31 leg above; one sim per seed group (a: 1000-1001, b: 1002, c: 1003).
+
+| seed | v31 | tilt20rdev |
+|---|---|---|
+| 1000 | 0/4, time limit | 3/4, time limit |
+| 1001 | 1/3, time limit | 2/3 |
+| 1002 | 2/3 | 2/3 |
+| 1003 | 0/3 | 3/3 |
+| total | 3/13 (+3) | **10/13 (+10)**, 0 clips, gate PASS |
+
+- Tilted releases planned at insets 2 / 3 / 4 cm: 5 / 21 / 16 times (the plans of every look, not only those executed).
+  kappa 1.01 at the first commit, drifting to 0.85-0.91.
+- The seed 1002 miss is an upright release at inset 6 cm: a lying prism stuck in the hand (`ridge_opposed`), not a tilt
+  case. Nothing knocked off, nothing in a wrong box.
+- Scene-file boxes: no leg (main stopped the experiments once the runner's feed-forward was merged). Offline reach
+  bench at kappa 1 there: every tilt config plans exactly v31's releases (16/16 per shape at inset 6 cm, nothing tilted).

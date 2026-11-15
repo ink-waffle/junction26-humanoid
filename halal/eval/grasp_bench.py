@@ -2,7 +2,8 @@
 
     python -m halal.eval.grasp_bench --spec runs/grasp/first.yaml --out runs/grasp/first     (sim env vars select the instance)
 
-Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = grippy and light), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool), shapes, yaws_deg
+Spec (yaml): seed, repeats, dr (any | hard = slippery and heavy | sticky = grippy and light), bin (side | center), arms (2 | 1 at a time), end (home | retreat), empty (bool),
+sag (bool: kappa measured at home once, then plans and sent arm commands carry the sag compensation as in the policy), shapes, yaws_deg
 (layout yaw of the left-arm object; the right arm gets the mirror image), spots (pelvis xy, left arm), scene ({counter: [x, y, z],
 bins: [x, y], wall_height}: where a REAL_SIM=offsets,boxes sim has the counter, the bin row and the rims; the plans get the same), noise (perceived
 minus true pose, [{pos: m in a random direction, dx: m forward, dy: m outward, yaw_deg, yaw_known}], all optional),
@@ -45,11 +46,13 @@ from aaltonomous.sim.scene_client import SceneClient
 from halal import config
 from halal.motion import Grasp, PickPlanner, candidate_grasps
 from halal.motion.grasps import for_hand, right_hand, strategy_grasps, strategy_params
+from halal.motion.sag import ArmModel, Sag
 from halal.perception import ObjectDetection
 
 SIDES = ("left", "right")
 BIN_COLOR = {bin_name: color for color, bin_name in FIXED_MAPPING.items()}
-MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "open": ("open", 1.0)}
+MARKS = {"close": ("close", 1.0), "grip": ("lift", 0.0), "lift": ("lift", 1.0), "carry": ("carry", 0.5), "release": ("open", 0.0),
+         "open": ("open", 1.0)}
 GRIP_JOINTS = [1, 3, 5]
 STUCK_ABOVE = 0.15
 LYING_TILT = np.radians(45.0)
@@ -184,6 +187,8 @@ class Bench:
                             head_rgbd=False, cameras=False, head_rgbd_port=int(os.environ.get("AALTO_RGBD_PORT", "55560")))
         self.scene = displaced(self.env.scene, spec.get("scene", {}))
         self.planners = {name: self._planner(variant) for name, variant in spec["variants"].items()}
+        self.sag = self._sag() if spec.get("sag") else None
+        self.plan_arm = self.env.filter.arm_cmd.copy()   # plan-space arm command: the sent one minus the sag compensation
         self.seeds = DrSeeds(self.scene_client, self.scene, int(spec["seed"]), spec["dr"])
         self.rest_z = self.scene.counter_z + self.scene.object_height() / 2
 
@@ -195,6 +200,14 @@ class Bench:
         planner.use_scene(self.scene)
         return planner
 
+    def _sag(self) -> Sag:
+        """One sag compensation for every variant's plans and for the commands sent."""
+        planner = next(iter(self.planners.values()))
+        sag = Sag(ArmModel(planner.spec), planner.motion["sag"], planner.spec, planner.safety, planner.dt)
+        for each in self.planners.values():
+            each.sag = sag
+        return sag
+
     def close(self) -> None:
         self.env.close()
 
@@ -202,6 +215,11 @@ class Bench:
     def run(self, index: int, cases: list[Case]) -> list[dict[str, Any]]:
         """Home, randomise, place the objects, plan one pick per arm, execute both, score and summarise."""
         evaluate.home_arms(self.env, self.scene_client)
+        self.plan_arm = self.env.filter.arm_cmd.copy()
+        if self.sag is not None:
+            self.sag.offset = np.zeros(14)
+            if not self.sag.measured:
+                self._measure_sag()
         neighbours = self._neighbour_names(cases)
         names = [f"obj_{BIN_COLOR[c.bin_name]}_{c.shape}_0" for c in cases if c.present] + [n for n in neighbours if n]
         seed = self.seeds.take(names)
@@ -217,6 +235,15 @@ class Bench:
         final = {o["name"]: o for o in self.scene_client.state()["objects"]}
         np.savez_compressed(self.out / "traces" / f"episode_{index:04d}.npz", **trace)
         return [self._record(index, seed, p, k, trace, outcomes, final, dr) for k, p in enumerate(picks)]
+
+    def _measure_sag(self) -> None:
+        """Kappa from still holds at home, committed for the rest of the run."""
+        ticks = self.settings["sag_sample_ticks"]
+        for k in range(1, self.settings["sag_samples"] + 1):
+            obs = self._hold(ticks)
+            self.sag.observe(self.env.filter.arm_cmd, np.full(2, k * ticks), obs["arm_q"], obs["hand_q"], self.scene)
+        self.sag.commit(0.0)
+        print(f"arm sag: kappa {np.round(self.sag.kappa, 3).tolist()} on {self.sag.samples} still samples", flush=True)
 
     def _neighbour_names(self, cases: list[Case]) -> list[str | None]:
         """Sim object next to each case's target (variant key `neighbour`), None where the variant has none."""
@@ -257,7 +284,7 @@ class Bench:
         headings = [wanted] if case.shape != "triangle" else perceived_yaw("triangle", state["quat_xyzw"]) + np.pi + np.radians([0.0, 120.0, 240.0])
         heading = min(headings, key=lambda h: abs((h - wanted + np.pi) % (2 * np.pi) - np.pi))
         along, centre, up = np.array([np.cos(heading), np.sin(heading), 0.0]), np.asarray(state["pos"], float), np.array([0.0, 0.0, 1.0])
-        arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
+        arm, hand = self.plan_arm.copy(), self.env.filter.hand_cmd.copy()
         fist = hand.copy()
         fist[cols] = planner.post["closed"][cols]
         plan = Plan(True, side=case.side)
@@ -285,17 +312,27 @@ class Bench:
     def _follow(self, plans: list[tuple[str, Plan]]) -> None:
         """Run arm plans side by side to their ends without tracing."""
         for tick in range(max((len(plan.arm) for _, plan in plans), default=0)):
-            arm, hand = self._targets(plans, tick)
-            self.env.step({"arm_q_target": arm, "hand_q_target": hand})
+            self._send(*self._targets(plans, tick))
 
     @staticmethod
     def _target(case: Case) -> str:
         return f"obj_{BIN_COLOR[case.bin_name]}_{case.shape}_0"
 
-    def _hold(self, ticks: int) -> None:
-        action = {"arm_q_target": self.env.filter.arm_cmd.copy(), "hand_q_target": self.env.filter.hand_cmd.copy()}
+    def _hold(self, ticks: int) -> dict[str, Any]:
+        """Repeat the last sent command; the last observation."""
+        action, obs = {"arm_q_target": self.env.filter.arm_cmd.copy(), "hand_q_target": self.env.filter.hand_cmd.copy()}, {}
         for _ in range(ticks):
-            self.env.step(action)
+            obs, _ = self.env.step(action)
+        return obs
+
+    def _send(self, arm: np.ndarray, hand: np.ndarray) -> tuple[dict[str, Any], dict[str, Any]]:
+        """One tick of plan-space targets; the arm goes out with the sag compensation, as the policy's command stream sends it."""
+        sent = arm
+        if self.sag is not None:
+            rows, offsets = self.sag.commands(self.plan_arm, arm[None], hand[None], self.sag.offset)
+            sent, self.sag.offset = rows[0], offsets[0]
+        self.plan_arm = np.array(arm, float)
+        return self.env.step({"arm_q_target": sent, "hand_q_target": hand})
 
     def _while_holding(self, work: Callable[[], T]) -> T:
         """Run slow work (planning) in a thread while the arms hold: a silent second trips the env's watchdog stop."""
@@ -350,7 +387,7 @@ class Bench:
         plan = Plan(False, side=case.side, reason="no grasp for this object")
         forward, outward = variant.get("drop_shift", (0.0, 0.0))
         for grasp in grasps:
-            plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.env.filter.arm_cmd.copy(),
+            plan = planner.plan_pick(detection, grasp, case.side, case.bin_name, self.plan_arm.copy(),
                                      self.env.filter.hand_cmd.copy(), end=self.spec["end"],
                                      drop_shift=(forward, outward if case.side == "left" else -outward),
                                      squeeze=self._squeeze_override(case.variant), obstacles=obstacles)
@@ -365,7 +402,7 @@ class Bench:
         tick = 0
         while any(p.plan.ok and tick < len(p.plan.arm) for p in picks):
             arm, hand = self._targets([(p.case.side, p.plan) for p in picks], tick)
-            obs, info = self.env.step({"arm_q_target": arm, "hand_q_target": hand})
+            obs, info = self._send(arm, hand)
             if info["clipped"]:
                 raise RuntimeError(f"safety clip during a dry-run-checked plan: {info['clip_reasons']}")
             for key, value in (("arm_cmd", arm), ("hand_cmd", hand), ("arm_q", obs["arm_q"]), ("hand_q", obs["hand_q"])):
@@ -381,7 +418,7 @@ class Bench:
 
     def _targets(self, plans: list[tuple[str, Plan]], tick: int) -> tuple[np.ndarray, np.ndarray]:
         """Arm and hand targets of this tick: each arm follows its own plan and holds once it is done or has none."""
-        arm, hand = self.env.filter.arm_cmd.copy(), self.env.filter.hand_cmd.copy()
+        arm, hand = self.plan_arm.copy(), self.env.filter.hand_cmd.copy()
         for side, plan in plans:
             if plan.ok:
                 cols, row = ArmKinematics.sl(side), min(tick, len(plan.arm) - 1)
