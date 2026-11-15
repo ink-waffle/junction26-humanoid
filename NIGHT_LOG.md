@@ -6,6 +6,25 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 02:50
+- **Hand-in candidate: v27** (amd64 `sha256:ba84e7a30e4129d661055492465d19ed50060686b1a91bd1e66631b797770315`,
+  `:v27-multi` `sha256:ab8ea52e…`): fixed 31/31, known 28/28, unseen 28/28 (+21.38 of 21.38), soft 31/31, gate PASS on
+  all 32 episodes. = v26 + carry corridor ON (realsim A/B 24/26 vs 22/26, no rerouted carry lost), far-box planning
+  2.4x faster, attempt over-count fix, unreachable target left alone, clear-view look after 3 unplannable looks.
+  Corridor-off twin v27pre: 87/87, soft 31/31.
+- **Real-look sim, boxes +10 cm, hands on the counter (rs27):** 18/26 (v24 19/26), time limits 2 (v24 4), place-to-look
+  median 4.1 s (v24 9.1 s). Lost time in two seeds: the arm filter judged reach at the previous plan's release slot
+  (`PickPlanner.drop_shift` leaks into `reaches_bin`), so a lying prism for the centre box got only the arm that cannot
+  reach it, 88 times. Latent since before v24; fix in progress (v28). Realsim scored an object in a moved box's far half
+  as "off": fixed in the realsim scorer (054b2d1), rs27 corrected.
+- **Drop 3 (organisers, 00:14: real head depth, 15 teleop episodes)**, our perception on it: depth is lossless (raw D435
+  noise); the two-arm hand fit is believed on 35 % of frames because the real RIGHT hand sits ~2 cm (mostly sideways)
+  from its forward kinematics in every episode, while the LEFT arm alone fits on 80 % and agrees with the RGB outline to
+  2 px; the robot leaned ~14 deg against the table in that session (3-6 deg on the robot night); the box rim was taken at
+  the row's far corners, which on a tilted counter overstates the box walls (17 cm instead of 7 on drop 3, +1-2 cm on
+  the robot night). Rim fix done (ws/realdepth 4b7a6c9), one-arm fallback with an RGB check in progress.
+- Live robot test of servo5 (measure first) running at the organisers' table now.
+
 ### Sun 15.11, 01:05
 - **Hand-in candidate: v26** (amd64 `sha256:010977be9f6fa7222a2959961eacaec900f1824b1b596ebc261ad92a40b7dead`,
   `:v26-multi` `sha256:55c54bb3…`): fixed 31/31, known 27/28 (one sim-jitter loss; that seed rerun 5/5), unseen

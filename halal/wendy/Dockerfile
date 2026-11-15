@@ -1,1 +1,1 @@
-FROM ghcr.io/ink-waffle/halal-policy:v26-multi@sha256:55c54bb308f94d84258e60996a781779c1842f41a05cd274a9d4ae2ed6c65d4e
+FROM ghcr.io/ink-waffle/halal-policy:v27-multi@sha256:ab8ea52ea3e4de7499c4c462216347c0d4f50dc3ac684b82c88c28cb774bbd3b
