@@ -19,7 +19,7 @@ from halal import config
 from halal.eval.depth_sensor import LEVELS
 from halal.eval.perception_bench import CAMERA, REPO, SPLITS, Frame, Pinhole, conditioned, in_split, load_frame, spread
 from halal.perception import scene_layout
-from halal.perception.bins import BinFinder
+from halal.perception.bins import BinFinder, entry_strips
 from halal.perception.calibration import SelfCalibration
 from halal.perception.geometry import Camera, PlaneFit, fit_plane
 
@@ -49,7 +49,7 @@ def plane_row(frame: Frame, plane: PlaneFit | None, nominal: Camera, surface: np
 def hands_row(frame: Frame, calibration: SelfCalibration, nominal: Camera, plane: PlaneFit | None, band: np.ndarray) -> Row:
     """The hand fit of one look: every check by name, whether it is believed, and how far it puts the object band off."""
     obs = frame.obs
-    fit = calibration.hand_fit(obs["head_depth"], nominal, (obs["arm_q"], obs["hand_q"]), plane)
+    fit = calibration.hand_fit(obs["head_depth"], nominal, (obs["arm_q"], obs["hand_q"]), plane, obs["head_rgb"])
     if fit is None:
         return {"hands_fit": False, "hands_ok": False}
     checks, (turn, shift) = calibration.hand_checks(fit, nominal), calibration.displacement(fit, nominal)
@@ -68,9 +68,9 @@ def layout_row(frame: Frame, calibration: SelfCalibration, finder: BinFinder, ca
     if found is None:
         return {"row_found": False, "counter_mm": counter_mm}
     true = {name: truly(frame, np.r_[xy, scene.counter_z][None], name)[0] for name, xy in file.bins.items()}
-    half = np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2
-    rims = [truly(frame, np.r_[xy + half * signs, scene.counter_z + scene.cfg["bins"]["wall_height"]][None], name)[0, 2]
-            for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
+    strips = entry_strips(file.bins, finder.size, finder.cfg["rim"]["entry"])
+    rim_true = scene.counter_z + scene.cfg["bins"]["wall_height"]
+    rims = [truly(frame, np.c_[corners, np.full(len(corners), rim_true)], name)[:, 2].max() for name, corners in strips.items()]
     rim = finder.rim_z(depth, camera, counter, found)
     return {"row_found": True, "rim_mm": None if rim is None else 1e3 * float(rim - max(rims)),
             "bins_y_mm": [1e3 * float(found[name][1] - true[name][1]) for name in file.bins],
@@ -135,7 +135,7 @@ def render(title: str, rows: Sequence[Row]) -> str:
         f"   frames with a bin more than 3 cm off {sum(max(r['bins_mm']) > 30 for r in rows if 'bins_mm' in r)}"
         f"   no row of boxes found {sum(r.get('row_found') is False for r in rows)}",
         f"counter height under the band through the hand camera, mm {stats(rows, 'counter_mm')}",
-        f"highest bin rim through the hand camera, mm, signed {stats(rows, 'rim_mm', False)}   worst low {min((r['rim_mm'] for r in rows if r.get('rim_mm') is not None), default=float('nan')):.1f}",
+        f"highest bin rim where objects go in, through the hand camera, mm, signed {stats(rows, 'rim_mm', False)}   worst low {min((r['rim_mm'] for r in rows if r.get('rim_mm') is not None), default=float('nan')):.1f}",
         f"scene anchor and hand fit apart at the band, mm {stats(rows, 'apart_mm')}",
         f"pose a look with both references would use: {sources}   band mm {stats(rows, 'chosen_mm')}"])
 
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     frames = [load_frame(p, scene, Pinhole(head.K, head.T_pelvis_optical), settings["bench"]) for p in sorted(args.frames.glob("seed_*.npz"))
               if in_split(int(p.stem.split("_")[1]), args.split, settings["bench"]["heldout_every"])]
     frames = conditioned(frames, scene, settings["bench"], args.shift, args.depth, args.depth_seed)
-    calibration, finder = SelfCalibration(scene, settings["calibration"]), BinFinder(scene, settings["bins"])
+    calibration, finder = SelfCalibration(scene, settings["calibration"], settings["outline"]), BinFinder(scene, settings["bins"])
     rows = [measure(frame, calibration, finder, nominal, scene) for frame in frames]
     label = "_".join(filter(None, [args.frames.name, args.shift, args.depth, args.split]))
     print(render(f"calibration stages on {label}, {len(rows)} frames", rows))

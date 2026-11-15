@@ -35,6 +35,7 @@ from halal import config
 from halal.eval.depth_sensor import LEVELS, ArmPixels, degrade
 from halal.eval.scene_shift import Displacement, displaced
 from halal.perception import SHAPES, Detector, ObjectDetection, SceneLayout, make_detector, scene_layout
+from halal.perception.bins import entry_strips
 from halal.perception.color import turned
 
 REPO = Path(__file__).resolve().parents[2]
@@ -280,12 +281,12 @@ def still(frames: Sequence[Frame], tolerance: float) -> list[Frame]:
 
 def layout_row(frame: Frame, layout: SceneLayout, scene: Scene, wall_height: float) -> Row:
     """One look's layout against where counter, bins and rims really stand (`scene`: the scene file's)."""
-    file, half = scene_layout(scene), np.asarray(scene.cfg["bins"]["outer_size"])[::-1] / 2
+    file = scene_layout(scene)
     truly = (lambda points, name=None: points) if frame.move is None else frame.move.moved
     bins = {name: truly(np.r_[xy, scene.counter_z][None], name)[0] for name, xy in file.bins.items()}
     band = scene.mat_to_pelvis([*np.mean(scene.layout_kwargs()["region"], axis=1), 0.0])
-    rims = [truly(np.r_[xy + half * signs, scene.counter_z + wall_height][None], name)[0, 2]
-            for name, xy in file.bins.items() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))]
+    strips = entry_strips(file.bins, np.asarray(scene.cfg["bins"]["outer_size"], float), config.load()["perception"]["bins"]["rim"]["entry"])
+    rims = [truly(np.c_[corners, np.full(len(corners), scene.counter_z + wall_height)], name)[:, 2].max() for name, corners in strips.items()]
     return {"seed": frame.seed, "tick": frame.tick, "source": layout.source, "bins_from": layout.bins_from,
             "bins_mm": [1e3 * float(np.linalg.norm(layout.bins[name] - bins[name][:2])) for name in file.bins],
             "counter_mm": 1e3 * float(layout.counter_z - truly(band[None])[0, 2]),

@@ -64,7 +64,7 @@ class BinFinder:
         return found
 
     def rim_z(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, bins: Mapping[str, np.ndarray]) -> float | None:
-        """Pelvis z of the highest bin rim: where the walls over the bin footprints stop, lifted to the row's highest corner."""
+        """Pelvis z of the highest bin rim where objects go in: where the walls over the footprints stop, lifted to the entry's highest point."""
         c = self.cfg["rim"]
         points = camera.cloud(depth, c["pixel_step"]).reshape(-1, 3)
         half = self.size[::-1] / 2 + c["margin"]
@@ -74,8 +74,8 @@ class BinFinder:
         if base < c["min_points"]:
             return None
         top = c["band"][0] + c["step"] * (np.flatnonzero(counts >= c["wall_share"] * base)[-1] + 1)
-        corners = np.concatenate([centre + half * signs for centre in bins.values() for signs in ((1, 1), (1, -1), (-1, 1), (-1, -1))])
-        return float(max(counter.z_at(corner) for corner in corners.reshape(-1, 2)) + top * counter.normal[2])
+        strips = entry_strips(bins, self.size, c["entry"], c["margin"]).values()
+        return float(max(counter.z_at(point) for corners in strips for point in corners) + top * counter.normal[2])
 
     def _wall_labels(self, depth: np.ndarray, camera: Camera, counter: PlaneFit, x: float, y: np.ndarray) -> np.ndarray:
         """Per y: +1 a vertical surface stands at this x, -1 the camera sees past it, 0 hidden; averaged over the heights."""
@@ -106,3 +106,10 @@ class BinFinder:
             return None
         sharp = self._front_x(depth, camera, counter, y, (smeared, smeared + c["row_smear"] * c["cell"]), needed)
         return smeared + (c["row_smear"] - 1) * c["cell"] / 2 if sharp is None else sharp
+
+
+def entry_strips(centres: Mapping[str, np.ndarray], size: np.ndarray, entry: float, margin: float = 0.0) -> dict[str, np.ndarray]:
+    """Per box, the corners (4, 2) of where objects go in: its near wall and the line `entry` past it, across its width (+ margin)."""
+    width, depth = size
+    return {name: np.array([np.asarray(centre)[:2] + (x, y) for x in (-depth / 2 - margin, -depth / 2 + entry)
+                            for y in (-width / 2 - margin, width / 2 + margin)]) for name, centre in centres.items()}

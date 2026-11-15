@@ -12,6 +12,7 @@ from aaltonomous.scene.scene import Scene
 
 from halal.perception.geometry import Camera, PlaneFit, fit_line, fit_plane, rotation_between, yaw_rotation
 from halal.perception.hands import HandFit, HandReference
+from halal.perception.outline import SIDES, HandOutline
 
 UP = np.array([0.0, 0.0, 1.0])
 LOG = logging.getLogger(__name__)
@@ -27,10 +28,11 @@ class CameraFit:
 class SelfCalibration:
     """Scene-anchored pose when the hands confirm (or cannot contradict) it, else the pose the hands give, else nominal."""
 
-    def __init__(self, scene: Scene, cfg: Mapping[str, Any]) -> None:
+    def __init__(self, scene: Scene, cfg: Mapping[str, Any], outline: Mapping[str, Any] | None = None) -> None:
         self.cfg = cfg
         self.counter_z = scene.counter_z
         self.hands = HandReference(cfg["hands"])
+        self.outline = None if outline is None else HandOutline(outline, self.hands)
         bins = scene.cfg["bins"]
         centres = [scene.mat_to_pelvis([*c, 0.0]) for c in bins["centers"].values()]
         self.wall_x = float(centres[0][0] - bins["outer_size"][1] / 2)
@@ -55,9 +57,9 @@ class SelfCalibration:
         floor = self.counter_fit(depth, nominal)
         return self._anchored(depth, nominal, floor) if floor else None
 
-    def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray]) -> HandFit | None:
+    def arm_pose(self, depth: np.ndarray, nominal: Camera, joints: tuple[np.ndarray, np.ndarray], rgb: np.ndarray | None = None) -> HandFit | None:
         """The fit that puts the seen arms on their kinematic model, if what was matched is provably an arm."""
-        return self._by_hands(depth, nominal, joints, self.counter_fit(depth, nominal))
+        return self._by_hands(depth, nominal, joints, self.counter_fit(depth, nominal), rgb)
 
     def consensus(self, fits: list[HandFit]) -> Camera | None:
         """Of an episode's believed arm fits, those about as clear of the counter as the clearest; of them the pose nearest to all others."""
@@ -91,27 +93,56 @@ class SelfCalibration:
         plane = fit_plane(points[near], c["tolerances"])
         return plane if plane.inliers >= c["min_points"] and plane.rms <= c["max_rms"] else None
 
-    def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> HandFit | None:
-        fit = self.hand_fit(depth, camera, joints, floor)
+    def _by_hands(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None,
+                  rgb: np.ndarray | None) -> HandFit | None:
+        fit = self.hand_fit(depth, camera, joints, floor, rgb)
         if fit is None:
             LOG.info("arms: too little of them in view")
             return None
         checks, (turn, shift) = self.hand_checks(fit, camera), self.displacement(fit, camera)
-        LOG.info("arms: %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth (judged on %d of %d visible points, those clear "
-                 "of the counter), pixels on model %.2f, spread %.1f mm, camera turned %.1f deg, shifted %.0f mm: %s", fit.points, 1e3 * fit.rms,
+        LOG.info("arms (%s): %d px, rms %.1f mm, model covered %.2f of the %.2f that returned depth (judged on %d of %d visible points, those clear "
+                 "of the counter), pixels on model %.2f, spread %.1f mm, camera turned %.1f deg, shifted %.0f mm: %s", fit.side, fit.points, 1e3 * fit.rms,
                  fit.coverage, fit.known, fit.clear, fit.visible, fit.inliers, 1e3 * fit.spread.max(), turn, 1e3 * shift,
                  "trusted" if all(checks.values()) else f"rejected {checks}")
         return fit if all(checks.values()) else None
 
-    def hand_fit(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None) -> HandFit | None:
-        """The hand fit from the shifted starts; only when it is not believable, the one from the turned starts if that one is."""
-        fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1])
-        if fit is None or all(self.hand_checks(fit, camera).values()):
+    def hand_fit(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None,
+                 rgb: np.ndarray | None = None) -> HandFit | None:
+        """The fit of both arms; only when it is not believable and `rgb` is given, one arm's that its own hand's outline confirms."""
+        fit = self._starts_fit(depth, camera, joints, floor)
+        if fit is None or self.believed(fit, camera) or rgb is None or self.outline is None or not self.cfg["hands"]["one_arm"]["enabled"]:
             return fit
-        turned = self.hands.fit(depth, camera, *joints, floor, self.band[-1], turned=True)
-        believed = turned is not None and all(self.hand_checks(turned, camera).values())
-        LOG.info("arms: no shifted start gave a believable fit, a turned start %s", "did" if believed else "did not either")
+        return self._one_arm(depth, camera, joints, floor, rgb) or fit
+
+    def _starts_fit(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None,
+                    side: str | None = None) -> HandFit | None:
+        """The hand fit from the shifted starts; only when it is not believable, the one from the turned starts if that one is."""
+        fit = self.hands.fit(depth, camera, *joints, floor, self.band[-1], side=side)
+        if fit is None or self.believed(fit, camera):
+            return fit
+        turned = self.hands.fit(depth, camera, *joints, floor, self.band[-1], turned=True, side=side)
+        believed = turned is not None and self.believed(turned, camera)
+        LOG.info("arms (%s): no shifted start gave a believable fit, a turned start %s", side or "both", "did" if believed else "did not either")
         return turned if believed else fit
+
+    def _one_arm(self, depth: np.ndarray, camera: Camera, joints: tuple[np.ndarray, np.ndarray], floor: PlaneFit | None,
+                 rgb: np.ndarray) -> HandFit | None:
+        """Of the arms whose fit alone is believable, the one whose own black hand that camera images nearest its dark pixels, within `max_outline_px`."""
+        limit, found = self.cfg["hands"]["one_arm"]["max_outline_px"], []
+        for side in SIDES:
+            fit = self._starts_fit(depth, camera, joints, floor, side)
+            if fit is None or not self.believed(fit, camera):
+                continue
+            outline = self.outline.fit(rgb, fit.camera, *joints).get(side)
+            off = None if outline is None else float(np.hypot(*outline.shift))
+            LOG.info("arms (%s): believable alone, its hand's outline %s", side, "not in view" if off is None else f"{off:.0f} px off (limit {limit})")
+            if off is not None and off <= limit:
+                found.append((off, fit))
+        return min(found, key=lambda pair: pair[0])[1] if found else None
+
+    def believed(self, fit: HandFit, start: Camera) -> bool:
+        """True when a hand fit passes every test of `hand_checks`."""
+        return all(self.hand_checks(fit, start).values())
 
     @staticmethod
     def displacement(fit: HandFit, start: Camera) -> tuple[float, float]:

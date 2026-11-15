@@ -17,7 +17,6 @@ from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier, chromas
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
 from halal.perception.hands import HandFit
-from halal.perception.outline import HandOutline
 from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
@@ -41,8 +40,8 @@ class TopFaceDetector:
         self.cfg = cfg["topface"]
         self.scene = Scene.load()
         self.nominal = Camera.head()
-        self.calibration = SelfCalibration(self.scene, cfg["calibration"])
-        self.outline = HandOutline(cfg["outline"], self.calibration.hands)
+        self.calibration = SelfCalibration(self.scene, cfg["calibration"], cfg["outline"])
+        self.outline = self.calibration.outline
         self.bins = BinFinder(self.scene, cfg["bins"])
         self.fitter = OutlineFitter(self.scene, self.cfg["outline"])
         self.colors = ColorClassifier(self.cfg["color"])
@@ -122,7 +121,7 @@ class TopFaceDetector:
             return anchor, self.arm_fits
         self.arm_attempts += 1
         self._log_outline(obs)
-        fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]))
+        fit = self.calibration.arm_pose(obs["head_depth"], self.nominal, (obs["arm_q"], obs["hand_q"]), obs["head_rgb"])
         return anchor, self.arm_fits + ([] if fit is None else [fit])
 
     def _log_outline(self, obs: Mapping[str, Any]) -> None:
