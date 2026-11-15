@@ -6,6 +6,23 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 07:50
+- **Real robot with the runner's gravity feed-forward** (our PR #3 merged, `--arm-gravity-ff`; PR #5 makes it the
+  default), servo11-servo (= v33 + hover servo), 06:27: **3 of 3 sorted** (cube, cylinder, cube). At every descent
+  bottom without contact the hand is within 3 mm of its command: no sag. 06:30 (made harder, +2 prisms): 1 of 5; the
+  LEFT Dex3's middle finger is dead (hardware: `left_hand_middle_0` stays at -0.07..-0.41 rad while commanded -1.4; its
+  empty-close error -0.91 rad), so every left grasp was a thumb-index pinch and 5 of 5 slipped at the lift; the right
+  arm missed a cylinder twice (fingertips on its top edge; hand-offset samples too few). Video analyses:
+  `team/notes/robot_videos_0520.md`, `robot_videos_0630.md`.
+- **Earlier runs (05:20-05:32, no feed-forward)**: 2 of 15; arm sag at release cost 3, the uncalibrated camera (start
+  pose with too little arm in view) the boxes and 2 grasps, objects at the robot's table edge 4.
+- **Versions since v31** (each bit-identical to v31 on the deterministic mock, each gate-checked):
+  v32 go home for the hand fit when the start pose cannot give one; v33 per-arm hand offset measured on still looks
+  (drop 3 right hand -8/-17 mm; dead band 10 mm, 2 samples); v34 stuck grip joints leave the grip score, no targets
+  nearer than x 0.23; v35 forward-tilt release (only for a sagging arm: +6 cm boxes without feed-forward 10/13 vs
+  3/13); v36 the healthy hand goes first when one has a dead finger. **servo14-servo = v36 + hover servo: full gate
+  running**, the hand-in candidate for the finals.
+
 ### Sun 15.11, 05:00
 - **Hand-in candidate: v31** (`sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`, `:v31-multi` `sha256:52552e2a…`; stock 87/87, soft 31/31, gate PASS 32/32) = v28 + arm-sag
   compensation and torque budget (static 0.84 / moving 0.88 of the runner's clip) + `arm_tau_ff` in every reply (ignored by
