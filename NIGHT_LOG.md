@@ -12,7 +12,8 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
   cube came to rest on the first in the left box, as in 1 of 4 servo runs of that seed), known 28/28, unseen 28/28,
   soft-hand fixed 31/31, 0 clips, gate PASS on all 32 episodes. Real robot: run with `--arm-gravity-ff`.
 - Submission video (1:48, sim then the real 3/3 run with an "in simulation / in reality" crossfade):
-  https://github.com/ink-waffle/junction26-humanoid/releases/download/submission-video/halal_submission_video.mp4
+  https://www.youtube.com/watch?v=m44uIKqwN1A (also a GitHub release asset). Junction project "Halal Team: G1 Sorter"
+  submitted 08:39 (Aaltonomous Humanoid; Verda Compute Track).
 
 ### Sun 15.11, 06:55
 - **Real robot with the runner's gravity feed-forward** (our PR #3 merged, `--arm-gravity-ff`; PR #5 makes it the
