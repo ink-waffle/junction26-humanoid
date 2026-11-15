@@ -2,18 +2,20 @@
 
 Aaltonomous Humanoid, Junction 2026. Team: Damir Kairov, Maksim Kruglov. Code: this repository (`halal/`).
 Image (public, CPU only, 1.5 GB, starts in 0.5 s):
-`ghcr.io/ink-waffle/halal-policy@sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`
+`ghcr.io/ink-waffle/halal-policy:servo14-servo@sha256:c88eb5492a866d2a341db0dc1885ca4cdf296d60b3430c9aac10032b0ed433ad`
+(v36 with the hover servo; the same code without it: `@sha256:2ab42c847e32610cc88ee35b39f28ea91fb5ba97ec85ba81ca08aa55878d797f`).
+Run the real robot with `--arm-gravity-ff`.
 
 ## In simulation, through the submitted container
 
 Organisers' evaluator, training domain randomisation, 8 seeds per task, sim gate on every episode.
 
-| Task | Organiser baseline | Ours (v31) |
+| Task | Organiser baseline | Ours (servo14-servo = v36 + servo) |
 |---|---|---|
-| `sort_fixed` | +1.62 (13/31 objects) | +3.88 (31/31) |
+| `sort_fixed` | +1.62 (13/31 objects) | +3.75 (30/31; one cube came to rest on another) |
 | `sort_language`, training template | not applicable | +7.00 (28/28) |
 | `sort_language`, unseen paraphrase | not applicable | +7.00 (28/28) |
-| Gate (0 clipped steps, ≥ 27 Hz, real-time rate) | pass | pass on 24 of 24 episodes, real-time rate ≥ 114 Hz |
+| Gate (0 clipped steps, ≥ 27 Hz, real-time rate) | pass | pass on 32 of 32 episodes incl. the soft-hand leg (31/31) |
 
 No object in a wrong bin and none knocked off the counter in any measured episode of the last five versions.
 

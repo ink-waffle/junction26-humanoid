@@ -6,6 +6,14 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
+### Sun 15.11, 07:45
+- **Hand-in: servo14-servo** (`sha256:c88eb5492a866d2a341db0dc1885ca4cdf296d60b3430c9aac10032b0ed433ad`, = v36 + hover
+  servo), submitted to the organisers' form 07:44 (latest response counts). Full gate: fixed 30/31 (seed 1001: a second
+  cube came to rest on the first in the left box, as in 1 of 4 servo runs of that seed), known 28/28, unseen 28/28,
+  soft-hand fixed 31/31, 0 clips, gate PASS on all 32 episodes. Real robot: run with `--arm-gravity-ff`.
+- Submission video (1:48, sim then the real 3/3 run with an "in simulation / in reality" crossfade):
+  https://github.com/ink-waffle/junction26-humanoid/releases/download/submission-video/halal_submission_video.mp4
+
 ### Sun 15.11, 06:55
 - **Real robot with the runner's gravity feed-forward** (our PR #3 merged, `--arm-gravity-ff`; PR #5 makes it the
   default), servo11-servo (= v33 + hover servo), 06:27: **3 of 3 sorted** (cube, cylinder, cube). At every descent
