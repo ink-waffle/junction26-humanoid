@@ -85,7 +85,7 @@ Where the floor loses objects (from its runner logs, `runs/eval/baseline_sort_fi
 | v25 | 5d25743d3943 | 5623ca6 (= v24 + 5623ca6) | see below | stopped (sims to the servo engineer) | 3 episodes: 11/11, stopped | – | pre-check pass (p50 6.2 ms) | v24 + a head image seen again after the arms went away and came back fails the look too (arm odometer, kept across episodes) |
 | v26 | 010977be9f6f | 52330d1 (= main ed2be04 + 9787d0f) | +3.88 ± 0.78, 31/31 | +6.75 ± 0.97, 27/28 (jitter; seed 1002 rerun 5/5) | +7.00 ± 1.41, 28/28 | +21.13 | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 113; soft sim 31/31) | v25 + shape memory by colour, forgotten where a pick starts, lying prisms keep their shape + broken targets left alone after 3 looks + motion 7a3a729 (`_depth` falls back to `unknown`) and f42568f (`ridge_skew15`, soft lying list) |
 | v27pre | befc09018de2 | c9bd3db (= main; corridor off) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 128; soft sim 31/31) | v26 + attempt records move with a pushed object (4c70681) + a target no arm reaches left alone on fixed-camera looks, clear-view look after 3 unplannable looks (afb2e9c) + main: servo `grasp_feedback` (default `open`: no-op), corridor code (off), far-box planning time; the corridor-off reference for v27 |
-| v27 | ba84e7a30e41 | main 99474e9 (= v27pre + `carry_corridor.enabled: true`) | running | running | running | – | – | v27pre + motion's carry corridor on (realsim A/B: on 24/26, off 22/26) |
+| v27 | ba84e7a30e41 | main 99474e9 (= v27pre + `carry_corridor.enabled: true`) | +3.88 ± 0.78, 31/31 | +7.00 ± 1.41, 28/28 | +7.00 ± 1.41, 28/28 | **+21.38** | PASS (through the image, 0 clips, 30.0 Hz, rt ≥ 127; soft sim 31/31) | v27pre + motion's carry corridor on (realsim A/B: on 24/26, off 22/26); stock: 0 carry losses in 53 crossing carries, +9 to +21 s of plan time per leg, two far-edge cross-body picks +7.8 / +7.9 s |
 
 v13 per leg (through the image, 14.11, 11:39–12:08 UTC; seeds 1000–1007):
 
@@ -944,3 +944,25 @@ picks (blue cylinder right `cage`, yellow cylinder left `cage`) came up empty wh
 hand commands in the episode npz match v26's to 0.4 mrad from an identical start state, the simulated arm differs by up to
 33 mrad and the cylinder was pushed 1.7 cm: sim jitter; both held at the second try, 5/5 at 96 s (v26 84 s). Grasp counts
 here are from pick lines only (earlier tables also counted refused options).
+
+### v27 per leg (through the image, 14.-15.11, 23:32-00:33 UTC; seeds 1000-1007; sims b, d, a; rtf 0.36-0.39)
+
+| Leg | Sim | Score | Objects | Ends | Clips | hz | rt_hz min | Gate | Empty picks | Layout source per look | Picks by grasp | Crossing picks (held, carry losses) | Plan time vs v27pre, same picks |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| fixed, soft-hand sim | b | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 130 | PASS | 0 | scene, bins scene 177 / 177 | cage 17, cage_apex 5, cage_deep 9 | 15 (15, 0) | 15 of 31 longer, +13.3 s, max +3.9 |
+| fixed | d | +3.88 ± 0.78 | 31/31 | done 8 | 0 | 30.0 | 127 | PASS | 0 | scene, bins scene 177 / 177 | cage 26, cage_apex 5 | 15 (15, 0) | 13 of 31 longer, +21.2 s, max +7.8 |
+| unseen | a | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 140 | PASS | 0 | scene, bins scene 174 / 174 | cage 19, cage_apex 9 | 12 (12, 0) | 11 of 28 longer, +8.9 s, max +3.9 |
+| known | d | +7.00 ± 1.41 | 28/28 | done 8 | 0 | 30.0 | 132 | PASS | 0 | scene, bins scene 174 / 174 | cage 19, cage_apex 9 | 11 (11, 0) | 10 of 28 longer, +8.6 s, max +7.9 |
+
+Verdict: publishable (gate PASS on all 24 stock episodes and the soft leg; 87/87 and 31/31 against v26's 86/87, whose one
+loss was jitter, and 31/31). Judged against jitter: the only object v26 lost (known seed 1002's blue triangle) is the
+seed where v26's rerun, v27pre and v27 all held, so v27 is "at least as good", not shown better. The v27 rules stay no-ops on the
+stock sim (0 left alone, 0 "no plan for any of", 0 new-rule clear looks, 0 frozen, 0 "no arm reaches" in all four legs);
+the same imperfect-but-sorted as-if-alone triangles as v24-v27pre. "Crossing" = a side-box pick from beyond the centre box's
+side (motion's rule; the planner logs no corridor line), counted by scratch `corr_picks.py`; plan times per pick against
+v27pre by scratch `pick_delta.py`. The corridor's cost is plan time: +1.1 to +2.7 s per episode, and two picks of an object
+at the far edge (|y| 0.166) carried cross-body to the far side box take twice as long (fixed seed 1005 blue cylinder to the
+right box's far slot 9.0 -> 16.8 s; known seed 1002 red cylinder to the left box 7.9 -> 15.8 s; the same seed-1005 pick on the
+soft sim 9.7 s). No loss from it at 120 s; told motion (their open item 1: cap the corridor's extra joint arc). v27pre
+(befc09018de2, the same code with the corridor off, also 87/87 and 31/31) is the measured fallback if the real-robot time
+budget turns out tight.
