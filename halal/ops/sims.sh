@@ -36,10 +36,11 @@ start)
     cores="${CORES:-$(tag_cores "$tag")}"
     cd "$REPO"
     runner="${HAND_GAINS:+halal/ops/soft_hand_sim.sh}"
+    [ -n "$ARM_GAINS" ] && runner=halal/ops/soft_hand_sim.sh
     [ -n "$REAL_SIM" ] && { runner=halal/ops/soft_hand_sim.sh; export DEV_SIM_MAIN=real_sim.py; }
     nohup taskset -c "$cores" bash "${runner:-aaltonomous/sim/run_sim.sh}" --kit_args "$KIT_THREADS" "$@" >"$(logfile "$tag")" 2>&1 &
     echo $! >"$(pidfile "$tag")"
-    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, hand gains ${HAND_GAINS:-stock}, real look ${REAL_SIM:-off}, log $(logfile "$tag"))"
+    echo "starting sim $tag (DR=${AALTO_DR:-off}, cores $cores, hand gains ${HAND_GAINS:-stock}, arm gains ${ARM_GAINS:-stock}, real look ${REAL_SIM:-off}, log $(logfile "$tag"))"
     for _ in $(seq 400); do
         if ping_scene "$tag" >/dev/null; then echo "sim $tag ready after $SECONDS s"; exit 0; fi
         if ! alive "$tag"; then echo "sim $tag exited:"; tail -30 "$(logfile "$tag")"; exit 1; fi
