@@ -345,8 +345,8 @@ motion:
     max_offset_speed: 0.5     # rad/s at which the compensation itself may change
     send_tau_ff: true         # every reply carries `arm_tau_ff`: URDF gravity (g1_body29_hand14, hands included) at the plan-space rows, as the teleop app sends. A runner that applies it removes the sag, kappa then fits under the dead band and the angle offset switches itself off
     budget:                   # shares of `clip` the real arm may use (estimated compliance; the far shoulder needs 15-25 % more than the fit: logs/sag.md)
-      static: 0.78            # sag while the arm stands at the grasp, the release and the hover: a plan or hover over it is refused. Tonight the arm stood at the cap at 0.83-0.86 (kappa-scaled)
-      moving: 0.82            # sag + damping lag (kd/kp x speed) along every arm move: rows are slowed until they fit
+      static: 0.84            # sag while the arm stands at the grasp, the release and the hover: over it a plan or hover is refused. Only the clearly impossible: the robot's arms stood at the cap at 0.83-0.86 (kappa-scaled, 15.11); 0.78 cost the real-arm sim two lying prisms its arm could hold (logs/sag.md)
+      moving: 0.88            # sag + damping lag (kd/kp x speed) along every arm move: rows are slowed until they fit. At least static + 0.04, else the last cm to a release near the static budget crawl: mean pick (kappa 1, cubes, boxes +0/+3/+6 cm) 0.82: 12.0/13.0/13.4 s, 0.88: 9.1/9.6/10.1 s (kappa 0: 8.6/9.2/9.3 s)
       min_room: 0.002         # rad of room assumed where the sag alone fills the moving budget (0.05 rad/s)
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
@@ -446,6 +446,7 @@ policy:
   same_object_radius: 0.03    # detections this close to an earlier attempt are the same object
   displaced_radius: 0.12      # after an empty pick the nearest detection of that colour this close is the same object, pushed (median 3 cm, 10 cm seen)
   start_looks: 3              # looks from the start pose that may show an empty counter (late frames) before the arms move
+  sag_wait_s: 3.0             # the first pick holds still (at home or in the clear view) at most this long for both arms' sag samples (motion.sag.min_samples), then goes on without them
   nominal_camera_looks: 3     # looks with a pick but only the nominal camera (no scene anchor, no hand fit yet) spent waiting for the hand fit, hands in view, before a pick is made on that camera anyway (about 1 s each, once per episode)
   empty_looks_before_done: 2  # looks in a row without a sortable object before `done` is sent
   empty_span_before_done_s: 10.0  # and they must span this long: `done` earns nothing, a wrong one loses what is still on the counter (8 s of sim per episode)

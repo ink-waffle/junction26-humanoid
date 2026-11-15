@@ -101,6 +101,7 @@ class SortPolicy:
         self.view, self.next_view, self.primed = View.START, None, False
         self.start_looks, self.empty_looks, self.empty_since = 0, 0, math.inf
         self.unfitted_looks = 0   # looks that had a pick but only the nominal camera, while the hands could still fix it
+        self.sag_wait_since = math.inf   # episode time the first pick began to wait for the arm sag estimate
         self.unplanned_looks = 0  # looks in a row from home in which no target had a plan
 
     def act(self, obs: Mapping[str, Any]) -> Action:
@@ -258,6 +259,11 @@ class SortPolicy:
                      self.unfitted_looks, self.settings["nominal_camera_looks"])
             self.stage = Stage.MOVING
             self._settle()
+        elif self._waits_for_the_sag(t):
+            log.info("t=%.1f the arm sag is not measured yet (%s still samples): holding still before the first pick", t,
+                     " / ".join(map(str, self.sag.samples)))
+            self.stage = Stage.MOVING
+            self._settle()
         elif t + phase(look.pick.plan, "open")[1] / HZ + self.settings["time_margin_s"] > self.time_limit:
             log.info("t=%.1f no time left for %s (%.1f s)", t, look.pick.target, look.pick.plan.duration)
             self.stage = Stage.WAITING
@@ -292,6 +298,13 @@ class SortPolicy:
         waiting = look.layout_source == "nominal" and self.view is not View.CLEAR and self.unfitted_looks < self.settings["nominal_camera_looks"]
         self.unfitted_looks += waiting
         return waiting
+
+    def _waits_for_the_sag(self, t: float) -> bool:
+        """The first pick waits, holding still at home or in the clear view, until both arms' sag is measured or `sag_wait_s` has gone by."""
+        if self.sag.measured or self.view is View.START:
+            return False
+        self.sag_wait_since = min(self.sag_wait_since, t)
+        return t - self.sag_wait_since < self.settings["sag_wait_s"]
 
     def _look_again(self, t: float, error: BaseException | None) -> None:
         """No look result: at once after a blank frame, after a pause when the detector or planner raised."""
