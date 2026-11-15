@@ -17,6 +17,8 @@ from halal.perception.calibration import CameraFit, SelfCalibration
 from halal.perception.color import ColorClassifier, chromas
 from halal.perception.geometry import Camera, PlaneFit, levelness, plan_depth
 from halal.perception.hands import HandFit
+from halal.perception.hover import HandShift
+from halal.perception.offsets import ArmOffsets
 from halal.perception.roof import Roof, fit_roof
 from halal.perception.shapes import OutlineFitter, TopFace
 
@@ -42,6 +44,8 @@ class TopFaceDetector:
         self.nominal = Camera.head()
         self.calibration = SelfCalibration(self.scene, cfg["calibration"], cfg["outline"])
         self.outline = self.calibration.outline
+        hands = cfg["calibration"]["hands"]
+        self.offsets = ArmOffsets(HandShift(self.calibration.hands, hands, hands["arm_offset"], self.scene), hands["arm_offset"])
         self.bins = BinFinder(self.scene, cfg["bins"])
         self.fitter = OutlineFitter(self.scene, self.cfg["outline"])
         self.colors = ColorClassifier(self.cfg["color"])
@@ -61,6 +65,7 @@ class TopFaceDetector:
         self.bins_from: str | None = None
         self.last_t = -np.inf
         self.last_joints: np.ndarray | None = None
+        self.offsets.reset()
 
     @property
     def extrinsics(self) -> np.ndarray:
@@ -74,13 +79,20 @@ class TopFaceDetector:
         depth, rgb = obs["head_depth"], obs["head_rgb"]
         if not depth.any():
             return []
-        anchor, arm_fits = self._references(obs)
+        t = float(obs.get("t", 0.0))
+        if t < self.last_t:
+            self._forget()
+        still = self._still(obs, t)
+        anchor, arm_fits = self._references(obs, still)
         pose = self.calibration.decide(self.nominal, anchor or self.anchor, self.calibration.consensus(arm_fits))
         if pose.source != self.pose.source:
             LOG.info("head camera now fixed by %s (was %s)", pose.source, self.pose.source)
         self.pose, camera = pose, pose.camera
         counter = self.calibration.counter(depth, camera)
-        self.seen = self._layout(depth, camera, counter)
+        layout = self._layout(depth, camera, counter)
+        if still:
+            self.offsets.measure(depth, camera, counter, (obs["arm_q"], obs["hand_q"]), layout.bins)
+        self.seen = replace(layout, hand_offsets=self.offsets.offsets(camera))
         self._log_bins()
         depth = cv2.medianBlur(depth, self.cfg["depth_median"])
         cloud = camera.cloud(depth)
@@ -109,12 +121,8 @@ class TopFaceDetector:
             self.grey = grey
         return self.colors.white_balance(bare)
 
-    def _references(self, obs: Mapping[str, Any]) -> tuple[Camera | None, list[HandFit]]:
-        """This look's scene anchor, and the episode's believed arm fits: those kept by looks with objects, plus this look's."""
-        t = float(obs.get("t", 0.0))
-        if t < self.last_t:
-            self._forget()
-        still = self._still(obs, t)
+    def _references(self, obs: Mapping[str, Any], still: bool) -> tuple[Camera | None, list[HandFit]]:
+        """This look's scene anchor, and the episode's believed arm fits: those kept by looks with objects, plus this look's (a `still` one)."""
         anchor = self.calibration.scene_anchor(obs["head_depth"], self.nominal)
         full = sum(self.calibration.clear(fit) for fit in self.arm_fits) >= self.cfg["arm_fits"]
         if not still or full or self.arm_attempts >= self.cfg["arm_attempts"]:

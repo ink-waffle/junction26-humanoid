@@ -267,7 +267,7 @@ class GraspServo:
         for name, shift in {**shifts, "open-loop": np.zeros(3)}.items():
             det = replace(pick.target.detection, top=pick.target.detection.top + shift)
             plan = self.planner.plan_pick(det, pick.grasp, pick.side, pick.target.bin_name, arm_q, hand_q, drop_shift=pick.shift,
-                                          obstacles=self._neighbours(pick, shift))
+                                          obstacles=self._neighbours(pick, shift), arm_frame=name == "corrected")
             if plan.ok:
                 return replace(pick, plan=plan)
             log.info("servo: no plan from the hover onto the %s target: %s", name, plan.reason)

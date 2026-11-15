@@ -1,7 +1,7 @@
 """Perception seam: one observation in, detected objects in the pelvis frame out; detectors are adapters behind `Detector`."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib import import_module
 from typing import Any, Mapping, Protocol
 
@@ -33,6 +33,7 @@ class SceneLayout:
     source: str                         # what fixed the camera. "scene": the file's layout | "hands", "nominal": as that camera sees it
     rim_z: float | None = None          # highest bin rim seen (pelvis z); None = not measured, counter_z + wall height
     bins_from: str = "scene"            # "seen" at this look | "kept": seen at an earlier look of the episode | "scene": the file's
+    hand_offsets: Mapping[str, np.ndarray] = field(default_factory=dict)   # side -> real hand minus FK (pelvis xyz) through this camera; absent = 0
 
 
 class Detector(Protocol):

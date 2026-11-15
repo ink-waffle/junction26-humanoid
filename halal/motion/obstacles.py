@@ -1,6 +1,7 @@
 """Other objects seen from above: the outline the hand has to stay off, from a detection's shape and yaw or from a bare top point."""
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -12,6 +13,13 @@ TRIANGLE = np.array([[2.0, 0.0], [-1.0, np.sqrt(3.0)], [-1.0, -np.sqrt(3.0)]]) /
 def top_of(obstacle: Any) -> np.ndarray:
     """Top centre (pelvis xyz) of an obstacle given as a detection or as that point itself."""
     return np.asarray(getattr(obstacle, "top", obstacle), float)
+
+
+def moved(seen: Any, by: np.ndarray) -> Any:
+    """A detection or top point moved by `by` (pelvis xyz); the same object when `by` is 0."""
+    if not np.any(by):
+        return seen
+    return replace(seen, top=seen.top + by) if hasattr(seen, "top") else np.asarray(seen, float) + by
 
 
 def outline(obstacle: Any, size: float, unknown_radius: float) -> tuple[np.ndarray, float]:

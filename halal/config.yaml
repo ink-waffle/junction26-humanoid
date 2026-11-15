@@ -69,6 +69,23 @@ perception:
       one_arm:                # no fit of both arms believable: each arm alone (same guards), believed only if RGB confirms it (drop 3: arms 2 cm apart)
         enabled: true
         max_outline_px: 8     # its own hand's best outline shift (outline.*) under that camera; drop 3: left arm 66 % within, right 11 %, nominal 3 %
+      arm_offset:             # per arm, real hand minus FK through the episode's camera (median of still looks); that arm's targets move by minus it (logs/realdepth.md P2)
+        enabled: true
+        links: [hand_]        # palm and fingers: the wrist links carry the wrist-camera mount the URDF lacks
+        floor_clearance: 0.065    # only depth this far above the counter is hand evidence
+        bin_margin: 0.01      # around a bin footprint its depth is no hand evidence
+        prior_shift: 0.03
+        min_points: 150       # a look is a sample with this many hand pixels matched at the last gate,
+        max_rms: 0.004        # at most this residual (drop 3, no wrist links: left 2.0 mm, right 3.2-3.4 mm),
+        min_coverage: 0.6     # this share of the visible hand model matched,
+        min_inliers: 0.5      # this share of the depth pixels around the hand on the model,
+        max_spread: 0.003     # at most this predicted standard deviation,
+        max_shift: 0.05       # and a shift no larger than this
+        samples: 6            # still looks (fingers open) sampled per arm and episode; then that arm is not fitted again
+        min_samples: 2        # fewer samples give no offset
+        correct_z: false      # z too: drop 3 right hand -2 mm with sd 9 (xy -7, -17 with sd 7, 5)
+        dead_band: 0.010      # a median shorter than this is no offset; sim: medians up to 4.7 mm, single looks up to 8.6; drop 3 right hand xy 18 mm, left 1 mm
+        max_offset: 0.04      # nor is one longer than this
   bins:                       # bins by geometry, used when the hands (not the scene file) fixed the camera (halal.perception.bins)
     x_range: [0.33, 0.75]     # where a front wall may stand
     cell: 0.005               # step of the search along x and of the lane cells along y
