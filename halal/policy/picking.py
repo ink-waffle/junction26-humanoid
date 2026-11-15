@@ -43,12 +43,13 @@ class Target:
 
 @dataclass(frozen=True)
 class PlanStart:
-    """What every plan of one look starts from: release counts per bin, usable arm -> hand class, the commanded pose."""
+    """What every plan of one look starts from: release counts per bin, usable arm -> hand class, the commanded pose, hands with a dead finger."""
     released: Mapping[str, int]
     hands: Mapping[str, str]
     arm_q: np.ndarray
     hand_q: np.ndarray
     cancelled: Cancelled
+    weak: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -66,9 +67,10 @@ class PickChooser:
         self.planner, self.slots, self.settings = planner, slots, settings
 
     def choose(self, targets: Sequence[Target], released: Mapping[str, int], hands: Mapping[str, str], arm_q: np.ndarray,
-               hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled) -> tuple[Pick | None, list[Target], list[Target]]:
+               hand_q: np.ndarray, obstacles: Obstacles, cancelled: Cancelled, weak: frozenset[str] = frozenset()
+               ) -> tuple[Pick | None, list[Target], list[Target]]:
         """The first target whose plan stays clear of the other objects, the failed ones, and those without any option; a target with a neighbour in the way waits."""
-        start = PlanStart(released, hands, arm_q, hand_q, cancelled)
+        start = PlanStart(released, hands, arm_q, hand_q, cancelled, weak)
         unplannable: list[Target] = []
         waiting: list[Target] = []
         broken: list[Target] = []
@@ -102,7 +104,7 @@ class PickChooser:
     def _plan(self, target: Target, start: PlanStart, obstacles: Obstacles, broken: list[Target]) -> tuple[Pick | None, bool]:
         """`_first_plan` over the target's options; a target without options (no arm in use reaches its bin, or its data breaks them) goes to `broken`, the other targets keep their turn."""
         try:
-            options = self._options(target, start.released.get(target.bin_name, 0), start.hands)
+            options = self._options(target, start.released.get(target.bin_name, 0), start.hands, start.weak)
             first = next(options, None)
             if first is None:
                 log.info("no plan for %s: no arm in use reaches the %s bin with a grasp", target, target.bin_name)
@@ -129,8 +131,8 @@ class PickChooser:
                 return None, True
         return None, False
 
-    def _options(self, target: Target, released: int, hands: Mapping[str, str]) -> Iterator[tuple[str, Grasp, Shift]]:
-        """Arm, grasp and slot in the order to try, an arm and slot pair only if it reaches the bin (asked when it comes up): a retry starts with the next arm and grasp and moves the grasp point a little; an arm left with last resorts only goes last."""
+    def _options(self, target: Target, released: int, hands: Mapping[str, str], weak: frozenset[str] = frozenset()) -> Iterator[tuple[str, Grasp, Shift]]:
+        """Arm, grasp and slot in the order to try, an arm and slot pair only if it reaches the bin (asked when it comes up): a retry starts with the next arm and grasp and moves the grasp point a little; a hand with a dead finger, then an arm left with last resorts only, goes last."""
         det, turns = target.detection, target.attempts
         offsets = self.settings["retry_offsets"]
         dx, dy = offsets[turns % len(offsets)]
@@ -138,7 +140,7 @@ class PickChooser:
         grasps = {side: [replace(grasp, center_shift=(grasp.center_shift[0] + dx, grasp.center_shift[1] + dy))
                          for grasp in self._in_turn(candidate_grasps(det.shape, det.yaw, side, hands[side], det.lying), turns)]
                   for side in arms}
-        arms = sorted(arms, key=lambda side: all(grasp.last_resort for grasp in grasps[side]))
+        arms = sorted(arms, key=lambda side: (side in weak, all(grasp.last_resort for grasp in grasps[side])))
         for shift in self.slots.candidates(target.bin_name, released):
             for side in arms:
                 if self.planner.reaches_bin(side, target.bin_name, det, shift):

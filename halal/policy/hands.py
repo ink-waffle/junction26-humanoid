@@ -81,3 +81,8 @@ class HandCalibrator:
     def empty_error(self, side: str) -> np.ndarray | float:
         hand = self.hands.get(side)
         return 0.0 if hand is None else hand.empty_error
+
+    def weak(self, side: str) -> bool:
+        """Whether a grip joint of this hand did not follow its command on the empty close (a dead finger: it grasps with one finger less)."""
+        error = np.broadcast_to(self.empty_error(side), (7,))
+        return bool(np.abs(error[list(self.settings["grip_joints"])]).max() > self.settings["grip_dead_error"])
