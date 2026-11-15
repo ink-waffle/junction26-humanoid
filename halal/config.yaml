@@ -338,6 +338,14 @@ motion:
     nominal: {forward: [-0.028, 0.077], outward: [-0.048, 0.048]}   # release at the nominal height (grasp sweeps 5, 11, 20; one drop in 232 at -32)
     risen: {forward: [-0.026, 0.075], outward: [-0.045, 0.071]}     # raised release (`release_rise` > 0), p2.5..p97.5 of 172 drops on both hands
     limit: {forward: [0.006, 0.117], outward: [-0.046, 0.060]}      # arm at its reach limit: the object leaves the hand forward (70 drops, stock and soft)
+    tilted: {forward: [0.006, 0.117], outward: [-0.046, 0.060]}     # release turned forward (`release_tilt`): not measured yet, `limit`'s
+  release_tilt:               # forward exit: before it opens, the hand turns about the pelvis y axis through the grasp point, open side towards the box; else a compensated arm at a small inset drops the object onto the near wall (logs/sag.md)
+    deg: 0                    # turn of the approach axis towards +x (0 = off; without the runner's gravity FF: 20 with max_inset 0.04 and reach, logs/sag.md)
+    max_inset: 0.02           # only releases this close to the bin's near inner wall ...
+    min_use: 0.5              # ... at which the arm's sag uses at least this share of the clip: a compensated arm near its budget (kappa 0: ~0.2)
+    max_error_deg: 2.0        # the turned hand may miss its orientation by this much (its grasp point: ik.pos_tol)
+    turn_s: 1.0               # the turn is blended into the carry's last this long (`tilt` phase, re-timed at the speed limits); it is shed on the way home
+    reach: false              # the reach question and the static budget accept a release whose turned hand holds still: the turn frees ~0.055 of the clip, ~2 cm of inset at +6 cm
   hover:                      # closed-loop grasp correction: the hand waits beside the grasp point, both in the head camera's view (halal.motion.hover)
     offsets: [[0.0, 0.05, 0.07], [0.0, 0.06, 0.07], [0.0, -0.05, 0.07], [0.03, 0.04, 0.07]]   # [forward, outward, up] from the grasp point (m), tried in order; outward = the picking arm's side
     min_low: 0.075            # lowest hand point above the counter at the hover: the hand fit's floor gate (0.065) + 1 cm
@@ -427,6 +435,8 @@ motion:
 grasp_bench:
   settle_ticks: 20            # hold after placing the objects before reading their poses
   trace_every: 2              # ticks between privileged object pose samples
+  sag_samples: 10             # spec `sag`: still holds at home, one sample each, before kappa is committed
+  sag_sample_ticks: 20        # ticks per hold (the estimate needs the command unchanged for `motion.sag.still_ticks`)
   held_radius: 0.08           # object counts as in the hand within this distance of the grasp point
   lifted_height: 0.03         # and at least this far above its resting height
   topple:                     # scripted push that tips an upright prism onto a side (variant key `topple_deg`)
