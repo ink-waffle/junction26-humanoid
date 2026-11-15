@@ -102,8 +102,9 @@ class Looker:
         targets = self._targets(inside, situation)
         clear = [target for target in targets if situation.clear_view or target.detection.visible >= self.settings["min_visible"]]
         hands = {side: self.calibrator.grasp_class(side) for side in situation.arms}
+        weak = frozenset(side for side in situation.arms if self.calibrator.weak(side))
         pick, unplannable, broken = self.chooser.choose(clear, situation.released, hands, situation.arm_q, situation.hand_q,
-                                                        [det.top for det in detections], cancelled)
+                                                        [det.top for det in detections], cancelled, weak)
         return Look(detections, outside, pick, unplannable, broken, len(targets) - len(clear), layout.source, layout.bins_from, False)
 
     def _follow_missed(self, detections: list[ObjectDetection], situation: Situation) -> None:
