@@ -109,10 +109,11 @@ class GripWindow:
         hand[hand_slice(self.side)] = posture
         return hand
 
-    def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float, joints: Sequence[int]) -> float:
-        """Summed shortfall of `joints` behind the closed posture beyond the empty-hand error (rad); ~0 = empty."""
+    def score(self, hand_q: np.ndarray, empty_error: np.ndarray | float, joints: Sequence[int], dead_error: float = np.inf) -> float:
+        """Summed shortfall of `joints` behind the closed posture beyond the empty-hand error (rad), joints stuck on the empty close left out; ~0 = empty."""
         error = self.closed - np.asarray(hand_q, float)[hand_slice(self.side)]
-        return float(np.maximum(self.direction * (error - empty_error), 0.0)[list(joints)].sum())
+        live = [j for j in joints if abs(np.broadcast_to(empty_error, error.shape)[j]) <= dead_error]
+        return float(np.maximum(self.direction * (error - empty_error), 0.0)[live].sum())
 
 
 @dataclass(frozen=True)

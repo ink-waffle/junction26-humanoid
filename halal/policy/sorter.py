@@ -490,7 +490,8 @@ class SortPolicy:
     def _grip_score(self, obs: Mapping[str, Any]) -> float:
         """How far the picking hand's load-bearing joints stay short of the closed posture, beyond what its empty close showed."""
         window = self.active.window
-        return window.score(obs["hand_q"], self.calibrator.empty_error(window.side), self.settings["grip_joints"])
+        return window.score(obs["hand_q"], self.calibrator.empty_error(window.side), self.settings["grip_joints"],
+                            self.settings["grip_dead_error"])
 
     def _empty_below(self, side: str) -> float:
         """Grip score under which this hand holds nothing."""
