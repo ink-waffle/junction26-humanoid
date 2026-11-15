@@ -2,13 +2,13 @@
 
 Aaltonomous Humanoid, Junction 2026. Team: Damir Kairov, Maksim Kruglov. Code: this repository (`halal/`).
 Image (public, CPU only, 1.5 GB, starts in 0.5 s):
-`ghcr.io/ink-waffle/halal-policy@sha256:75cc8a0a8e34eaeb255b254130a30c8d8a9b41d559812b30c64f7995cf5c5bfe`
+`ghcr.io/ink-waffle/halal-policy@sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`
 
 ## In simulation, through the submitted container
 
 Organisers' evaluator, training domain randomisation, 8 seeds per task, sim gate on every episode.
 
-| Task | Organiser baseline | Ours (v28) |
+| Task | Organiser baseline | Ours (v31) |
 |---|---|---|
 | `sort_fixed` | +1.62 (13/31 objects) | +3.88 (31/31) |
 | `sort_language`, training template | not applicable | +7.00 (28/28) |

@@ -7,7 +7,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 ## Status
 
 ### Sun 15.11, 05:00
-- **Release candidate: v31** (`sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`) = v28 + arm-sag
+- **Hand-in candidate: v31** (`sha256:5052e5c7b3340527fdb0b251a7be71f0882b7d6076fd705dc105fae64ba630dc`, `:v31-multi` `sha256:52552e2a…`; stock 87/87, soft 31/31, gate PASS 32/32) = v28 + arm-sag
   compensation and torque budget (static 0.84 / moving 0.88 of the runner's clip) + `arm_tau_ff` in every reply (ignored by
   today's runner) + the first pick waits up to 3 s for the sag estimate. Stock legs so far: known 28/28, unseen 28/28, fixed
   clean; soft leg running. Its servo twin **servo9-servo** (`sha256:ff82f3c1…`) passed the fixed leg 31/31 and is what the
