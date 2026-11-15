@@ -346,7 +346,7 @@ motion:
     send_tau_ff: true         # every reply carries `arm_tau_ff`: URDF gravity (g1_body29_hand14, hands included) at the plan-space rows, as the teleop app sends. A runner that applies it removes the sag, kappa then fits under the dead band and the angle offset switches itself off
     budget:                   # shares of `clip` the real arm may use (estimated compliance; the far shoulder needs 15-25 % more than the fit: logs/sag.md)
       static: 0.84            # sag while the arm stands at the grasp, the release and the hover: over it a plan or hover is refused. Only the clearly impossible: the robot's arms stood at the cap at 0.83-0.86 (kappa-scaled, 15.11); 0.78 cost the real-arm sim two lying prisms its arm could hold (logs/sag.md)
-      moving: 0.82            # sag + damping lag (kd/kp x speed) along every arm move: rows are slowed until they fit
+      moving: 0.88            # sag + damping lag (kd/kp x speed) along every arm move: rows are slowed until they fit. At least static + 0.04, else the last cm to a release near the static budget crawl: mean pick (kappa 1, cubes, boxes +0/+3/+6 cm) 0.82: 12.0/13.0/13.4 s, 0.88: 9.1/9.6/10.1 s (kappa 0: 8.6/9.2/9.3 s)
       min_room: 0.002         # rad of room assumed where the sag alone fills the moving budget (0.05 rad/s)
   bin_margin: 0.0             # hand points this close to a bin footprint must clear its rim (organiser planner: 0.01)
   shortcut_tolerance:         # a Cartesian segment becomes one joint move if the grasp point strays less than this
