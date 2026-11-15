@@ -93,6 +93,18 @@ def patch_scene_file(cfg: dict, features: set[str]) -> None:
         return scene
 
     Scene.load = staticmethod(load_real)
+    if "offsets" in features:
+        patch_box_overhang(Scene)
+
+
+def patch_box_overhang(scene_class: type) -> None:
+    """An object inside a box counts as on the counter, also where a moved box row overhangs the counter's footprint."""
+    on_counter = scene_class.on_counter
+
+    def on_counter_or_in_box(self: Any, p_mat: np.ndarray) -> bool:
+        return on_counter(self, p_mat) or self.bin_of(p_mat) is not None
+
+    scene_class.on_counter = on_counter_or_in_box
 
 
 def liner_boxes(scene_cfg: ModuleType, cfg: dict) -> dict[str, Any]:
@@ -113,10 +125,21 @@ def liner_boxes(scene_cfg: ModuleType, cfg: dict) -> dict[str, Any]:
     return out
 
 
+def cut_near_edge(counter: Any, near_x: float) -> None:
+    """Shorten the counter box on the robot's side so that its near edge lies at pelvis x `near_x`."""
+    x, y, z = counter.init_state.pos
+    depth, width, thickness = counter.spawn.size
+    far = x + depth / 2
+    counter.init_state.pos = ((near_x + far) / 2, y, z)
+    counter.spawn.size = (far - near_x, width, thickness)
+
+
 def bare_table(fixed: dict[str, Any], cfg: dict) -> dict[str, Any]:
-    """The fixed scene entities without the printed mat, the counter painted as the real table."""
+    """The fixed scene entities without the printed mat, the counter painted as the real table, its near edge moved if asked."""
     material = fixed["counter"].spawn.visual_material
     material.diffuse_color, material.roughness = tuple(c / 255.0 for c in cfg["rgb"]), cfg["roughness"]
+    if cfg.get("near_edge_x") is not None:
+        cut_near_edge(fixed["counter"], cfg["near_edge_x"])
     return {name: entity for name, entity in fixed.items() if name != "mat"}
 
 

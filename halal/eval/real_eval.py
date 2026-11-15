@@ -3,6 +3,8 @@
     python -m halal.eval.proxy --evaluator halal.eval.real_eval ...     (words and rule: halal/ops/real_sim.yaml)
     --record-video NAME                                                 films every episode to runs/videos/NAME
     --start-pose EPISODE.npz                                            arms start where a recorded robot episode started
+    --clear-hands M                                                     layouts redrawn until every object is M (xy) from those resting hands
+    --config YAML                                                       the sim's variant file (words, rule, offsets), default real_sim.yaml
 """
 from __future__ import annotations
 
@@ -24,6 +26,10 @@ from aaltonomous.sim import evaluate
 from . import paraphrases, sim_eval
 
 CONFIG = Path(__file__).resolve().parents[1] / "ops" / "real_sim.yaml"
+HAND_CHAINS = (("wrist_yaw_link", "hand_palm_link"), ("hand_palm_link", "hand_index_0_link", "hand_index_1_link"),
+               ("hand_palm_link", "hand_middle_0_link", "hand_middle_1_link"),
+               ("hand_palm_link", "hand_thumb_0_link", "hand_thumb_1_link", "hand_thumb_2_link"))
+LAYOUT_TRIES = 2000
 Instruction = tuple[str, dict[str, str]]
 
 
@@ -70,17 +76,57 @@ def homing_to(path: str, home_arms: Callable[..., float], speed: float) -> Calla
     return home
 
 
+def hand_footprint(path: str) -> np.ndarray:
+    """Pelvis xy of points along the wrists, palms and fingers (and the fingertips) at a recorded episode's first tick."""
+    from aaltonomous.baselines.classical.kinematics import SIDES, ArmKinematics
+    from halal import config
+    kinematics = ArmKinematics(config.baseline_config())
+    log = np.load(path)
+    kinematics._fk(log["arm_q"][0].astype(float), log["hand_q"][0].astype(float))
+    frame = {f.name: i for i, f in enumerate(kinematics.model.frames)}
+    points = []
+    for side in SIDES:
+        for chain in HAND_CHAINS:
+            nodes = [kinematics.data.oMf[frame[f"{side}_{link}"]].translation for link in chain]
+            points += [a + w * (b - a) for a, b in zip(nodes[:-1], nodes[1:]) for w in np.linspace(0.0, 1.0, 6)]
+        points += list(kinematics._tips(side))
+    return np.array(points)[:, :2]
+
+
+def clear_of_hands(sample: Callable[..., list], footprint: np.ndarray, origin: np.ndarray, margin: float) -> Callable[..., list]:
+    """The layout sampler redrawn (same rng) until every object centre is `margin` (xy) from the resting hands, as staff place them."""
+    def draw(rng: np.random.Generator, **kwargs: Any) -> list:
+        for _ in range(LAYOUT_TRIES):
+            layout = sample(rng, **kwargs)
+            xy = origin + np.array([[ob["y"], ob["x"]] for ob in layout])
+            if np.linalg.norm(xy[:, None] - footprint[None], axis=-1).min() >= margin:
+                return layout
+        raise RuntimeError(f"no layout clear of the resting hands in {LAYOUT_TRIES} draws")
+    return draw
+
+
+def mat_origin(cfg: dict) -> np.ndarray:
+    """Pelvis xy of the mat origin in the variant: the scene file's plus the counter offset."""
+    from aaltonomous.scene.scene import Scene
+    return Scene.load().origin[:2] + np.asarray(cfg["offsets"]["counter"][:2], float)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, add_help=False)
     ap.add_argument("--record-video", metavar="NAME")
     ap.add_argument("--start-pose", metavar="EPISODE.npz")
+    ap.add_argument("--clear-hands", type=float, metavar="M")
+    ap.add_argument("--config", type=Path, default=CONFIG)
     args, rest = ap.parse_known_args(argv)
     if args.record_video:
         from .video import VideoRecorder  # needs a running sim
         runner.run_episode = VideoRecorder(args.record_video).episode
-    cfg = yaml.safe_load(CONFIG.read_text())
+    cfg = yaml.safe_load(args.config.read_text())
     if args.start_pose:
         evaluate.home_arms = homing_to(args.start_pose, evaluate.home_arms, cfg["start_pose_speed"])
+    if args.start_pose and args.clear_hands:
+        env_module.sample_layout = clear_of_hands(env_module.sample_layout, hand_footprint(args.start_pose), mat_origin(cfg),
+                                                  args.clear_hands)
     render = paraphrases.render
     tasks.make_instruction = env_module.make_instruction = real_instructions(tasks.make_instruction, cfg)
     paraphrases.render = lambda *args: (lambda text, mapping: (reword(text, cfg["words"]), mapping))(*render(*args))

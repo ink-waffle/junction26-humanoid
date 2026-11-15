@@ -76,12 +76,50 @@ soft hands, real words; `offsets` = counter [0, 0.02, 0.01], bins [0, 0]; config
 | rs21-robot6 | v21 (0f7ca3635d25) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 30 of 30 hand fits `trusted`, `layout from hands` on all 184 looks; 7 empty picks, 14 refused options; 2 of 3 lying prisms sorted with `ridge_opposed` (left arm), the third got 3 empty right-arm `cage_lying` picks |
 | rs22-robot6 | v22 (cb81d93c1969) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | 31 of 31 hand fits `trusted` ("camera turned 6.4 to 7.7 deg, shifted 21 to 42 mm"), `layout from hands` on all 182 looks; 6 empty picks, 5 refused options; lying prisms as v21: the one lost is seed 1006's orange prism, 3 empty right-arm `cage_lying` picks |
 
-Resting start (`real_eval --start-pose`, arms where the real episode of 19:46 started, driven there past the safety
-filter before the layout is placed; an object can therefore spawn under a hand, which staff would not do).
-rs22-robot6-rest (v22, robot6), first two episodes: seed 1000 3/3, seed 1001 5/5, both done. From this start the first
-look and the first look from home say `layout from nominal`, and the first pick is made before the hand fit exists: in
-seed 1000 it closed on air at a position 4 cm too far (grip 0.013) and pushed the object; the fit was trusted right
-after ("camera turned 7.7 deg") and the rest went as from the home start. Full leg and v23: see the queue in the handoff.
+### Resting start
+
+`real_eval --start-pose`: the arms are driven, past the safety filter, to where the real episode of 19:46 started, and
+then the layout is placed. In this sim the pose is NOT hands-on-the-table: the counter reaches pelvis x 0.09, so the
+wrists come down on it and the arms stop at elbow 0.43 / 0.42 (robot: 0.95 / 0.81). The palms end 5.5 to 6.5 cm above the
+counter, with the lowest hand point at z 0.061 to 0.063 and the counter top at 0.02. These legs therefore test the start
+look on the nominal camera and the missing calibration close ("no room here", which needs 8 cm). They never test
+"leave the table first": no episode logs "the hands start ... above the counter". Objects can spawn under the raised
+hands (3.8 to 12 cm gap in rs22); none touched a hand or was flung.
+
+| Leg | Image | Camera error | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs22-robot6-rest | v22 (cb81d93c1969) | six-parameter | 29/31 | +3.62 ± 0.99 | 0 | 0 | PASS, done 8/8 | every episode: start look `nominal`, "no room here for the hands' calibration close: going home", home look still `nominal`, a pick on the nominal camera, then the fit (all 35 `trusted`, 6.4 to 7.7 deg, 21 to 42 mm). 9 picks before the first trusted fit (1 per episode, 2 in seed 1002), first pick at t 5.2 to 14.2 s: 8 closed on air (grip 0.010 to 0.013), 1 sorted (seed 1005). 17 looks `nominal`, 186 `hands`. Lost, both in seed 1006: the orange cube (try 1 on nominal and try 2 empty, try 3 held 0.424 then slipped in the carry and came to rest on the wall between the center and right boxes, z 0.098) and the orange lying prism (left arm "cannot reach the right bin" x6, 4 empty right-arm `cage_lying` picks) |
+| rs23-robot6-rest | v23 (6da97a3e9847) | six-parameter | 28/31 | +3.50 ± 0.87 | 0 | 0 | PASS, done 7, time limit 1 | as v22: 1 pick on the nominal camera before the first trusted fit in every episode (8; 7 on air, 1 sorted), 16 looks `nominal`, 190 `hands`, 36 fits `trusted`. Lost, all lying prisms: seed 1006 orange (as v22), seed 1007 yellow (`ridge_opposed` x2, `cage_lying` x1, all empty; v22 sorted it), seed 1004 purple: held by `ridge_opposed` (0.627), slipped in the carry, then 25 x `no options for blue lying cylinder` = `grasps._depth` KeyError 'cylinder' (`cage_lying.squeeze` has only a `triangle` key) until the time limit. Any lying target not named triangle gets no grasp |
+| rs24-robot6-rest | v24 (e4869cbc1500) | six-parameter | 30/31 | +3.75 ± 0.83 | 0 | 0 | PASS, done 8/8 | the fix works: in every episode "the camera is still the nominal one: look 1 of 3" after the first home look, the fit trusted about 1 s later, then the first pick on `layout from hands` (t 5.9 to 15.2 s, at most 1 s later than v22's nominal pick); 0 picks before the fit, 35 `trusted`, 16 looks `nominal`, 181 `hands`; 35 picks for 31 objects; episodes shorter than v22's. Lost: seed 1006's orange lying prism (right `cage_lying` x3), as from home |
+
+### Hands on the counter (counter near edge, clear-hands layouts)
+
+The only physics test of "leave the table first". `table.near_edge_x` (real_sim.py `cut_near_edge`) shortens the counter
+on the robot's side; `real_eval --clear-hands 0.045` redraws each seed's layout from the same rng until every object
+centre is 4.5 cm from the resting hands (FK of the recorded start), as staff would place them (27 objects over seeds
+1000-1007 instead of 31, mostly 3 per episode); `--config` gives the evaluator the sim's variant file. Configs on the
+instance: `/data/scratch/realsim/robot6edge24{,far}.yaml`, `robotmildedge24far.yaml`. Checked before the legs with
+`edge_check.py` (arms to the recorded start, layout of seed 1000, head frame, FK hand points against the counter):
+
+| Counter top (pelvis z) | Near edge (pelvis x) | Lowest hand point above the counter, left / right | Arm against the recorded pose |
+|---|---|---|---|
+| 0.02 (robot6) | 0.09 (scene file) | 4.2 / 4.1 cm | elbows 0.43 / 0.42 (0.95 / 0.81): wrists rest on the counter |
+| 0.02 | 0.17 | 5.5 / 5.7 cm | left elbow 0.66, left wrist pitch -1.60 (its limit; recorded -1.16): the hand folds up on the edge |
+| 0.02 | 0.20 | 2.7 / 3.2 cm | elbow 0.92, wrist pitch -1.59 |
+| 0.00 | 0.20 | 3.3 / 3.6 cm | wrist pitch -1.37 |
+| 0.02 | 0.24 (under the finger bases) | 1.8 / 2.3 cm | palms 3.4 cm above their commanded height: the counter carries the hands; head frame: both hands low on the table, the left on its heel with the fingers up, as recorded (index tip z 0.094 there too) |
+
+The recorded palms (z 0.004 to 0.013) lie below robot6's counter top (0.02): on the robot either the table is lower
+than the depth estimate or the arm's FK sits about 2 cm low (the robot log saw the palm 9 to 11 mm under its command).
+With the edge at 0.24 an object pushed more than about 2 cm towards the robot can fall off the near edge: such an
+"off" would be an artefact of the variant.
+
+| Leg | Image | Variant | Objects | Score | Wrong | Off | Gate | What happened |
+|---|---|---|---|---|---|---|---|---|
+| rs24-robot6edge-rest | v24 (e4869cbc1500) | robot6 + edge 0.24, clear-hands (26 objects, 9 lying prisms) | 24/26 | +2.88 ± 0.93 | 1 | 0 | PASS, done 8/8 | 8/8 episodes: "the hands start 0.3 to 2.0 cm above the counter: going home before anything is planned" at t 0.8 (the robot logged 0.7 to 1.6), no detour, 0 clips; a trusted fit at home each time (34 `trusted`, 0 rejected), all 176 looks `layout from hands`, no pick before the fit, first pick at t 5.5 to 10.8 s. Lost: seed 1001's orange lying prism (right `cage_lying` x3 empty, left arm cannot reach the right bin) and, WRONG BIN, seed 1003's yellow lying prism: picked at y -0.12 by the left arm (`ridge_opposed`, 0.627 after the lift) for the left box, it slipped 1 s into the cross-body carry and fell into the centre box. 7 of 9 lying prisms sorted. Nothing fell off the near edge |
+| rs24-robot6edgefar-rest | v24 (e4869cbc1500) | as rs24-robot6edge-rest, box row +10 cm (same 26 objects) | 19/26 | +2.38 ± 0.70 | 0 | 0 | PASS, done 4, time limit 4 | start as in the edge leg (seed 1005 started 2 cm up: a start look on hands, then home for the calibration close); 38 `trusted`, all 133 looks `hands`. Every standing object that was planned reached its box (releases at x 0.528 to 0.533). Time is the cost: from a place to the next look 6 to 20 s (median about 10) against 1 to 5 s without far boxes; refusals "cannot reach the center bin" (both arms), "release would land on a bin wall", IK on retreat. Lost: 5 lying prisms (empty `cage_lying` / `ridge_opposed`, one dropped in the carry 4 cm short of the right box, two "no time left") and, in seed 1007, a LOOP: the yellow cube at x 0.27 has "no arm in use reaches the left bin with a grasp" (x22), so the policy re-looked from home for 80 s while the yellow cylinder at (0.325, +0.181) read `None` from home in all 23 looks and never got the clear-view look that coloured it in the edge leg |
+| rs24-mildedgefar-rest | v24 (e4869cbc1500) | as rs24-robot6edgefar-rest with the mild camera error (rotation only) | 19/26 | +2.38 ± 0.70 | 0 | 0 | PASS, done 3, time limit 5 | "the hands start -0.6 to +1.1 cm above the counter" in 8/8 (the mild camera reads the counter higher), 34 `trusted` (2.3 to 3.7 deg, 10 to 15 mm), all 110 looks `hands`; place-to-look gaps 10 to 26 s. Lost: 4 lying prisms (two "no time left"), seed 1000's orange cylinder (never attempted, time), seed 1004's orange cube (empty, then held 0.304 and lost), seed 1007's yellow cylinder (the same loop as with robot6). Same score as robot6: with far boxes the camera error no longer costs objects; time, reach and lying prisms do |
+| rs27-robot6edgefar-rest | v27 (ba84e7a30e41, carry corridor on) | as rs24-robot6edgefar-rest | 17/26 raw, 18/26 corrected | +2.00 ± 1.23 raw, +2.25 corrected | 0 | 1 (artefact) | PASS, done 6, time limit 2 | place-to-look median 4.1 s, max 15.5 s (v24 9.1 / 26); "is left alone: no grasp option for it in 3 looks" in seeds 1003 and 1007, and seed 1007's colourless cylinder now gets its clear-view look (3/4, v24 2/4). New: seeds 1004 and 1005 lose their time to right-arm refusals re-tried every look ("right arm cannot reach the center / right bin" x55 / x44 / x48, "release would land on a bin wall" x33, "IK grasp right" x22 / x49; v24 refused 4 to 24 options there and sorted 3/3 twice). Per seed v24 -> v27: 3->4, 2->3, 3->2, 1->1, 3->1, 3->2, 2->2, 2->3. The `off` is a scoring artefact of the variant: with the box row at +10 cm the boxes reach pelvis x 0.71 while the scorer's counter footprint ends at 0.69 and is checked first; seed 1002's prism rests inside the centre box at x 0.690 (fixed in real_sim.py, commit 054b2d1, for later legs) |
 
 Side finding (v20): 27 of 40 `released` lines say `lowest grip score inf`: retries after an empty first pick carry
 and release nothing without a grip reading.
