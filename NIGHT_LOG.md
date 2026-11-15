@@ -6,7 +6,7 @@ Per-workstream detail: `halal/logs/*.md`. How things are organised: `halal/READM
 
 ## Status
 
-### Sun 15.11, 02:50
+### Sun 15.11, 02:20
 - **Hand-in candidate: v27** (amd64 `sha256:ba84e7a30e4129d661055492465d19ed50060686b1a91bd1e66631b797770315`,
   `:v27-multi` `sha256:ab8ea52e…`): fixed 31/31, known 28/28, unseen 28/28 (+21.38 of 21.38), soft 31/31, gate PASS on
   all 32 episodes. = v26 + carry corridor ON (realsim A/B 24/26 vs 22/26, no rerouted carry lost), far-box planning
