@@ -19,6 +19,7 @@ from halal import config
 from halal.motion import sequence
 from halal.motion.grasps import INWARD, Grasp, right_hand
 from halal.motion.obstacles import distance, outline, top_of
+from halal.motion.sag import Sag
 from halal.perception import SceneLayout
 
 MIRROR_Y = np.array([1.0, -1.0, 1.0])
@@ -43,6 +44,7 @@ class PickPlanner(Planner):
     obstacles: Sequence[Any] = ()
     blocked: dict[tuple[float, ...], Plan | None] = {}
     rim_z: float | None = None
+    sag: Sag | None = None             # the policy's sag compensation: dry runs see the arm commands it sends
 
     @classmethod
     def create(cls, safety: SafetyConfig | None = None, cfg: dict[str, Any] | None = None) -> PickPlanner:
@@ -188,6 +190,14 @@ class PickPlanner(Planner):
         clips = self.dry_run_safety(arm[0], hand[0], arm, hand)
         return replace(plan, arm=arm, hand=hand, phases=phases, safety_clips=clips, ok=clips == 0,
                        reason="" if clips == 0 else f"{clips} safety clips in dry run")
+
+    def dry_run_safety(self, arm_q: np.ndarray, hand_q: np.ndarray, arm: np.ndarray, hand: np.ndarray) -> int:
+        """The organiser dry run on the arm commands the command stream would send for these plan-space rows (sag compensation)."""
+        if self.sag is None or self.sag.idle:
+            return super().dry_run_safety(arm_q, hand_q, arm, hand)
+        offset = self.sag.offset
+        sent, _ = self.sag.commands(arm_q, arm, hand, offset)
+        return super().dry_run_safety(self.sag.sent_at(arm_q, offset), hand_q, sent, hand)
 
     def set_layout(self, layout: SceneLayout) -> None:
         """Plan against the counter height, bin positions and highest rim perception reports for this episode."""
